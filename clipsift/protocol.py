@@ -62,7 +62,7 @@ def analysis_window(duration_s: float, pc: dict, start_override=None, end_overri
     Overrides (config or CLI) replace the default start/end; the recorded times are what was used."""
     start = pc["trim_start_s"] if start_override is None else start_override
     end = duration_s - pc["trim_end_s"] if end_override is None else end_override
-    if start_override is None and end_override is None:
+    if end_override is None:   # a later start still gets a window of the set length, not the rest of the video
         end = min(end, start + pc["window_length_s"])
     start, end = max(0.0, float(start)), min(float(duration_s), float(end))
     if end <= start:

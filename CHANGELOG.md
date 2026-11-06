@@ -15,6 +15,20 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 0.7.0 (2026-11-06)
+Rebuilt around Coastal Action's protocol. See `docs/PROTOCOL_WORKFLOW.md`.
+- Review app: five steps in protocol order: Visibility, Watch window, Count points, Quality check, Report.
+- New Watch window step: the analysis window as one video, beside the species observed list and juveniles.
+- New video: frames at each minute to choose when the sediment has settled, Video ID, and 15 or 60 count points.
+- Points run in time order. Motion badges, the motion segment screens and the motion scan are gone from the workflow (`motion_scan: true` turns the scan back on).
+- Count second now starts at the point, with tolerance shown either side, following the protocol's walk-through. This replaces the centred window from 0.4.0 and is a question for Coastal Action.
+- Report adds standard deviation, standard error, points with no fish, MeanCount per species, species observed, visibility, juveniles and marked screenshots.
+- New `docs/PROTOCOL_WORKFLOW.md` with the step-by-step plan, literature review and questions for Coastal Action.
+
+### 0.6.0 (2026-11-06)
+- Review app (on this computer): New video button. Choose or copy in a video, process it in the background, then open it. Videos wait in a list and run one at a time.
+- Review app: Report button, with counts, times and species so far. Print it, save it as a PDF or download a CSV. It stays closed in QC mode, so first counts remain hidden.
+
 ### 0.5.0 (2026-11-06)
 - Both pages: drag the playhead to move through the clip.
 - Both pages: Count second only toggle (O) loops just the 1 second count window. Off plays the full clip.

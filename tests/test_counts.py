@@ -54,6 +54,7 @@ def test_window_and_subsamples():
     ts = proto.subsample_times(s, e, pc)
     assert len(ts) == 15 and ts[0] == 60
     s2, e2 = proto.analysis_window(1200, pc, 100, 700)
+    assert proto.analysis_window(2147, pc, 120)[1] == 120 + pc["window_length_s"]   # a later start keeps the 15 minute length
     assert (s2, e2) == (100, 700)
     qc = proto.pick_qc(15, pc)
     assert 6 <= len(qc) <= 12

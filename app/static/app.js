@@ -15,7 +15,7 @@
 
   const S = {
     runId: null, results: null, saved: null, species: [], aliases: [], index: [],
-    mode: "sub", selId: null, showSetAside: false, qc: false,
+    mode: "sub", selId: null, qc: false, step: "count",
     diff: false, grid: false, boxes: false,   // boxes = "Show model suggestions"; always off at run load, never stored
    
     seg: { species: null }, ss: { rows: [] },
@@ -44,6 +44,7 @@
     const m = Math.floor(s / 60), r = s - m * 60;
     return m + ":" + (r < 10 ? "0" : "") + r.toFixed(r % 1 ? 1 : 0);
   }
+  const statText = (v) => (/^stat/i.test(String(v)) ? String(v) : "STAT " + v);
   function fmtNum(v, d) { return v == null ? "not computed" : (d != null ? Number(v).toFixed(d) : String(v)); }
   function proto() { return Object.assign({}, DEFAULT_PROTOCOL, (S.results && S.results.protocol) || {}); }
   function message(text, kind) {
@@ -78,6 +79,7 @@
     addAlias: (data) => post("/api/species/aliases", data),
     feedback: (data) => post("/api/feedback", data),
     mediaUrl: (id, folder, unitId, kind) => "/api/runs/" + enc(id) + "/" + folder + "/" + enc(unitId) + "/" + kind,
+    windowUrl: (id) => "/api/runs/" + enc(id) + "/window",
     exportHref: (id, name) => "/api/runs/" + enc(id) + "/" + name,
     download: null,
   };
@@ -134,15 +136,7 @@
     // ---- CSV exports, generated in the browser (mirror app/server.py) ----
     const SEG_COLS = [["recording_id", "Recording folder name."], ["segment_id", "Segment id from results.json."], ["start_s", "Segment start, seconds from the start of the recording."], ["end_s", "Segment end, seconds."], ["kind", "active, or set_aside (no activity found, time is kept)."], ["audit_sample", "true if this set-aside segment was picked at random as a check."], ["status", "Model status: known, fish_unknown, unclear, movement_unidentified, none."], ["motion_score", "Motion score from the pipeline. Blank means not computed."], ["visibility_score", "Visibility score from the pipeline. Blank means not computed."], ["flag_shake", "true if camera shake was flagged."], ["flag_low_visibility", "true if low visibility was flagged."], ["review_priority", "Higher means it was shown earlier in the queue."], ["model_maxn", "Model MaxN: the most fish seen in one frame. A relative index, not abundance."], ["model_mean_count", "Model mean fish per sampled frame. A relative index, not abundance."], ["model_unique_tracks", "Number of separate fish tracks. A relative index, not abundance."], ["decision", "Reviewer decision: confirm, reject, unknown, needs_second_look."], ["species", "Species the reviewer entered. Blank if none."], ["species_free_text", "true if the species was typed and is not in the species list. Check these."], ["count", "Fish count the reviewer entered. A relative index, not abundance."], ["note", "Reviewer note."], ["reviewer", "Reviewer name as typed."], ["reviewed_at", "When the latest decision was saved (UTC)."], ["n_decisions", "How many decisions were saved for this segment. Only the latest is shown here."], ["n_grid_tags", "How many grid cell tags were saved for this segment."]];
     const SUB_COLS = [["Video ID", "Video ID from results.json. Must match the Coastal Action spreadsheet."], ["Subsample", "Subsample point id."], ["Time (s)", "Seconds from the start of the recording."], ["Counter", "Who counted."], ["Pass", "primary, qc_blind (second blind count) or recount."], ["Total fish count", "Fish counted in the designated second. A relative index, not abundance."], ["Invertebrate count", "Invertebrates counted in the designated second. A relative index."], ["Number of species", "Species in this subsample."], ["Unknown/Unable to ID due to visibility", "Count that could not be identified because of visibility."], ["Visibility category", "Water clarity category for this point."], ["Visibility change >= 0.5 m", "yes if visibility changed by 0.5 m or more."], ["Characteristics ticked", "Of shape, anatomical features, colour or flashes, swimming behaviour."], ["Notes", "Reviewer notes. Movement noted as unidentified is a note, never counted."], ["Saved at (UTC)", "When the count was saved."], ["QC percent difference", "Primary vs second count difference. Formula is provisional."], ["QC recount needed", "yes if the difference is over the configured limit."]];
-    function csvText(header, rows) {
-      const cell = (c) => {
-        if (c == null) return "";
-        let t = String(c);
-        if (typeof c === "string" && /^[=+\-@\t\r]/.test(t)) t = "'" + t;  // stop spreadsheets reading typed text as a formula
-        return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
-      };
-      return [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
-    }
+    const csvText = D.csvText;
     async function csvFor(id, name) {
       const results = await this.results(id);
       const rec = results.recording || {};
@@ -224,6 +218,7 @@
       },
       feedback: (d) => post("/api/feedback", d),
       mediaUrl: (id, folder, unitId, kind) => root + "runs/" + enc(id) + "/" + folder + "/" + enc(unitId) + "/" + DEMO_FILES[kind],
+      windowUrl: () => null,
       exportHref: () => "#",
       async download(id, name) {
         const text = await csvFor.call(this, id, name);
@@ -258,30 +253,36 @@
     } catch (e) { /* ignore bad saved settings */ }
     wireStatic();
     paintRestart(); paintNames();
+    $("new-video").hidden = !!DEMO;
     $("demo-banner").hidden = !DEMO;
     applyView(); nameHint();
     await loadSpecies();
     try {
-      const { runs } = await Data.runs();
-      const sel = $("run-select");
-      clear(sel);
+      const runs = await fillRuns();
       if (!runs.length) {
-        sel.append(el("option", { value: "", text: "No runs found" }));
         showEmpty(DEMO ? "The demo recordings did not load. Try refreshing the page. If it keeps happening, tell the team with the Feedback button."
-          : "No recordings to review yet. When a run folder is added to the runs folder it shows up in the Run menu. To try the app with sample data first, run: python -m app.fixtures.make_fixture");
+          : "No recordings to review yet. Press New video at the top to add one.");
         return;
       }
-      sel.append(el("option", { value: "", text: "Choose a run..." }));
-      for (const r of runs) sel.append(el("option", { value: r.run_id, text: r.run_id + (r.fixture ? " (fixture)" : "") + (r.error ? " (unreadable)" : "") }));
+      const sel = $("run-select");
       showEmpty("Pick a recording from the Run menu at the top to begin. New here? Press the ? button for a quick guide.");
       const want = new URLSearchParams(location.search).get("run");
       if (want && runs.some((r) => r.run_id === want)) { sel.value = want; loadRun(want); }
       else if (runs.length === 1 || DEMO) { const first = (DEMO && runs.find((r) => !r.fixture)) || runs[0]; sel.value = first.run_id; loadRun(first.run_id); }
     } catch (e) { showEmpty(e.message); }
   }
+  async function fillRuns() {
+    const { runs } = await Data.runs(), sel = $("run-select"), keep = sel.value;
+    clear(sel);
+    if (!runs.length) { sel.append(el("option", { value: "", text: "No runs found" })); return runs; }
+    sel.append(el("option", { value: "", text: "Choose a run..." }));
+    for (const r of runs) sel.append(el("option", { value: r.run_id, text: r.run_id + (r.fixture ? " (fixture)" : "") + (r.error ? " (unreadable)" : "") }));
+    sel.value = keep;
+    return runs;
+  }
   function showEmpty(text) {
     $("empty").textContent = text; $("empty").hidden = !text;
-    if (text) for (const id of ["workspace", "summary", "timeline-wrap", "rec-notes"]) $(id).hidden = true;
+    if (text) for (const id of ["workspace", "summary", "timeline-wrap", "steps", "step-visibility", "step-watch"]) $(id).hidden = true;
   }
   async function loadSpecies() {
     try {
@@ -315,19 +316,20 @@
     } catch (e) { showEmpty(e.message); return; }
     $("empty").hidden = true;
     $("fixture-badge").hidden = !S.results.fixture;
-    for (const id2 of ["export-link", "export-summary-link", "export-seg-link", "export-dict-link"]) {
+    paintReportBtn();
+    for (const id2 of ["export-link", "export-summary-link", "export-dict-link"]) {
       $(id2).href = Data.exportHref(S.runId, $(id2).dataset.export); $(id2).hidden = false;
     }
-    S.mode = subs().length ? "sub" : "seg";
-    S.grid = S.mode === "sub";  // totals per cell are part of counting a school
+    S.mode = "sub"; S.qc = false;
+    S.grid = true;  // totals per cell are part of counting a school
     setPressed("toggle-grid", S.grid);
     applyView();
-    if (S.mode === "sub" && S.tool === "pan") setTool("dot");  // new people mark straight away; wheel still zooms
+    if (S.tool === "pan") setTool("dot");  // new people mark straight away; wheel still zooms
+    S.selId = null;
     renderAll();
     fillNotes();
-    const list = queue();
-    if (list.length) select(list[0]);
-    else showNoSelection();
+    const started = Object.keys(S.saved.latest_primary || {}).length || S.saved.latest_recording_notes;
+    setStep(started ? "count" : "visibility");
     nameHint();
     maybeTour();
   }
@@ -366,9 +368,9 @@
   function queue() {
     if (S.mode === "sub") {
       if (S.qc) return qcSample().items.map((s) => s.subsample_id);
-      return subs().slice().sort(byPriority).map((s) => s.subsample_id);
+      return subs().slice().sort((a, b) => (a.t_s ?? 0) - (b.t_s ?? 0)).map((s) => s.subsample_id);   // systematic: time order, never by activity
     }
-    return segs().filter((s) => S.showSetAside || s.kind === "active" || s.audit_sample).sort(byPriority).map((s) => s.segment_id);
+    return [];
   }
   function unit(id, mode) {
     mode = mode || S.mode;
@@ -383,12 +385,11 @@
 
   // ---------- chrome: summary, progress, timeline, queue ----------
   function renderAll() {
-    $("workspace").hidden = false; $("rec-notes").hidden = false;
-    $("tab-sub").hidden = !subs().length;
+    $("steps").hidden = false;
     renderChrome();
   }
   function renderChrome() {
-    renderSummary(); renderProgress(); renderTimeline(); renderQueue();
+    renderSummary(); renderProgress(); renderTimeline(); renderQueue(); paintSteps();
   }
   function renderSummary() {
     const r = S.results, sm = r.summary || {}, rec = r.recording || {};
@@ -397,14 +398,11 @@
     box.append(
       item("Video", rec.video_id || rec.recording_id || S.runId),
       item("Length", fmtTime(rec.duration_s)),
-      item("Subsample points", fmtNum(sm.n_subsamples ?? subs().length)),
-      item("Motion segments", fmtNum(sm.n_segments ?? segs().length), true),
-      item("Set aside", fmtNum(sm.n_set_aside), true),
-      item("Random checks", fmtNum(sm.n_audit), true),
+      item("Analysis window", r.protocol && r.protocol.window_start_s != null ? fmtTime(r.protocol.window_start_s) + " to " + fmtTime(r.protocol.window_end_s) : "n/a"),
+      item("Count points", fmtNum(sm.n_subsamples ?? subs().length)),
     );
-    if (!S.qc) box.append(item("MeanCount, model (index)", fmtNum(sm.mean_count_auto, 2), true));
     box.append(item("MeanCount, by hand (index)", S.qc ? "hidden in QC mode" : fmtNum(S.saved.mean_count_reviewed, 2)));
-    const meta = [rec.transect && "Transect " + rec.transect, rec.stat && "STAT " + rec.stat, rec.year, rec.season, S.results.run && S.results.run.layer != null && "Layer " + S.results.run.layer].filter(Boolean).join(" . ");
+    const meta = [rec.transect && "Transect " + rec.transect, rec.stat && statText(rec.stat), rec.year, rec.season, S.results.run && S.results.run.layer != null && "Layer " + S.results.run.layer].filter(Boolean).join(" . ");
     if (meta) box.append(el("div", { class: "stat meta", text: meta }));
   }
   function renderProgress() {
@@ -420,7 +418,7 @@
     const rec = S.results.recording || {}, list = segs(), ss = subs();
     let dur = rec.duration_s;
     if (!dur) dur = Math.max(1, ...list.map((s) => s.end_s || 0), ...ss.map((s) => s.t_s || 0));
-    wrap.hidden = !((isSimple() ? ss.length : (list.length || ss.length)));
+    wrap.hidden = !ss.length || !["count", "qc"].includes(S.step);
     const pct = (v) => Math.max(0, Math.min(100, (v / dur) * 100));
     const p = S.results.protocol || {};
     if (p.window_start_s != null && p.window_end_s != null) {
@@ -428,7 +426,7 @@
       w.style.left = pct(p.window_start_s) + "%"; w.style.width = pct(p.window_end_s - p.window_start_s) + "%";
       tl.append(w);
     }
-    for (const s of (isSimple() ? [] : list)) {
+    for (const s of []) {
       if (s.start_s == null || s.end_s == null) continue;
       const flagged = !!(s.flags && (s.flags.shake || s.flags.low_visibility));
       const done = !!(S.saved.latest_review || {})[s.segment_id];
@@ -456,9 +454,6 @@
   function badge(text, cls) { return el("span", { class: "badge " + (cls || ""), text }); }
   function renderQueue() {
     const list = $("queue-list"); clear(list);
-    $("tab-sub").setAttribute("aria-selected", S.mode === "sub");
-    $("tab-seg").setAttribute("aria-selected", S.mode === "seg");
-    $("setaside-wrap").hidden = S.mode !== "seg";
     const note = $("qc-note");
     note.hidden = !(S.mode === "sub" && S.qc);
     if (!note.hidden) {
@@ -479,8 +474,6 @@
       if (S.mode === "sub") {
         b.append(el("span", { class: "q-time", text: fmtTime(u.t_s) }));
         if (u.qc_sample) b.append(badge("QC", "info"));
-        if (!S.qc && u.auto && u.auto.motion_near_point) b.append(badge("Motion nearby"));
-        if (!S.qc && u.auto && u.auto.movement_unidentified > 0) b.append(badge("Movement, unidentified", "move"));
       } else {
         b.append(el("span", { class: "q-time", text: fmtTime(u.start_s) + " to " + fmtTime(u.end_s) }));
         if (u.audit_sample) b.append(badge("Random check", "audit"));
@@ -598,17 +591,20 @@
   const settingsPayload = () => Object.assign({}, S.filters, { enhance: S.enhance });
 
   // ---------- motion: hold Space and the clip plays in the picture, same zoom, marks on top ----------
-  const countHalf = () => proto().count_window_s / 2;   // the count second is centred on the point, as in the protocol
+  const countSec = () => proto().count_window_s;   // see docs/PROTOCOL_WORKFLOW.md: this starts at the point
   function clipLen() { const v = $("stage-clip"); return v.duration && isFinite(v.duration) ? v.duration : 10; }
-  const clipRange = () => D.clipRange(S.countOnly, S.mode === "sub" ? countOffset() : null, countHalf(), clipLen());
+  const clipRange = () => D.clipRange(S.countOnly, S.mode === "sub" ? countOffset() : null, countSec(), clipLen());
   function paintHud() {
-    const v = $("stage-clip"), t = (S.clip ? S.clip.time() : v.currentTime) || 0, len = clipLen(), off = S.mode === "sub" ? countOffset() : null, half = countHalf();
-    const w = $("hud-window"); w.hidden = off == null;
-    if (off != null) { const a = Math.max(0, off - half), b = Math.min(len, off + half); w.style.left = (a / len) * 100 + "%"; w.style.width = ((b - a) / len) * 100 + "%"; }
+    const v = $("stage-clip"), t = (S.clip ? S.clip.time() : v.currentTime) || 0, len = clipLen(), off = S.mode === "sub" ? countOffset() : null;
+    const w = $("hud-window"), tol = $("hud-tol"); w.hidden = tol.hidden = off == null;
+    if (off != null) {
+      const b = D.countBands(off, countSec(), proto().count_tolerance_s, len);
+      w.style.left = b.count.left + "%"; w.style.width = b.count.width + "%"; tol.style.left = b.tolerance.left + "%"; tol.style.width = b.tolerance.width + "%";
+    }
     $("hud-time").textContent = off != null ? D.relTime(t, off) : t.toFixed(1) + " s";
     $("hud-speed").textContent = currentSpeed() + "x";
     $("hud-head").style.left = Math.min(100, (t / len) * 100) + "%";
-    const inWin = off != null && Math.abs(t - off) <= half;
+    const inWin = off != null && D.inCount(t, off, countSec());
     $("hud-count").hidden = !inWin; $("stage").classList.toggle("counting", inWin);
   }
   function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } S.clip.tick(); paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
@@ -1069,15 +1065,11 @@
     paintSuggestToggle();
     const sugOn = showSug && suggestionsOn();
     $("sug-hint").hidden = !sugOn; $("sug-off").hidden = sugOn;
-    const mv = sugOn && auto.movement_unidentified > 0;
-    $("movement-banner").hidden = !mv;
-    $("movement-banner").textContent = "Movement, unidentified near this point (" + auto.movement_unidentified + " found). It is a note only and is not counted.";
+    $("movement-banner").hidden = true;
     const d = $("suggest"); clear(d);
     if (sugOn) {
       const row = (k, v) => d.append(el("dt", { text: k }), el("dd", { text: v }));
       row("Fish (model)", fmtNum(auto.fish_count)); row("Invertebrates (model)", fmtNum(auto.invertebrate_count));
-      row("Motion near point", auto.motion_near_point == null ? "not computed" : (auto.motion_near_point ? "yes" : "no"));
-      row("Visibility score", fmtNum(auto.visibility_score, 2));
     }
   }
   function renderSubsample(u) {
@@ -1183,7 +1175,7 @@
     const v = $("loop"), off = S.mode === "sub" ? countOffset() : null;
     $("to-count").hidden = off == null;
     $("clip-time").textContent = v.hidden ? "" : "Clip " + v.currentTime.toFixed(2) + " s" + (off != null ? ". Count point at " + off.toFixed(2) + " s. A fish within " + proto().count_tolerance_s + " s either side at 0.25x may count." : "");
-    $("count-now").hidden = !(off != null && Math.abs(v.currentTime - off) <= countHalf());
+    $("count-now").hidden = !(off != null && D.inCount(v.currentTime, off, countSec()));
   }
   function toggle(which) {
     if (which === "grid") { S.grid = !S.grid; renderGrid(); }
@@ -1197,15 +1189,15 @@
     if (e.ctrlKey) return;
     if (e.key === "/" && !isTyping(e.target)) { e.preventDefault(); (S.mode === "sub" ? $("ss-species") : $("species")).focus(); return; }
     if (isTyping(e.target) || e.target.tagName === "SELECT" || e.target.tagName === "SUMMARY") return;
-    if (!S.results || $("workspace").hidden) return;
+    if (!S.results || $("workspace").hidden || !["count", "qc"].includes(S.step)) return;
     const k = e.key.toLowerCase();
     if (k === "arrowright" || k === "arrowdown" || k === "j") { e.preventDefault(); step(1); }
     else if (k === "arrowleft" || k === "arrowup" || k === "k") { e.preventDefault(); step(-1); }
     else if (k === "g") toggle("grid");
     else if (k === "d") toggle("diff");
     else if (S.mode === "sub" && k === "p") setTool("dot");
-    else if (S.mode === "sub" && k === "e" && !isSimple()) setTool("ellipse");
-    else if (S.mode === "sub" && k === "b" && !isSimple()) setTool("box");
+    else if (S.mode === "sub" && k === "e") setTool("ellipse");
+    else if (S.mode === "sub" && k === "b") setTool("box");
     else if (S.mode === "sub" && k === "z") undoLabel();
     else if (S.mode === "seg" && DECISION_KEYS[k]) saveDecision(DECISION_KEYS[k]);
     else if (S.mode === "sub" && k in CHAR_KEYS) { const cb = $("chars").querySelectorAll("input")[CHAR_KEYS[k]]; cb.checked = !cb.checked; paintCharsWarn(); }
@@ -1222,9 +1214,7 @@
 
   // ---------- recording notes ----------
   function fillNotes() {
-    const n = S.saved.latest_recording_notes || {}, p = S.results.protocol || {};
-    $("rn-start").value = n.window_start_s ?? p.window_start_s ?? "";
-    $("rn-end").value = n.window_end_s ?? p.window_end_s ?? "";
+    const n = S.saved.latest_recording_notes || {};
     $("rn-juv").value = n.juveniles == null ? "" : String(n.juveniles);
     $("rn-species").value = (n.species_observed || []).join("\n");
     $("rn-notes").value = n.notes || "";
@@ -1237,42 +1227,223 @@
     });
   }
   async function saveNotes() {
-    const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
+    const p = S.results.protocol || {}, say = (t) => { $("rn-status").textContent = t; $("rn-status-vis").textContent = t; };
     const vis = [...$("rn-vis").querySelectorAll(".vis-row")].map((r) => ({ observer: r.querySelector("input").value.trim(), category: r.querySelector("select").value })).filter((r) => r.category || r.observer);
-    if (vis.some((r) => !r.observer || !r.category)) { $("rn-status").textContent = "Each visibility entry needs a name and a category."; return; }
+    if (vis.some((r) => !r.observer || !r.category)) { say("Each visibility entry needs a name and a category."); return; }
     const payload = {
-      window_start_s: num("rn-start"), window_end_s: num("rn-end"),
+      window_start_s: p.window_start_s ?? null, window_end_s: p.window_end_s ?? null,
       species_observed: $("rn-species").value.split("\n").map((x) => x.trim()).filter(Boolean),
       juveniles: $("rn-juv").value === "" ? null : Number($("rn-juv").value),
       visibility_by_observer: vis, notes: $("rn-notes").value, reviewer: reviewer(),
     };
     try {
       await Data.save(S.runId, "recording_notes", payload);
-      $("rn-status").textContent = "Saved. A new version is added each time; earlier ones are kept.";
-      S.saved = await Data.saved(S.runId);
-    } catch (e) { $("rn-status").textContent = "Not saved: " + e.message; }
+      say("Saved. A new version is added each time; earlier ones are kept.");
+      S.saved = await Data.saved(S.runId); paintSteps();
+    } catch (e) { say("Not saved: " + e.message); }
   }
 
   // ---------- simple view ("More tools") ----------
-  const isSimple = () => !S.more && (!S.results || subs().length > 0);
+  const isSimple = () => !S.more;
   function applyView() {
-    const simple = isSimple();
-    document.body.classList.toggle("simple", simple);
+    document.body.classList.toggle("simple", isSimple());
     setPressed("more-tools", S.more);
-    if (!simple) return;
-    if (S.qc) { S.qc = false; $("qc-mode").checked = false; }
-    if (S.mode === "seg" && S.results && subs().length) S.mode = "sub";
-    if (S.tool === "ellipse" || S.tool === "box") setTool("dot");
   }
   function toggleMore() {
-    const before = S.mode + (S.qc ? "q" : "");
     S.more = !S.more; localStorage.setItem("clipsift.moretools", S.more ? "1" : "0");
     applyView();
+  }
+
+  // ---------- protocol steps: visibility, watch, count, quality check, report ----------
+  function paintSteps() {
     if (!S.results) return;
-    if (before !== S.mode + (S.qc ? "q" : "")) { S.selId = null; renderChrome(); const q = queue(); if (q.length) select(q[0]); else showNoSelection(); }
-    else { renderChrome(); if (S.selId) drawBoxes(); }
+    for (const b of document.querySelectorAll("#steps [data-step]")) b.setAttribute("aria-current", b.dataset.step === S.step ? "step" : "false");
+    const notes = S.saved.latest_recording_notes || {}, tag = (k, t) => { document.querySelector('[data-state="' + k + '"]').textContent = t; };
+    const seen = (notes.visibility_by_observer || []).length, all = subs().length, counted = subs().filter((s) => primaryOf(s.subsample_id)).length;
+    const qcItems = qcSample().items, qcDone = qcItems.filter((s) => secondOf(s.subsample_id)).length;
+    tag("visibility", seen ? seen + " of 2 to 3" : "");
+    tag("watch", (notes.species_observed || []).length ? notes.species_observed.length + " species" : "");
+    tag("count", counted + " of " + all);
+    tag("qc", qcDone + " of " + qcItems.length);
+    paintReportBtn();
+  }
+  function setStep(step) {
+    if (step === "report") { openReport(); return; }
+    const was = S.qc;
+    S.step = step; S.qc = step === "qc";
+    const counting = step === "count" || step === "qc";
+    $("workspace").hidden = !counting; $("step-visibility").hidden = step !== "visibility"; $("step-watch").hidden = step !== "watch";
+    setMotion(false);
+    if (!counting) $("loop").pause();
+    const wv = $("watch-video");
+    if (step === "watch") {
+      const url = Data.windowUrl(S.runId);
+      $("watch-missing").hidden = !!url; wv.hidden = !url;
+      wv.onerror = () => { wv.hidden = true; $("watch-missing").hidden = false; };
+      if (url && !wv.src.endsWith(url)) { wv.src = url; wv.load(); }
+    } else wv.pause();
+    if (step === "visibility") {
+      const first = subs().slice().sort((a, b) => (a.t_s ?? 0) - (b.t_s ?? 0))[0];
+      if (first) $("vis-still").src = Data.mediaUrl(S.runId, "subsamples", first.subsample_id, "still");
+    }
+    if (counting && (was !== S.qc || !S.selId)) { S.selId = null; renderChrome(); const q = queue(); if (q.length) select(q[0]); else showNoSelection(); }
+    else renderChrome();
   }
   function nameHint() { $("name-hint").hidden = !!reviewer() || !S.results; }
+
+  // ---------- new video: choose, process in the background, open ----------
+  const NV = { videos: [], jobs: [], timer: null, seen: {}, uploading: false, previewAsk: 0 };
+  const JOB_TEXT = { queued: "Waiting", running: "Processing", done: "Ready", failed: "Failed", cancelled: "Cancelled" };
+  const fmtSize = (b) => (b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB");
+  const fmtSpan = (s) => (s >= 3600 ? Math.floor(s / 3600) + " h " : "") + Math.floor((s % 3600) / 60) + " min " + (s % 60) + " s";
+  function nvStatus(text, kind) { const p = $("nv-status"); p.textContent = text || ""; p.className = "fb-status " + (kind || ""); }
+  async function loadVideos(pick) {
+    const d = await api("/api/videos");
+    NV.videos = d.videos;
+    $("nv-folder").textContent = d.folder;
+    const box = $("nv-model"); box.disabled = !d.detector_ready; if (!d.detector_ready) box.checked = false;
+    $("nv-model-off").hidden = d.detector_ready;
+    const sel = $("nv-video"), keep = pick || sel.value; clear(sel);
+    sel.append(el("option", { value: "", text: d.videos.length ? "Choose a video..." : "No videos here yet" }));
+    for (const v of d.videos) sel.append(el("option", { value: v.id, text: v.id + (v.files.length > 1 ? " (" + v.files.length + " parts)" : "") + ", " + fmtSize(v.size) }));
+    sel.value = keep; suggestName();
+  }
+  function suggestName() {
+    const v = NV.videos.find((x) => x.id === $("nv-video").value);
+    if (v) $("nv-name").value = v.suggested_name;
+    loadPreview();
+  }
+  // Frames at each minute, so a person can choose when the sediment has settled.
+  async function loadPreview() {
+    const video = $("nv-video").value || null, path = $("nv-path").value.trim(), box = $("nv-preview"), wrap = $("nv-preview-wrap");
+    clear(box); wrap.hidden = true;
+    if (!video && !path) return;
+    const ask = ++NV.previewAsk;
+    nvStatus("Getting frames from the video...");
+    try {
+      const d = await post("/api/videos/preview", { video, path });
+      if (ask !== NV.previewAsk) return;
+      nvStatus(""); wrap.hidden = !d.frames.length;
+      for (const f of d.frames) box.append(el("button", { type: "button", "aria-pressed": "false", title: "Start the window at " + fmtTime(f.t_s), on: { click: (e) => {
+        $("nv-start").value = f.t_s;
+        for (const b of box.children) b.setAttribute("aria-pressed", b === e.currentTarget ? "true" : "false");
+      } } }, el("img", { src: f.url, alt: "Frame at " + fmtTime(f.t_s) }), el("span", { text: fmtTime(f.t_s) })));
+    } catch (e) { if (ask === NV.previewAsk) nvStatus(e.message, "error"); }
+  }
+  function uploadVideo(file) {
+    if (!file || NV.uploading) return;
+    NV.uploading = true; $("nv-file").disabled = true; const bar = $("nv-upload"); bar.hidden = false; bar.value = 0;
+    nvStatus("Copying " + file.name + " into the videos folder...");
+    const x = new XMLHttpRequest(), done = () => { NV.uploading = false; $("nv-file").disabled = false; $("nv-file").value = ""; bar.hidden = true; };
+    x.open("PUT", "/api/videos/upload?name=" + enc(file.name));
+    x.setRequestHeader("X-ClipSift-Upload", "1");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) { bar.max = e.total; bar.value = e.loaded; } };
+    x.onerror = () => { done(); nvStatus("The copy stopped. Is ClipSift still running?", "error"); };
+    x.onload = async () => {
+      done();
+      let b = null; try { b = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
+      if (x.status >= 300) { nvStatus((b && b.error) || "The copy failed.", "error"); return; }
+      await loadVideos(b.id); nvStatus("Added. Check the name, then press Start.", "ok");
+    };
+    x.send(file);
+  }
+  async function startJob() {
+    const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
+    const body = { video: $("nv-video").value || null, path: $("nv-path").value, name: $("nv-name").value.trim(), layer: $("nv-model").checked ? 1 : 0, window_start: num("nv-start"), window_end: num("nv-end"), video_id: $("nv-id").value.trim(), interval: num("nv-points") };
+    try {
+      await post("/api/jobs", body);
+      nvStatus("Added to the list. You can close this and keep working.", "ok");
+      for (const id of ["nv-video", "nv-path", "nv-name", "nv-id", "nv-start", "nv-end"]) $(id).value = "";
+      $("nv-preview-wrap").hidden = true;
+      await pollJobs();
+    } catch (e) { nvStatus(e.message, "error"); }
+  }
+  function paintJobs() {
+    const ul = $("nv-jobs"); clear(ul);
+    $("nv-jobs-h").hidden = !NV.jobs.length;
+    for (const j of NV.jobs.slice().reverse()) {
+      const live = j.status === "queued" || j.status === "running";
+      const line = el("li", {}, el("span", { class: "nv-name", text: j.name }), badge(JOB_TEXT[j.status] || j.status, j.status === "failed" ? "flag" : j.status === "done" ? "info" : ""));
+      if (j.status === "running") line.append(el("span", { class: "hint", text: j.progress + ", " + fmtSpan(j.elapsed_s) }), el("progress", { max: "100", value: String(j.percent) }));
+      if (j.status === "done") line.append(el("span", { class: "hint", text: "Took " + fmtSpan(j.elapsed_s) }), el("button", { type: "button", class: "primary", text: "Open", on: { click: async () => { $("new-dlg").close(); await fillRuns(); $("run-select").value = j.name; loadRun(j.name); } } }));
+      if (live) line.append(el("button", { type: "button", class: "quiet", text: "Cancel", on: { click: async () => { if (!confirm("Stop processing " + j.name + "?")) return; try { await post("/api/jobs/" + enc(j.id) + "/cancel", {}); await pollJobs(); } catch (e) { nvStatus(e.message, "error"); } } } }));
+      if (j.error) line.append(el("p", { class: "warn-text", text: j.error }));
+      ul.append(line);
+    }
+    const run = NV.jobs.find((j) => j.status === "running"), waiting = NV.jobs.filter((j) => j.status === "queued").length, b = $("job-badge");
+    b.hidden = !run && !waiting;
+    b.textContent = run ? "Processing " + run.name + ": " + run.progress + (waiting ? ", " + waiting + " waiting" : "") : waiting + " waiting";
+  }
+  async function pollJobs() {
+    clearTimeout(NV.timer);
+    try { NV.jobs = (await api("/api/jobs")).jobs; } catch (e) { return; }
+    let finished = null;
+    for (const j of NV.jobs) { if (NV.seen[j.id] && NV.seen[j.id] !== "done" && j.status === "done") finished = j; NV.seen[j.id] = j.status; }
+    paintJobs();
+    if (finished) { await fillRuns(); message(finished.name + " is ready. Pick it from the Run menu.", "ok"); }
+    if (NV.jobs.some((j) => j.status === "queued" || j.status === "running")) NV.timer = setTimeout(pollJobs, 2000);
+  }
+  async function openNewVideo() {
+    closeDialogs(); nvStatus("");
+    $("new-dlg").showModal();
+    try { await loadVideos(); await pollJobs(); } catch (e) { nvStatus(e.message, "error"); }
+  }
+
+  // ---------- summary report: print it, or save it as a PDF from the print window ----------
+  function paintReportBtn() {
+    const b = $("report-btn"); b.disabled = S.qc;
+    b.title = S.qc ? "The report shows first counts, so it stays closed in QC mode" : "Counts, times and species for this video, to print or save as a PDF";
+  }
+  function reportName(n) { const r = resolve(n); return r ? D.speciesLabel(r, S.names) : n; }
+  function openReport() {
+    if (S.qc || !S.results) return;
+    closeDialogs();
+    const rep = D.buildReport(S.results, S.saved), box = $("report-body"); clear(box);
+    const dec = (v, d) => (v == null ? null : v.toFixed(d));
+    const table = (cols, rows) => el("table", { class: "rp-table" }, el("thead", {}, el("tr", {}, cols.map((c) => el("th", { text: c })))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", { text: c == null ? "" : String(c) }))))));
+    const stat = (l, v) => el("div", { class: "rp-stat" }, el("b", { text: v == null ? "n/a" : String(v) }), el("span", { text: l }));
+    const meta = [rep.transect && "Transect " + rep.transect, rep.stat && statText(rep.stat), rep.year, rep.season].filter(Boolean).join(", ");
+    box.append(el("h1", { text: "ClipSift count report" }), el("p", { class: "rp-meta", text: "Video " + rep.video + (meta ? ". " + meta : "") + "." + (rep.windowStart != null ? " Analysis window " + fmtTime(rep.windowStart) + " to " + fmtTime(rep.windowEnd) + "." : "") }),
+      el("div", { class: "rp-stats" }, stat("Points counted", rep.counted + " of " + rep.planned), stat("MeanCount (fish per point)", dec(rep.meanCount, 2)), stat("Standard deviation", dec(rep.sd, 2)), stat("Standard error", dec(rep.se, 2)), stat("Points with no fish", rep.zeroPoints), stat("Fish", rep.totalFish), stat("Invertebrates", rep.totalInv), stat("Unknown", rep.totalUnknown), stat("Species observed in the window", rep.speciesObserved.length), stat("Species in counted points", rep.species.length)));
+    const vis = rep.visibility.map((v) => v.observer + ": " + v.category).join("; ");
+    box.append(el("p", { class: "rp-meta", text: "One point every " + (rep.interval ?? "?") + " s. Visibility: " + (vis || "not recorded") + ". Juveniles: " + (rep.juveniles == null ? "not recorded" : rep.juveniles ? "present" : "absent") + "." }));
+    if (rep.counted < rep.planned) box.append(el("p", { class: "warn-text", text: "Not finished: " + (rep.planned - rep.counted) + " of " + rep.planned + " points have no count yet." }));
+    box.append(el("h2", { text: "Species observed in the window" }), el("p", { text: rep.speciesObserved.length ? rep.speciesObserved.map(reportName).join("; ") : "Not recorded yet." }));
+    box.append(el("h2", { text: "Species in counted points" }));
+    box.append(rep.species.length ? table(["Species", "Count", "Points seen at", "MeanCount"], rep.species.map((s) => [reportName(s.name), s.total, s.points, s.meanCount.toFixed(2)])) : el("p", { text: "No species recorded yet." }));
+    box.append(el("h2", { text: "Points" }), table(["Point", "Time", "Fish", "Invertebrates", "Unknown", "Species", "Visibility", "Counter", "Notes"],
+      rep.points.map((p) => [p.id, fmtTime(p.t), p.counted ? p.fish : "not counted", p.inv, p.unknown, Object.entries(p.species).map(([n, c]) => reportName(n) + ": " + c).join("; "), p.visibility, p.counter, p.notes])));
+    if (rep.qcPairs) box.append(el("h2", { text: "Quality check" }), el("p", { text: rep.qcPairs + " points counted twice, " + rep.qcRecounts + " need a recount." + (rep.qcAgreement != null ? " Agreement " + rep.qcAgreement + "% (provisional formula)." : "") }));
+    box.append(el("p", { class: "rp-note", text: "Counts are a relative index, not abundance. Every count here was made by a person. Created " + new Date().toLocaleString() + (rep.modelVersion ? ". Model used for suggestions: " + rep.modelVersion : "") + "." }));
+    S.report = rep;
+    const shots = el("div", { class: "rp-shots" });
+    if (rep.counted) box.insertBefore(el("h2", { text: "Screenshots" }), box.lastChild), box.insertBefore(shots, box.lastChild);
+    $("report-dlg").showModal();
+    for (const p of rep.points.filter((x) => x.counted)) addShot(shots, p);
+  }
+  // A counted frame with its counter's marks drawn on, like Coastal Action's marked screenshots.
+  function addShot(box, p) {
+    const img = new Image(), fig = el("figure", {}, el("figcaption", { text: p.id + " at " + fmtTime(p.t) + ": " + p.fish + " fish, " + (p.inv || 0) + " invertebrates" }));
+    box.append(fig);
+    img.onload = () => {
+      const w = 900, h = Math.round((w * img.naturalHeight) / img.naturalWidth), c = el("canvas", { width: w, height: h }), g = c.getContext("2d");
+      const rec = S.results.recording || {}, k = w / (rec.width || img.naturalWidth);
+      g.drawImage(img, 0, 0, w, h); g.lineWidth = 2;
+      for (const l of (S.saved.point_labels || []).filter((x) => x.subsample_id === p.id && x.counter === p.counter)) {
+        g.strokeStyle = l.kind === "invertebrate" ? "#6fd3ff" : "#ffe94d"; g.beginPath();
+        if (l.w != null && l.h != null) g.ellipse((l.x + l.w / 2) * k, (l.y + l.h / 2) * k, (l.w / 2) * k, (l.h / 2) * k, 0, 0, Math.PI * 2);
+        else g.arc(l.x * k, l.y * k, 7, 0, Math.PI * 2);
+        g.stroke();
+      }
+      fig.prepend(el("img", { src: c.toDataURL("image/jpeg", 0.8), alt: "Frame at " + fmtTime(p.t) }));
+    };
+    img.src = Data.mediaUrl(S.runId, "subsamples", p.id, "still");
+  }
+  function downloadReportCsv() {
+    const url = URL.createObjectURL(new Blob([D.reportCsv(S.report, fmtTime)], { type: "text/csv" }));
+    const a = el("a", { href: url, download: S.runId + "_report.csv" }); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
 
   // ---------- dialogs: help and feedback ----------
   function openHelp() { closeDialogs(); $("help-dlg").showModal(); $("help-dlg").querySelector(".drawer-body").scrollTop = 0; }
@@ -1307,6 +1478,7 @@
 
   // ---------- first-visit tour (hand written, no library) ----------
   const TOUR = [
+    { target: "steps", title: "Follow the steps", body: "These five steps follow Coastal Action's protocol, in order. Each one shows its progress. The ? button at the top has more help." },
     { target: "timeline-wrap", title: "The whole recording", body: "Each tick is a point to count. Grey means not counted yet, green means done. Click a tick to jump to it." },
     { target: "clip-wrap", title: "1. Watch the clip", body: "The clip plays around the point. Count only in the green COUNT NOW second. Use 0.25x to slow it down." },
     { target: "stage-wrap", title: "2. Mark what you see", body: "Click each animal on the picture to place a dot. Not sure about one? Leave it out. Undo removes your last dot." },
@@ -1384,6 +1556,22 @@
     $("help-close").addEventListener("click", () => $("help-dlg").close());
     $("help-tour").addEventListener("click", startTour);
     $("feedback-btn").addEventListener("click", openFeedback);
+    $("new-video").addEventListener("click", openNewVideo);
+    $("nv-close").addEventListener("click", () => $("new-dlg").close());
+    $("nv-start-btn").addEventListener("click", startJob);
+    $("nv-video").addEventListener("change", suggestName);
+    $("nv-path").addEventListener("change", loadPreview);
+    for (const b of document.querySelectorAll("#steps [data-step]")) b.addEventListener("click", () => setStep(b.dataset.step));
+    $("rn-save-vis").addEventListener("click", saveNotes);
+    makeCombo($("rn-sp-input"), $("rn-sp-list"), (sel) => {
+      const box = $("rn-species"), have = box.value.split("\n").map((x) => x.trim()).filter(Boolean);
+      if (sel.value && !have.includes(sel.value)) box.value = have.concat([sel.value]).join("\n");
+      $("rn-sp-input").value = "";
+    });
+    $("nv-file").addEventListener("change", (e) => uploadVideo(e.target.files[0]));
+    $("report-close").addEventListener("click", () => $("report-dlg").close());
+    $("report-print").addEventListener("click", () => window.print());
+    $("report-csv").addEventListener("click", downloadReportCsv);
     $("feedback-form").addEventListener("submit", sendFeedback);
     $("fb-cancel").addEventListener("click", () => $("feedback-dlg").close());
     $("help-dlg").addEventListener("click", (e) => { if (e.target === $("help-dlg")) $("help-dlg").close(); });
@@ -1400,13 +1588,6 @@
     $("demo-reset").addEventListener("click", () => {
       if (!confirm("Clear all the counts and marks you saved in this browser for the demo?")) return;
       Data.clearAll(); if (S.runId) loadRun(S.runId);
-    });
-    $("tab-sub").addEventListener("click", () => { S.mode = "sub"; modeChanged(); const q = queue(); if (q.length) select(q[0]); else showNoSelection(); });
-    $("tab-seg").addEventListener("click", () => { S.mode = "seg"; modeChanged(); const q = queue(); if (q.length) select(q[0]); else showNoSelection(); });
-    $("show-setaside").addEventListener("change", (e) => { S.showSetAside = e.target.checked; renderChrome(); });
-    $("qc-mode").addEventListener("change", (e) => {
-      S.qc = e.target.checked; if (S.qc && subs().length) S.mode = "sub";
-      S.selId = null; if (S.results) { renderChrome(); const q = queue(); if (q.length) select(q[0]); else showNoSelection(); }
     });
     $("toggle-diff").addEventListener("click", () => toggle("diff"));
     $("toggle-grid").addEventListener("click", () => toggle("grid"));
@@ -1464,5 +1645,5 @@
     wireTools();
     document.addEventListener("keydown", onKey);
   }
-  init();
+  init().then(() => { if (!DEMO) pollJobs(); });
 })();

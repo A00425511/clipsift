@@ -14,7 +14,7 @@ Logged 5 Nov 2026 from the team check-in and app feedback. Ticked items are done
 
 ## Bigger features
 - [x] Simple label-only mode: image, mark, next, with blind double counting for agreement. `/label.html`, see README, Labelling.
-- [ ] Summary report of counts, seconds and species, as CSV and PDF.
+- [x] Summary report of counts, seconds and species, as CSV and PDF. Report button; PDF comes from the print window.
 - [ ] Save and reopen a full analysis (Ali).
 - [ ] Windows package that needs no setup, for handoff (Ali).
 

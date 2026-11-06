@@ -255,6 +255,7 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
     times = proto.subsample_times(ws, we, pc)
     qc = proto.pick_qc(len(times), pc)
     subsamples = []
+    log(f"plan: {len(times)} points")
     qcfg = copy.deepcopy(cfg)
     qcfg["sample_fps"] = pc["context_sample_fps"]
     quick = get_backend("proposer", cfg["stages"]["proposer"], qcfg)
@@ -309,12 +310,21 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
         subsamples.append(ss)
         log(f"subsample {sid} at {t:.1f}s" + (f": {ss.auto['fish_count']} suggested" if full_res else ""))
 
-    # ---- 2. full-window motion scan (supporting pass)
-    with tm.stage("motion_scan"):
-        frames_g = timeline.iter_samples(cfg["sample_fps"], width=cfg["proxy_width"], gray=True,
-                                         start_s=ws, end_s=we)
-        segments = proposer.propose(frames_g, start_s=ws, end_s=we)
-    log(f"motion scan: {len(segments)} segments")
+    # ---- 2. one playable video of the window: the protocol asks for it to be watched in real time
+    wv = cfg.get("window_video") or {}
+    if wv.get("enabled"):
+        log("window video")
+        with tm.stage("window_video"):
+            timeline.cut_window(ws, we, run_dir / "window.mp4", wv.get("max_width", 0), wv.get("crf", 28))
+
+    # ---- optional whole-window motion scan. Off by default: the protocol does not use it
+    segments = []
+    if cfg.get("motion_scan"):
+        with tm.stage("motion_scan"):
+            frames_g = timeline.iter_samples(cfg["sample_fps"], width=cfg["proxy_width"], gray=True,
+                                             start_s=ws, end_s=we)
+            segments = proposer.propose(frames_g, start_s=ws, end_s=we)
+        log(f"motion scan: {len(segments)} segments")
 
     # ---- 3. Layer 1 on active segments
     if layer >= 1:
@@ -380,9 +390,10 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
     # ---- media for active and audit segments
     with tm.stage("segment_media"):
         lc = cfg["loop"]
-        for seg in segments:
+        for i, seg in enumerate(segments):
             seg.review_priority = review_priority_segment(seg, rc if full_res else None)
             if seg.kind == "active" or seg.audit_sample:
+                log(f"segment media {i + 1} of {len(segments)}")
                 d = run_dir / "segments" / seg.segment_id
                 write_still_and_diff(timeline, d, seg.still_time_s, seg.start_s, seg.end_s)
                 a = max(seg.start_s, min(seg.still_time_s - lc["max_s"] / 2, seg.end_s - lc["max_s"]))

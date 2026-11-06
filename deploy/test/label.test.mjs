@@ -17,30 +17,47 @@ t("enhance: presets cycle back to off, and unknown ids are off", () => {
 });
 t("clip: full clip or the count second, and the playhead stays inside what plays", () => {
   assert.deepEqual(D.clipRange(false, 5, 0.5, 10), { start: 0, end: 10, only: false });
-  assert.deepEqual(D.clipRange(true, 5, 0.5, 10), { start: 4.5, end: 5.5, only: true });
-  assert.deepEqual(D.clipRange(true, 0, 0.5, 5), { start: 0, end: 0.5, only: true });   // point at the very start of the video
-  assert.equal(D.clipRange(true, null, 0.5, 10).only, false);                           // a motion segment has no count second
-  const full = D.clipRange(false, 5, 0.5, 10), only = D.clipRange(true, 5, 0.5, 10);
+  assert.deepEqual(D.clipRange(true, 5, 1, 10), { start: 5, end: 6, only: true });
+  assert.deepEqual(D.clipRange(true, 9.5, 1, 10), { start: 9.5, end: 10, only: true });  // clipped to the clip
+  assert.equal(D.clipRange(true, null, 1, 10).only, false);
+  const b = D.countBands(5, 1, 0.5, 10);
+  assert.deepEqual([b.count.left, b.count.width, b.tolerance.left, b.tolerance.width], [50, 10, 45, 20]);
+  const full = D.clipRange(false, 5, 1, 10), only = D.clipRange(true, 5, 1, 10);
   assert.equal(D.scrubTime(150, 100, 200, 10, full), 2.5);
   assert.equal(D.scrubTime(0, 100, 200, 10, full), 0);
-  assert.equal(D.scrubTime(150, 100, 200, 10, only), 4.5);
-  assert.equal(D.scrubTime(290, 100, 200, 10, only), 5.5);
+  assert.equal(D.scrubTime(150, 100, 200, 10, only), 5);
+  assert.equal(D.scrubTime(290, 100, 200, 10, only), 6);
 });
 t("clip control: the count second loops, and a fast drag still lands where the mouse let go", () => {
   const on = {}, tr = {};
-  const v = { duration: 10, currentTime: 5.49, paused: false, seeking: false, plays: 0, pause() { this.paused = true; }, play() { this.paused = false; this.plays++; return Promise.resolve(); }, addEventListener(n, f) { on[n] = f; } };
+  const v = { duration: 10, currentTime: 5.99, paused: false, seeking: false, plays: 0, pause() { this.paused = true; }, play() { this.paused = false; this.plays++; return Promise.resolve(); }, addEventListener(n, f) { on[n] = f; } };
   const track = { addEventListener(n, f) { tr[n] = f; }, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, width: 100 }) };
-  let range = D.clipRange(true, 5, 0.5, 10), released = 0;
+  let range = D.clipRange(true, 5, 1, 10), released = 0;
   const c = D.clipControl({ video: v, track, range: () => range, active: () => true, paint() {}, release() { released++; } });
   c.tick();
-  assert.equal(v.currentTime, 4.5); assert.equal(v.paused, true);
+  assert.equal(v.currentTime, 5); assert.equal(v.paused, true);
   on.seeked(); assert.equal(v.paused, false); assert.equal(v.plays, 1);
-  v.currentTime = 5; c.tick(); assert.equal(v.currentTime, 5);          // inside the window: left alone
-  range = D.clipRange(false, 5, 0.5, 10); v.currentTime = 9; c.tick(); assert.equal(v.currentTime, 9);   // full clip: never loops early
+  v.currentTime = 5.5; c.tick(); assert.equal(v.currentTime, 5.5);      // inside the window: left alone
+  range = D.clipRange(false, 5, 1, 10); v.currentTime = 9; c.tick(); assert.equal(v.currentTime, 9);   // full clip: never loops early
   const ev = (x) => ({ clientX: x, button: 0, pointerId: 1, preventDefault() {}, stopPropagation() {} });
   tr.pointerdown(ev(20)); assert.equal(c.dragging(), true); assert.equal(v.currentTime, 2);
   v.seeking = true; tr.pointermove(ev(80)); assert.equal(v.currentTime, 2); assert.equal(c.time(), 8);    // still seeking: remembered, not sent
   tr.pointerup(ev(80)); assert.equal(v.currentTime, 8); assert.equal(released, 1); assert.equal(c.dragging(), false);
+});
+t("report: totals come from saved primary counts, and points with no count are listed", () => {
+  const results = { recording: { video_id: "T1 411" }, run: { model_version: "m.pth" }, protocol: { window_start_s: 60, window_end_s: 960 }, subsamples: [{ subsample_id: "ss_02", t_s: 120 }, { subsample_id: "ss_01", t_s: 60 }, { subsample_id: "ss_03", t_s: 180 }] };
+  const saved = { mean_count_reviewed: 4, qc: { ss_01: { recount_needed: true } }, qc_agreement: 90,
+    latest_primary: { ss_01: { total_fish_count: 3, invertebrate_count: 1, unknown_count: 2, species_counts: { "Gadus morhua": 2, "Carcinus maenas": 1 }, counter: "=Sam" }, ss_02: { total_fish_count: 5, invertebrate_count: 0, species_counts: { "Gadus morhua": 4 } } } };
+  const r = D.buildReport(results, saved);
+  assert.deepEqual([r.planned, r.counted, r.totalFish, r.totalInv, r.totalUnknown, r.meanCount, r.qcPairs, r.qcRecounts], [3, 2, 8, 1, 2, 4, 1, 1]);
+  assert.deepEqual(r.points.map((p) => p.id), ["ss_01", "ss_02", "ss_03"]);
+  assert.deepEqual(r.species[0], { name: "Gadus morhua", total: 6, points: 2, meanCount: 3 });
+  assert.equal(r.zeroPoints, 0); assert.equal(r.sd.toFixed(3), "1.414");
+  assert.equal(r.points[2].counted, false);
+  const csv = D.reportCsv(r, (t) => t + "s");
+  assert.match(csv.split("\r\n")[0], /Count: Gadus morhua/);
+  assert.match(csv, /'=Sam/);          // typed text cannot become a formula
+  assert.match(csv.split("\r\n")[3], /,no,/);
 });
 t("species: the list follows the mark kind, and names switch without changing what is saved", () => {
   const idx = L.buildSpeciesIndex([{ scientific_name: "Gadus morhua", common_names: ["Atlantic cod"], kind: "fish" }, { scientific_name: "Carcinus maenas", common_names: ["European green crab"], kind: "invertebrate" }, { scientific_name: "Mystery", common_names: [] }]);
@@ -146,8 +163,8 @@ t("menu placement stays inside the viewport", () => {
 });
 t("clip time is relative to the count frame, and the count second is half a second either side", () => {
   assert.equal(L.relTime(0, 5), "-5.0 s"); assert.equal(L.relTime(5, 5), "0.0 s"); assert.equal(L.relTime(7.34, 5), "+2.3 s");
-  assert.ok(L.inCountWindow(4.5, 5) && L.inCountWindow(5.5, 5) && L.inCountWindow(5, 5));
-  assert.ok(!L.inCountWindow(4.49, 5) && !L.inCountWindow(5.51, 5));
+  assert.ok(L.inCountWindow(5, 5) && L.inCountWindow(5.5, 5) && L.inCountWindow(6, 5));
+  assert.ok(!L.inCountWindow(4.99, 5) && !L.inCountWindow(6.01, 5));
   assert.deepEqual(L.SPEEDS, [1, 0.5, 0.25]);
 });
 t("views are kept in a fixed order with unknown names dropped", () => {

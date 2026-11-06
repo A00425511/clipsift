@@ -19,7 +19,8 @@
   const MAX_K = 24;            // most zoom, relative to the fitted view
   const VIEWS = ["frame", "movement", "clip"];   // recorded per label: which views the person used
   const SPECIES_MAX = 80;
-  const COUNT_HALF_S = 0.5;    // the designated count second is half a second either side of the frame's moment
+  const COUNT_WINDOW_S = 1;    // the designated count second starts at the frame's moment
+  const COUNT_TOLERANCE_S = 0.5;   // a fish first seen this close either side may count
   const SPEEDS = [1, 0.5, 0.25];
   // Not fish: hard negatives, things that could fool a computer. Keep ids in step with worker.js and app/server.py.
   const NOT_FISH_CATEGORIES = [
@@ -136,7 +137,7 @@
     return { x: Math.max(m, Math.min(x, vw - w - m)), y: Math.max(m, Math.min(y, vh - h - m)) };
   }
   // Whether a moment in the clip is inside the count second.
-  function inCountWindow(t, countS) { return Math.abs(t - countS) <= COUNT_HALF_S; }
+  function inCountWindow(t, countS) { return D.inCount(t, countS, COUNT_WINDOW_S); }
   function categoryLabel(id) { const c = NOT_FISH_CATEGORIES.find((x) => x.id === id); return c ? c.label : ""; }
   // A saved or drafted point made safe: known kind (fish if unknown), species only on animals, category only on not_fish.
   function cleanPoint(p) {
@@ -550,10 +551,12 @@
   function paintHudStatic() {
     const len = clipLen(), c = countS();
     const w = $("hud-window");
-    w.style.left = Math.max(0, (c - COUNT_HALF_S) / len * 100) + "%"; w.style.width = (2 * COUNT_HALF_S / len * 100) + "%";
+    const bands = D.countBands(c, COUNT_WINDOW_S, COUNT_TOLERANCE_S, len), tol = $("hud-tol");
+    w.style.left = bands.count.left + "%"; w.style.width = bands.count.width + "%";
+    tol.style.left = bands.tolerance.left + "%"; tol.style.width = bands.tolerance.width + "%";
     $("hud-speed").textContent = S.speed + "x";
   }
-  const playRange = () => D.clipRange(S.countOnly, countS(), COUNT_HALF_S, clipLen());
+  const playRange = () => D.clipRange(S.countOnly, countS(), COUNT_WINDOW_S, clipLen());
   function paintHud() {
     const v = $("clip"), t = (S.clip ? S.clip.time() : v.currentTime) || 0, len = clipLen(), c = countS();
     $("hud-time").textContent = relTime(t, c);

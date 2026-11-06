@@ -12,13 +12,21 @@ import csv
 import io
 import json
 import math
+import hashlib
 import re
+import shutil
 import uuid
 import threading
+import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, Response, abort, jsonify, request, send_file, send_from_directory
+
+from clipsift import protocol as proto
+from clipsift.cli import VIDEO_EXT, _expand
+
+from .jobs import JobQueue, safe_run_name
 
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
@@ -33,6 +41,8 @@ MIME = {"still": "image/jpeg", "diff": "image/jpeg", "loop": "video/mp4"}
 DECISIONS = {"confirm", "reject", "unknown", "needs_second_look"}
 SLIDERS = ("brightness", "contrast", "saturation")
 ENHANCE_PRESETS = ("off", "light", "strong", "silhouette")   # keep in step with app/static/display.js
+PREVIEW_MINUTES = (1, 2, 3, 4, 5)   # the protocol's window start: 1 minute, up to 4 more
+LONG_VIDEO_MINUTES = ((25 * 60, (7.5, 10)), (30 * 60, (12.5, 15)))   # comments in the draft allow more on long videos
 SUB_FILES = {"still": "still.jpg", "diff": "diff.jpg", "context": "context.mp4"}
 SUB_MIME = {"still": "image/jpeg", "diff": "image/jpeg", "context": "video/mp4"}
 PASSES = {"primary", "qc_blind", "recount"}
@@ -151,13 +161,15 @@ def clean_pair(value, field, lo, hi):
     return [clean_int(v, field, lo, hi, allow_none=False) for v in value]
 
 
-def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets_dir=None, labels_path=None) -> Flask:
+def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets_dir=None, labels_path=None, videos_dir=None) -> Flask:
     app = Flask(__name__, static_folder=str(APP_DIR / "static"), static_url_path="/static")
     runs_root = Path(runs_dir).resolve()
     species_file = Path(species_path) if species_path else DEFAULT_SPECIES
     aliases_file = Path(aliases_path) if aliases_path else DEFAULT_ALIASES
     label_sets_root = Path(label_sets_dir).resolve() if label_sets_dir else DEFAULT_LABEL_SETS.resolve()
     labels_file = Path(labels_path) if labels_path else DEFAULT_LABELS
+    videos_root = Path(videos_dir).resolve() if videos_dir else (PROJECT_ROOT / "videos")
+    jobs = JobQueue(runs_root, PROJECT_ROOT)
     write_lock = threading.Lock()
     app.config.update(RUNS_ROOT=runs_root, SPECIES_FILE=species_file, ALIASES_FILE=aliases_file, LABEL_SETS_ROOT=label_sets_root, LABELS_FILE=labels_file)
 
@@ -571,6 +583,158 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                        latest_recording_notes=notes[-1] if notes else None,
                        **qc_and_means(results, sub_reviews))
 
+    # ---- new videos: pick or add a video, then process it in the background ----
+    def inbox_entries():
+        """Videos in the videos folder. GoPro chapters of one video are one entry."""
+        if not videos_root.is_dir():
+            return []
+        files = [f for f in _expand([videos_root]) if not f.name.endswith(".part")]
+        groups = proto.group_chapters(files)
+        entries = [paths for key, paths in groups.items() if key != "_other"]
+        entries += [[p] for p in groups.get("_other", [])]
+        return [{"id": paths[0].name, "files": [p.name for p in paths], "size": sum(p.stat().st_size for p in paths),
+                 "suggested_name": safe_run_name(paths[0].stem), "paths": paths} for paths in entries]
+
+    def paths_from(data):
+        """The files for a job: an entry in the videos folder, or a typed path to a file or a folder of chapters."""
+        chosen, typed = data.get("video"), data.get("path")
+        if chosen:
+            hit = next((e for e in inbox_entries() if e["id"] == chosen), None)
+            if hit is None:
+                raise BadInput("That video is no longer in the videos folder.")
+            return hit["paths"]
+        if not isinstance(typed, str) or not typed.strip():
+            raise BadInput("Choose a video first.")
+        target = Path(typed.strip().strip('"')).expanduser()
+        if not target.exists():
+            raise BadInput("No file or folder at that path.")
+        files = _expand([target])
+        if not files or any(f.suffix.lower() not in VIDEO_EXT for f in files):
+            raise BadInput("That path is not a video, or a folder holding videos.")
+        groups = proto.group_chapters(files)
+        if target.is_dir() and (len(groups) > 1 or len(groups.get("_other", [])) > 1):
+            raise BadInput("That folder holds more than one video. Give the path to one video.")
+        return next(iter(groups.values()))
+
+    def detector_ready():
+        return importlib.util.find_spec("rfdetr") is not None and any((PROJECT_ROOT / "models").glob("cfd-rf-detr-*.pth"))
+
+    @app.get("/api/videos")
+    def list_videos():
+        entries = [{k: v for k, v in e.items() if k != "paths"} for e in inbox_entries()]
+        return jsonify(videos=entries, folder=str(videos_root), detector_ready=detector_ready())
+
+    @app.put("/api/videos/upload")
+    def upload_video():
+        # The custom header stops another website from sending a file here: browsers refuse it without our say-so.
+        if request.headers.get("X-ClipSift-Upload") != "1":
+            raise BadInput("Upload header missing")
+        name = re.sub(r'[\x00-\x1f\\/:*?"<>|]', "_", Path(request.args.get("name", "")).name).strip()
+        if not name or name.startswith(".") or Path(name).suffix.lower() not in VIDEO_EXT:
+            raise BadInput("Choose a video file (mp4, mov, m4v, avi or mkv).")
+        videos_root.mkdir(parents=True, exist_ok=True)
+        dest, part = videos_root / name, videos_root / (name + ".part")
+        if dest.exists():
+            raise BadInput("A video with that name is already in the folder. Pick it from the list.")
+        size = request.content_length or 0
+        if size and shutil.disk_usage(videos_root).free < size + 1_000_000_000:
+            raise BadInput("Not enough free disk space for that video.")
+        try:
+            with open(part, "wb") as f:
+                shutil.copyfileobj(request.stream, f, 4 * 1024 * 1024)
+            if size and part.stat().st_size != size:
+                raise BadInput("The upload stopped early. Try again.")
+            part.replace(dest)
+        finally:
+            part.unlink(missing_ok=True)
+        return jsonify(id=name, suggested_name=safe_run_name(dest.stem))
+
+    @app.post("/api/videos/preview")
+    def video_preview():
+        """Small frames at each candidate window start, so a person can see when the sediment settles."""
+        import cv2
+        from clipsift.video import Timeline, resize_to_width
+        paths = paths_from(json_body())
+        stamp = "|".join(f"{p}:{p.stat().st_size}:{p.stat().st_mtime}" for p in paths)
+        key = hashlib.sha256(stamp.encode("utf-8")).hexdigest()[:16]
+        folder = runs_root / ".jobs" / "preview" / key
+        folder.mkdir(parents=True, exist_ok=True)
+        line = Timeline(paths)
+        minutes = list(PREVIEW_MINUTES)
+        for longer_than, extra in LONG_VIDEO_MINUTES:
+            if line.duration_s > longer_than:
+                minutes += extra
+        frames = []
+        for m in minutes:
+            t = m * 60
+            if t >= line.duration_s - 60:
+                continue
+            out = folder / f"{int(t)}.jpg"
+            if not out.is_file():
+                frame = line.get_frame(t)
+                if frame is None:
+                    continue
+                cv2.imwrite(str(out), resize_to_width(frame, 480), [cv2.IMWRITE_JPEG_QUALITY, 80])
+            frames.append({"t_s": t, "url": f"/api/videos/preview/{key}/{int(t)}.jpg"})
+        return jsonify(duration_s=line.duration_s, frames=frames)
+
+    @app.get("/api/videos/preview/<key>/<name>")
+    def video_preview_image(key, name):
+        if not re.fullmatch(r"[0-9a-f]{16}", key) or not re.fullmatch(r"\d+\.jpg", name):
+            abort(404, "Not found")
+        path = runs_root / ".jobs" / "preview" / key / name
+        if not path.is_file():
+            abort(404, "Not found")
+        return send_file(path, mimetype="image/jpeg")
+
+    @app.get("/api/runs/<run_id>/window")
+    def window_video(run_id):
+        path = run_dir_for(run_id) / "window.mp4"
+        if not path.is_file():
+            abort(404, "No window video for this run")
+        return send_file(path, mimetype="video/mp4", conditional=True)
+
+    @app.get("/api/jobs")
+    def list_jobs():
+        return jsonify(jobs=jobs.list())
+
+    @app.post("/api/jobs")
+    def add_job():
+        data = json_body()
+        paths = paths_from(data)
+        name = clean_str(data.get("name"), "name", 100) or safe_run_name(paths[0].stem)
+        if not NAME_RE.match(name):
+            raise BadInput("Use only letters, numbers, dots, dashes and underscores in the name.")
+        if (runs_root / name / "results.json").exists() or jobs.busy_with(name):
+            raise BadInput("A run with that name already exists. Choose another name, so its saved counts stay safe.")
+        layer = data.get("layer", 0)
+        if layer not in (0, 1):
+            raise BadInput("layer must be 0 or 1")
+        if layer == 1 and not detector_ready():
+            raise BadInput("The fish detector is not installed here. Turn it off to process without it.")
+        def seconds(key):
+            v = data.get(key)
+            if v is None or v == "":
+                return None
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v < 1e6:
+                raise BadInput(f"{key} must be a number of seconds")
+            return v
+        ws, we = seconds("window_start"), seconds("window_end")
+        if ws is not None and we is not None and we <= ws:
+            raise BadInput("The window must end after it starts.")
+        interval = seconds("interval")
+        if interval is not None and not 5 <= interval <= 600:
+            raise BadInput("interval must be between 5 and 600 seconds")
+        video_id = clean_str(data.get("video_id"), "video_id", 100) or None
+        return jsonify(jobs.add(name, paths, layer, ws, we, video_id, interval)), 201
+
+    @app.post("/api/jobs/<job_id>/cancel")
+    def cancel_job(job_id):
+        json_body()
+        if not jobs.cancel(job_id):
+            raise BadInput("That job is not running.")
+        return jsonify(ok=True)
+
     # ---- species -----------------------------------------------------------
     @app.get("/api/species")
     def get_species():
@@ -944,8 +1108,9 @@ def main(argv=None):
     p.add_argument("--aliases", default=None, help="local alias file (default app/local_aliases.jsonl)")
     p.add_argument("--label-sets", default=None, help="folder of label sets (default label_sets/)")
     p.add_argument("--labels", default=None, help="file the label page saves to (default app/local_labels.jsonl)")
+    p.add_argument("--videos", default=None, help="folder of videos to process (default videos/)")
     args = p.parse_args(argv)
-    app = create_app(args.runs, args.species, args.aliases, args.label_sets, args.labels)
+    app = create_app(args.runs, args.species, args.aliases, args.label_sets, args.labels, args.videos)
     print(f"ClipSift: http://127.0.0.1:{args.port}  (runs folder: {app.config['RUNS_ROOT']})")
     app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
 

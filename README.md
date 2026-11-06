@@ -6,6 +6,8 @@ Status: built and tested on a synthetic clip. The Community Fish Detector backen
 
 ## What it does
 
+ClipSift follows Coastal Action's video analysis protocol step by step: see `docs/PROTOCOL_WORKFLOW.md`, which replaces anything below about motion segments. The motion scan is off by default.
+
 The main unit of review is the **subsample point**, following Coastal Action's draft video analysis protocol:
 
 - The analysis window is the video minus a trimmed start and end (default 60 s each, up to 900 s long).
@@ -78,7 +80,7 @@ For short clips, use small protocol values in a config file, for example `trim_s
 ## Review app
 
 ```
-python -m app.server --runs runs --port 8765
+python -m app.server --runs runs --port 8765   # then press New video in the app to add and process a video
 ```
 
 Then open the address it prints. In the review app, **Show model suggestions** (under Mark what you see) is off every time a recording opens, so the model does not sway the count. On shows the boxes and the Suggested counts with a short caution; it is never stored, and QC mode keeps it off and disabled. The app opens in a **Simple view**: one path for each point (1 Watch the clip, 2 Mark what you see, 3 Check your count, 4 Save and go to the next). The **More tools** button in the header shows everything else (motion segments tab, recording notes, QC mode, exports, grid settings, contrast sliders, ellipse and box tools). The choice is remembered in the browser.

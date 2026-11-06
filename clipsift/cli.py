@@ -33,6 +33,8 @@ def cmd_run(a) -> int:
         ov.setdefault("stages", {})["detector"] = a.detector
     if a.sample_fps:
         ov["sample_fps"] = a.sample_fps
+    if a.interval:
+        ov.setdefault("protocol", {})["interval_s"] = a.interval
     if a.device:
         ov.setdefault("detector", {}).setdefault("cfd", {})["device"] = a.device
     config_path = a.config
@@ -95,6 +97,7 @@ def main(argv=None) -> int:
     r.add_argument("--preset", help="name of a file in config/presets, e.g. cfd_medium_clahe")
     r.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], help="device for the cfd detector")
     r.add_argument("--id", help="recording id (folder name)"); r.add_argument("--video-id")
+    r.add_argument("--interval", type=float, help="seconds between count points")
     r.add_argument("--window-start", type=float); r.add_argument("--window-end", type=float)
     r.set_defaults(fn=cmd_run)
     e = sp.add_parser("export", help="write CSVs for a run folder")

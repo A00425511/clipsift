@@ -1,5 +1,7 @@
 # ClipSift skeleton: build spec (working title)
 
+**Read `PROTOCOL_WORKFLOW.md` first. It overrides this file wherever they differ.** This file is the older build history. Its motion segment, active and set-aside design is retired from the workflow.
+
 Local tool that helps Coastal Action review about 1 hour GoPro recordings of turbid Nova Scotia water: detect, track, count fish, and let a person confirm. Runs offline on a desktop. Background: ../2026 Problem Prep/p2-concepts.md.
 
 This is a skeleton a five-person student team extends over the weekend, so favour clear, small, readable code over cleverness. Real footage hasn't been integrated yet. It must run on a machine with no GPU.

@@ -145,6 +145,34 @@ class Timeline:
                       "loops. Falling back to the OpenCV writer (mp4v), which many browsers cannot play.")
         return self._cut_loop_opencv(ch, local_start, dur, out_path, max_width)
 
+    def cut_window(self, start_s: float, end_s: float, out_path, max_width: int = 0, crf: int = 23) -> Path:
+        """Cut a long stretch that may cross chapters: one piece per chapter, then join them."""
+        out_path = Path(out_path)
+        pieces, t = [], start_s
+        while t < end_s - 0.05:
+            ch = self._chapter_at(t)
+            stop = min(end_s, ch["offset_s"] + ch["duration_s"])
+            if stop <= t:
+                break
+            pieces.append(self.cut_loop(t, stop, out_path.with_name(f"{out_path.stem}_part{len(pieces)}.mp4"), max_width, crf))
+            t = stop
+        if len(pieces) == 1:
+            pieces[0].replace(out_path)
+            return out_path
+        ff = find_ffmpeg()
+        if not ff:
+            raise FFmpegMissing("ffmpeg is needed to join chapters into one window video.")
+        listing = out_path.with_suffix(".txt")
+        listing.write_text("".join(f"file '{p.name}'\n" for p in pieces), encoding="utf-8")
+        r = subprocess.run([ff, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy",
+                            "-movflags", "+faststart", str(out_path)], capture_output=True, text=True)
+        listing.unlink(missing_ok=True)
+        for p in pieces:
+            p.unlink(missing_ok=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {r.stderr.strip()[:400]}")
+        return out_path
+
     @staticmethod
     def _cut_loop_opencv(ch, local_start, dur, out_path, max_width):
         cap = cv2.VideoCapture(ch["path"])

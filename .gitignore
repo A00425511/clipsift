@@ -12,6 +12,7 @@ __pycache__/
 .venv/
 
 # Video and generated run output stay out of git (size, and rights on footage)
+videos/
 runs/*
 !runs/.gitkeep
 deploy/public/

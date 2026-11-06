@@ -186,7 +186,7 @@
     cur: null, points: [], noAnimals: false, seconds: 0, kind: "fish", category: "", undo: [],
     view: { k: 1, x: 0, y: 0 }, fit: 1, motion: false, loadToken: 0,
     saving: false, retryTimer: null, retries: 0, lastInput: Date.now(), draftTimer: null, raf: 0,
-    bright: 100, contrast: 100, enhance: "off", restart: true, names: "common",
+    bright: 100, contrast: 100, enhance: "off", restart: true, countOnly: false, stopAfterDrag: false, clip: null, names: "common",
     movement: false, diffOk: false, views: [], speed: 1, spaceStarted: false, hudRaf: 0, playMsg: false,
     speciesIndex: null, menuPoint: null, spChoices: [], spActive: -1, lastPos: [0, 0],
   };
@@ -553,30 +553,32 @@
     w.style.left = Math.max(0, (c - COUNT_HALF_S) / len * 100) + "%"; w.style.width = (2 * COUNT_HALF_S / len * 100) + "%";
     $("hud-speed").textContent = S.speed + "x";
   }
+  const playRange = () => D.clipRange(S.countOnly, countS(), COUNT_HALF_S, clipLen());
   function paintHud() {
-    const v = $("clip"), t = v.currentTime || 0, len = clipLen(), c = countS();
+    const v = $("clip"), t = (S.clip ? S.clip.time() : v.currentTime) || 0, len = clipLen(), c = countS();
     $("hud-time").textContent = relTime(t, c);
     $("hud-head").style.left = Math.min(100, t / len * 100) + "%";
     const inWin = inCountWindow(t, c);
     $("hud-count").hidden = !inWin; $("stage").classList.toggle("counting", inWin);
   }
-  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
+  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } S.clip.tick(); paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
   function setMotion(on) {
     on = !!on && !!S.cur && !!S.cur.clip_url;
     if (on === S.motion) return;
     S.motion = on;
-    const v = $("clip");
+    const v = $("clip"), r = playRange();
     $("b-motion").setAttribute("aria-pressed", on);
     $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on);
     if (on) {
       closeMenu(false);
       v.playbackRate = S.speed; markView("clip"); paintHudStatic();
-      if (S.restart && v.currentTime > 0.1) v.currentTime = 0;   // already rewound on release, so usually nothing to do
+      const outside = v.currentTime < r.start - 0.05 || v.currentTime > r.end;
+      if (outside || (S.restart && v.currentTime > r.start + 0.1)) v.currentTime = r.start;   // already rewound on release, so usually nothing to do
       v.play().catch(() => {});
       if (!S.hudRaf) S.hudRaf = requestAnimationFrame(hudLoop);
     } else {
       v.pause();     // back to the exact frame (or the movement view), nothing moved
-      if (S.restart) v.currentTime = 0;   // rewind now, so the next press starts at once
+      if (S.restart) v.currentTime = r.start;   // rewind now, so the next press starts at once
       $("stage").classList.remove("counting"); $("hud-count").hidden = true;
       if (S.playMsg) { S.playMsg = false; msg(""); }
     }
@@ -591,6 +593,11 @@
   function setRestart(on) {
     S.restart = !!on; $("b-restart").setAttribute("aria-pressed", S.restart);
     LS.set("clipsift.label.restart", S.restart ? "1" : "0");
+  }
+  function setCountOnly(on) {
+    S.countOnly = !!on; $("count-only").setAttribute("aria-pressed", S.countOnly);
+    LS.set("clipsift.count_only", S.countOnly ? "1" : "0");
+    if (S.cur && !S.motion && S.restart) $("clip").currentTime = playRange().start;
   }
   function jumpToCount() {
     if (!S.cur) return;
@@ -843,12 +850,18 @@
     else if (k === "z") undo();
     else if (k === "m") setMovement(!S.movement);
     else if (k === "r") setRestart(!S.restart);
+    else if (k === "o") setCountOnly(!S.countOnly);
     else if (k === "c") { S.enhance = D.nextEnhance(S.enhance); applyFilters(); }
     else if (k === "n") commit("none");
     else if (k === "s") commit("skip");
     else if (e.key === "Escape") { $("help-panel").hidden = true; $("btn-help").setAttribute("aria-expanded", "false"); $("mine-panel").hidden = true; }
   });
-  function spaceUp() { spaceDown = false; if (S.spaceStarted) { S.spaceStarted = false; setMotion(false); } }
+  function spaceUp() {
+    spaceDown = false;
+    if (!S.spaceStarted) return;
+    S.spaceStarted = false;
+    if (S.clip.dragging()) S.stopAfterDrag = true; else setMotion(false);   // let go mid-drag: stop when the mouse lets go too
+  }
   document.addEventListener("keyup", (e) => {
     if (e.key !== " ") return;
     if (!typing(e.target) && !menuEl().contains(e.target) && $("who-dialog").hidden) e.preventDefault();   // a focused button must not also "click"
@@ -905,6 +918,10 @@
     $("s-contrast").addEventListener("input", (e) => { S.contrast = +e.target.value; applyFilters(); });
     buildEnhance();
     $("b-restart").addEventListener("click", () => setRestart(!S.restart));
+    $("count-only").addEventListener("click", () => setCountOnly(!S.countOnly));
+    S.clip = D.clipControl({ video: $("clip"), track: document.querySelector("#clip-hud .lb-track"), range: playRange, active: () => S.motion, paint: paintHud,
+      release: () => { if (S.stopAfterDrag) { S.stopAfterDrag = false; setMotion(false); } else $("clip").play().catch(() => {}); } });
+    setCountOnly(LS.get("clipsift.count_only") === "1");
     setRestart(LS.get("clipsift.label.restart") !== "0");
     setNames(LS.get("clipsift.species_names"));
     $("b-reset").addEventListener("click", resetFilters);

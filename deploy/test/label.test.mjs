@@ -15,6 +15,33 @@ t("enhance: presets cycle back to off, and unknown ids are off", () => {
   assert.deepEqual(seen, ["light", "strong", "silhouette", "off"]);
   assert.equal(D.cleanEnhance("nope"), "off");
 });
+t("clip: full clip or the count second, and the playhead stays inside what plays", () => {
+  assert.deepEqual(D.clipRange(false, 5, 0.5, 10), { start: 0, end: 10, only: false });
+  assert.deepEqual(D.clipRange(true, 5, 0.5, 10), { start: 4.5, end: 5.5, only: true });
+  assert.deepEqual(D.clipRange(true, 0, 0.5, 5), { start: 0, end: 0.5, only: true });   // point at the very start of the video
+  assert.equal(D.clipRange(true, null, 0.5, 10).only, false);                           // a motion segment has no count second
+  const full = D.clipRange(false, 5, 0.5, 10), only = D.clipRange(true, 5, 0.5, 10);
+  assert.equal(D.scrubTime(150, 100, 200, 10, full), 2.5);
+  assert.equal(D.scrubTime(0, 100, 200, 10, full), 0);
+  assert.equal(D.scrubTime(150, 100, 200, 10, only), 4.5);
+  assert.equal(D.scrubTime(290, 100, 200, 10, only), 5.5);
+});
+t("clip control: the count second loops, and a fast drag still lands where the mouse let go", () => {
+  const on = {}, tr = {};
+  const v = { duration: 10, currentTime: 5.49, paused: false, seeking: false, plays: 0, pause() { this.paused = true; }, play() { this.paused = false; this.plays++; return Promise.resolve(); }, addEventListener(n, f) { on[n] = f; } };
+  const track = { addEventListener(n, f) { tr[n] = f; }, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, width: 100 }) };
+  let range = D.clipRange(true, 5, 0.5, 10), released = 0;
+  const c = D.clipControl({ video: v, track, range: () => range, active: () => true, paint() {}, release() { released++; } });
+  c.tick();
+  assert.equal(v.currentTime, 4.5); assert.equal(v.paused, true);
+  on.seeked(); assert.equal(v.paused, false); assert.equal(v.plays, 1);
+  v.currentTime = 5; c.tick(); assert.equal(v.currentTime, 5);          // inside the window: left alone
+  range = D.clipRange(false, 5, 0.5, 10); v.currentTime = 9; c.tick(); assert.equal(v.currentTime, 9);   // full clip: never loops early
+  const ev = (x) => ({ clientX: x, button: 0, pointerId: 1, preventDefault() {}, stopPropagation() {} });
+  tr.pointerdown(ev(20)); assert.equal(c.dragging(), true); assert.equal(v.currentTime, 2);
+  v.seeking = true; tr.pointermove(ev(80)); assert.equal(v.currentTime, 2); assert.equal(c.time(), 8);    // still seeking: remembered, not sent
+  tr.pointerup(ev(80)); assert.equal(v.currentTime, 8); assert.equal(released, 1); assert.equal(c.dragging(), false);
+});
 t("species: the list follows the mark kind, and names switch without changing what is saved", () => {
   const idx = L.buildSpeciesIndex([{ scientific_name: "Gadus morhua", common_names: ["Atlantic cod"], kind: "fish" }, { scientific_name: "Carcinus maenas", common_names: ["European green crab"], kind: "invertebrate" }, { scientific_name: "Mystery", common_names: [] }]);
   assert.deepEqual(D.forKind(idx, "fish").map((i) => i.sci), ["Gadus morhua", "Mystery"]);

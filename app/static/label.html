@@ -42,7 +42,7 @@
     <li>Right-click a dot to change its type (including to or from Unsure), set a species if you know it, or remove it. Species is optional. The list shows fish for a fish mark and invertebrates for an invertebrate mark, and you can switch between common and scientific names.</li>
     <li>Stick to your own name. Do not discuss frames until both people have saved them.</li>
   </ul>
-  <p class="hint">Zoom with the mouse wheel and drag to move. Hold <kbd>Space</kbd> (or press Motion) to play the 10 second clip in the picture, 5 seconds before to 5 seconds after the frame. It is the same zoom, and your dots stay on top. It starts from the beginning each time; turn off Restart each time (<kbd>R</kbd>) to carry on from where it stopped. Use 0.25x to slow it down. Count only what is in the frame during the <b>Count frame</b> second. Dots cannot be added while the clip plays. <b>Enhance</b> (<kbd>C</kbd>) has Light, Strong and Silhouette settings; they change the display only. <b>Movement view</b> shows what changed, in black and white, and you can mark in either view. Click a dot to remove it. Another person labels every frame too, on their own. You never see their marks, and there are no computer suggestions here, so label what you see.</p>
+  <p class="hint">Zoom with the mouse wheel and drag to move. Hold <kbd>Space</kbd> (or press Motion) to play the 10 second clip in the picture, 5 seconds before to 5 seconds after the frame. It is the same zoom, and your dots stay on top. It starts from the beginning each time; turn off Restart each time (<kbd>R</kbd>) to carry on from where it stopped. Drag the white playhead to move through the clip, and use Count second only (<kbd>O</kbd>) to loop just the count second. Use 0.25x to slow it down. Count only what is in the frame during the <b>Count frame</b> second. Dots cannot be added while the clip plays. <b>Enhance</b> (<kbd>C</kbd>) has Light, Strong and Silhouette settings; they change the display only. <b>Movement view</b> shows what changed, in black and white, and you can mark in either view. Click a dot to remove it. Another person labels every frame too, on their own. You never see their marks, and there are no computer suggestions here, so label what you see.</p>
   <button type="button" id="help-close">Got it</button>
 </section>
 
@@ -97,6 +97,7 @@
       <button type="button" id="b-movement" aria-pressed="false" title="Black and white view of what changed. Bright areas moved. Marking works in either view. (M)">Movement view <kbd>M</kbd></button>
       <button type="button" id="b-motion" aria-pressed="false" title="Play the 10 second clip in the picture. Press to start or stop, or hold Space.">Motion <kbd>Space</kbd></button>
       <button type="button" id="b-restart" aria-pressed="true" title="On: the clip starts from the beginning each time. Off: it carries on from where it stopped. (R)">Restart each time <kbd>R</kbd></button>
+      <button type="button" id="count-only" aria-pressed="false" title="On: only the 1 second Count frame plays, on a loop. Off: the full clip plays. (O)">Count second only <kbd>O</kbd></button>
       <span class="lbl">Speed</span>
       <span class="lb-speeds" role="group" aria-label="Clip speed">
         <button type="button" data-speed="1" aria-pressed="true">1x</button>

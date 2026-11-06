@@ -20,7 +20,7 @@
    
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
-    motion: false, restart: true, spaceDown: false, loopWasPlaying: false, hudRaf: 0, names: "common",
+    motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, stopAfterDrag: false, loopWasPlaying: false, hudRaf: 0, names: "common",
     zoom: { k: 1, x: 0, y: 0 }, tool: "pan", drag: null,
     more: localStorage.getItem("clipsift.moretools") === "1",   // "More tools" toggle, remembered
   };
@@ -253,6 +253,7 @@
       if (g) { $("grid-rows").value = g.rows; $("grid-cols").value = g.cols; }
       S.enhance = D.cleanEnhance(localStorage.getItem("clipsift.enhance"));
       S.restart = localStorage.getItem("clipsift.restart") !== "0";
+      S.countOnly = localStorage.getItem("clipsift.count_only") === "1";
       S.names = D.cleanNameMode(localStorage.getItem("clipsift.species_names"));
     } catch (e) { /* ignore bad saved settings */ }
     wireStatic();
@@ -599,8 +600,9 @@
   // ---------- motion: hold Space and the clip plays in the picture, same zoom, marks on top ----------
   const countHalf = () => proto().count_window_s / 2;   // the count second is centred on the point, as in the protocol
   function clipLen() { const v = $("stage-clip"); return v.duration && isFinite(v.duration) ? v.duration : 10; }
+  const clipRange = () => D.clipRange(S.countOnly, S.mode === "sub" ? countOffset() : null, countHalf(), clipLen());
   function paintHud() {
-    const v = $("stage-clip"), t = v.currentTime || 0, len = clipLen(), off = S.mode === "sub" ? countOffset() : null, half = countHalf();
+    const v = $("stage-clip"), t = (S.clip ? S.clip.time() : v.currentTime) || 0, len = clipLen(), off = S.mode === "sub" ? countOffset() : null, half = countHalf();
     const w = $("hud-window"); w.hidden = off == null;
     if (off != null) { const a = Math.max(0, off - half), b = Math.min(len, off + half); w.style.left = (a / len) * 100 + "%"; w.style.width = ((b - a) / len) * 100 + "%"; }
     $("hud-time").textContent = off != null ? D.relTime(t, off) : t.toFixed(1) + " s";
@@ -609,22 +611,24 @@
     const inWin = off != null && Math.abs(t - off) <= half;
     $("hud-count").hidden = !inWin; $("stage").classList.toggle("counting", inWin);
   }
-  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
+  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } S.clip.tick(); paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
   function setMotion(on) {
     const v = $("stage-clip"), loop = $("loop");
     on = !!on && !!S.selId && v.dataset.ok === "1";
     if (on === S.motion) return;
     S.motion = on;
-    $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on);
+    $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on); setPressed("motion-btn", on);
+    const r = clipRange();
     if (on) {
       S.loopWasPlaying = !loop.paused; loop.pause();
       v.playbackRate = currentSpeed();
-      if (S.restart && v.currentTime > 0.1) v.currentTime = 0;   // already rewound on release, so usually nothing to do
+      const outside = v.currentTime < r.start - 0.05 || v.currentTime > r.end;
+      if (outside || (S.restart && v.currentTime > r.start + 0.1)) v.currentTime = r.start;   // already rewound on release, so usually nothing to do
       v.play().catch(() => {});
       if (!S.hudRaf) S.hudRaf = requestAnimationFrame(hudLoop);
     } else {
       v.pause();     // back to the exact still, nothing moved
-      if (S.restart) v.currentTime = 0;   // rewind now, so the next press starts at once
+      if (S.restart) v.currentTime = r.start;   // rewind now, so the next press starts at once
       $("stage").classList.remove("counting"); $("hud-count").hidden = true;
       if (S.loopWasPlaying) loop.play().catch(() => {});
     }
@@ -634,7 +638,18 @@
     S.restart = !!on; paintRestart();
     try { localStorage.setItem("clipsift.restart", S.restart ? "1" : "0"); } catch (e) { /* storage may be blocked */ }
   }
-  function spaceUp() { if (S.spaceDown) { S.spaceDown = false; setMotion(false); } }
+  function setCountOnly(on) {
+    S.countOnly = !!on; setPressed("count-only", S.countOnly);
+    try { localStorage.setItem("clipsift.count_only", S.countOnly ? "1" : "0"); } catch (e) { /* storage may be blocked */ }
+    if (S.selId) { const v = $("stage-clip"), r = clipRange(); if (!S.motion && S.restart) v.currentTime = r.start; }
+  }
+  function spaceUp() {
+    if (!S.spaceDown) return;
+    S.spaceDown = false;
+    if (!S.spaceStarted) return;
+    S.spaceStarted = false;
+    if (S.clip.dragging()) S.stopAfterDrag = true; else setMotion(false);   // let go mid-drag: stop when the mouse lets go too
+  }
 
   // ---------- species names: shown as common or scientific, always saved as scientific ----------
   const shownName = (sci) => { const it = S.index.find((x) => x.sci === sci); return it ? D.speciesName(it, S.names) : sci; };
@@ -1197,10 +1212,11 @@
     else if (k === "," ) frameStep(-1);
     else if (k === ".") frameStep(1);
     else if (k === "r") setRestart(!S.restart);
+    else if (k === "o") setCountOnly(!S.countOnly);
     else if (k === "c") { S.enhance = D.nextEnhance(S.enhance); applyFilters(); }
     else if (k === " " && !e.target.closest("button, a, input[type=checkbox], input[type=radio]")) {   // a control reached with Tab keeps its own Space
       e.preventDefault();
-      if (!e.repeat && !S.spaceDown) { S.spaceDown = true; setMotion(true); }
+      if (!e.repeat && !S.spaceDown) { S.spaceDown = true; if (!S.motion) { S.spaceStarted = true; setMotion(true); } }
     }
   }
 
@@ -1429,6 +1445,11 @@
     for (const b of document.querySelectorAll("[data-names]")) b.addEventListener("click", () => setNames(b.dataset.names));
     for (const p of D.ENHANCE_PRESETS) $("enhance-group").append(el("button", { type: "button", "data-enhance": p.id, title: p.title, text: p.label, on: { click: () => { S.enhance = p.id; applyFilters(); } } }));
     $("hold-restart").addEventListener("click", () => setRestart(!S.restart));
+    $("count-only").addEventListener("click", () => setCountOnly(!S.countOnly));
+    $("motion-btn").addEventListener("click", () => { S.spaceStarted = false; setMotion(!S.motion); });
+    setPressed("count-only", S.countOnly);
+    S.clip = D.clipControl({ video: $("stage-clip"), track: document.querySelector("#clip-hud .lb-track"), range: clipRange, active: () => S.motion, paint: paintHud,
+      release: () => { if (S.stopAfterDrag) { S.stopAfterDrag = false; setMotion(false); } else $("stage-clip").play().catch(() => {}); } });
     document.addEventListener("keyup", (e) => { if (e.key === " " && S.spaceDown) { e.preventDefault(); spaceUp(); } });
     window.addEventListener("blur", spaceUp);
     // After a mouse click, hand the keyboard back to the page, so Space plays the clip instead of pressing that control again.

@@ -15,6 +15,11 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 0.5.0 (2026-11-06)
+- Both pages: drag the playhead to move through the clip.
+- Both pages: Count second only toggle (O) loops just the 1 second count window. Off plays the full clip.
+- Review app: Motion button, so the clip can stay in the picture without holding Space.
+
 ### 0.4.0 (2026-11-06), commit ce5dfec
 Deployed to the team website.
 - Review app: hold Space to play the clip in the picture, with the count second highlighted.

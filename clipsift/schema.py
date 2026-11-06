@@ -25,9 +25,15 @@ class Detection:
     score: float = 0.0
     track_id: Optional[int] = None
     source: str = ""  # which backend made it, e.g. "onnx:model.onnx" or "motion_blob"
+    # Static-object filter (clipsift/static_filter.py). Rejected boxes are kept, not deleted.
+    static: bool = False  # True = judged a fixed object (pipe, pole, rock) or masked; hidden and not counted
+    static_reason: Optional[str] = None  # e.g. "persistent", "no_movement", "mask" (joined with "+")
+    movement: Optional[float] = None  # 90th percentile of absolute difference from the background, grey levels
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        if self.movement is not None:
+            d["movement"] = round(float(self.movement), 2)
         d["box"] = [round(float(v), 1) for v in self.box]
         d["t"] = round(float(self.t), 3)
         d["score"] = round(float(self.score), 4)
@@ -36,7 +42,9 @@ class Detection:
     @classmethod
     def from_dict(cls, d: dict) -> "Detection":
         return cls(t=float(d["t"]), box=list(d["box"]), score=float(d.get("score", 0.0)),
-                   track_id=d.get("track_id"), source=d.get("source", ""))
+                   track_id=d.get("track_id"), source=d.get("source", ""),
+                   static=bool(d.get("static", False)), static_reason=d.get("static_reason"),
+                   movement=None if d.get("movement") is None else float(d["movement"]))
 
 
 @dataclass

@@ -149,7 +149,7 @@ def export_run(run_dir, out_dir=None) -> list:
             "shake": s["flags"]["shake"], "low_visibility": s["flags"]["low_visibility"],
             "maxn": "" if c["maxn"] is None else c["maxn"], "mean_count": "" if c["mean_count"] is None else c["mean_count"],
             "unique_tracks": "" if c["unique_tracks"] is None else c["unique_tracks"],
-            "n_detections": len(s["detections"]),
+            "n_detections": sum(1 for d in s["detections"] if not d.get("static")),
             "detection_sources": ";".join(sorted({d["source"] for d in s["detections"]})),
             "review_priority": s["review_priority"], "n_reviews": len(rs),
             "review_decision": last.get("decision", ""), "review_species": last.get("species") or "",

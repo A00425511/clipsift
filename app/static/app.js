@@ -556,7 +556,7 @@
     const u = unit(S.selId);
     svg.hidden = true;
     if (!u || !suggestionsOn() || S.diff) return;
-    const dets = S.mode === "sub" ? (u.auto && u.auto.detections) : u.detections;
+    const dets = (S.mode === "sub" ? (u.auto && u.auto.detections) : u.detections || []).filter((d) => !d.static);  // static = pipe, pole or seabed
     if (!Array.isArray(dets) || !dets.length) return;
     svg.hidden = false;
     const NS = "http://www.w3.org/2000/svg";

@@ -268,7 +268,8 @@ class FakeCfdEmpty(CfdDetector):
 
 
 SMALL = {"protocol": {"trim_start_s": 2, "trim_end_s": 2, "window_length_s": 50, "interval_s": 10, "context_s": 2},
-         "detector": {"cfd": {"tile_size": 256}}, "layer": 1}
+         "detector": {"cfd": {"tile_size": 256}}, "layer": 1,
+         "static_filter": {"enabled": False}}  # the fake models box the same corner every time; see test_static_filter.py
 
 
 @pytest.fixture(scope="module")

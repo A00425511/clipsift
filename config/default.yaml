@@ -90,6 +90,36 @@ detector:
     min_area: 120         # pixels at detect_width
     max_area_frac: 0.25
 
+# Static-object filter (clipsift/static_filter.py), after detection, cfd only. Boxes it rejects are KEPT in
+# results.json with static: true and a static_reason; they are hidden by default and not counted.
+# Bias is toward keeping. It could remove a truly still animal (resting crab, hovering fish), and the model
+# only finds fish anyway. Defaults were set on two frames, then checked on one recording (STATIC-FILTER.md).
+static_filter:
+  enabled: true
+  persistence:           # boxes at nearly the same place and size in many sampled frames of a recording
+    enabled: true
+    share: 0.30          # share of sampled frames a box must recur in
+    iou: 0.5             # "nearly the same place and size"
+    min_frames: 6        # fewer sampled frames than this: skipped (a note is logged)
+    min_score: 0.05
+  movement:              # 90th percentile of |frame - temporal median background| inside the box
+    enabled: true
+    cutoff: 3.0          # grey levels at width 1920 after blur. 5 and above removed real fish on two frames.
+    percentile: 90.0
+    width: 1920
+    blur_sigma: 1.5
+    span_s: 5.0          # background frames from t-5 to t+5 s, one per step_s, never the frame itself
+    step_s: 1.0
+    exclude_s: 0.75
+    min_background_frames: 3   # fewer than this: not scored, box kept
+    persistent_keep_above: 8.0 # a persistent place is kept if the box itself clearly moves
+  protect_score: 0.5     # boxes this confident are never rejected by persistence or movement (the mask still applies)
+  mask_overlap: 0.5      # a box is masked if its centre, or this share of its area, is inside a polygon
+  masks: []              # hand mask, original pixels, per camera or recording. Example:
+                         #   - match: "T1-STAT2*"            # fnmatch on the recording id / file name, omit for all
+                         #     file: config/masks/t1s2.json  # from tools/make_static_mask.py, or give polygons:
+                         #     polygons: [[[100, 900], [180, 900], [180, 2100], [100, 2100]]]
+
 # Tiled inference: split each frame into overlapping tiles so small midwater fish (about 30 px long)
 # are not lost when the frame is shrunk to the model input. Off by default; slower.
 tiling:

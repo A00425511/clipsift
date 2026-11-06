@@ -196,6 +196,26 @@ else {
     assert.equal((await post({ ...lab, frame: "f2", points: [pts[0]], no_animals: true })).status, 400);
     assert.equal((await post({ ...lab, frame: "f2", points: [pts[0]] })).status, 200);   // only not fish is an ordinary labelled frame
   });
+  await t("unsure: accepted, carries no species or category, and can replace a fish", async () => {
+    const pts = [{ x: 1, y: 2, kind: "unsure" }, { x: 3, y: 4, kind: "unsure", species: "Gadus", category: "algae" }, { x: 5, y: 6, kind: "fish" }];
+    assert.equal((await post({ ...lab, frame: "f2", points: pts })).status, 200);
+    const mine = await (await L("/api/labels/mine?set=t1&frame=f2&name=Jacob")).json();
+    assert.deepEqual(mine.points, [{ x: 1, y: 2, kind: "unsure" }, { x: 3, y: 4, kind: "unsure" }, { x: 5, y: 6, kind: "fish" }]);
+    assert.equal((await post({ ...lab, frame: "f2", points: [pts[0]], no_animals: true })).status, 400);
+    assert.equal((await post({ ...lab, frame: "f2", points: [{ x: 9999, y: 1, kind: "unsure" }] })).status, 400);
+    assert.equal((await post({ ...lab, frame: "f2", points: [{ x: 1, y: 1, kind: "maybe" }] })).status, 400);
+    assert.equal((await post({ ...lab, frame: "f2", points: [pts[0]] })).status, 200);   // only unsure is an ordinary labelled frame
+    const st = JSON.parse(await (await L("/api/labels/status?set=t1&name=Jacob")).text());
+    assert.equal(st.mine.f2.n_points, 1);
+  });
+  await t("calibration: status shows counts and the caller's own state, never anyone's points", async () => {
+    assert.equal((await post({ ...lab, name: "Gina", frame: "f1", points: [{ x: 777, y: 888, kind: "unsure" }, { x: 12.5, y: 99.5, kind: "fish" }] })).status, 200);
+    const text = await (await L("/api/labels/status?set=t1&name=Ali")).text();
+    assert.ok(!text.includes("777") && !text.includes("888") && !text.includes("99.5") && !text.includes("\"points\""));
+    assert.ok(JSON.parse(text).counts.f1 >= 1);
+    const other = await (await L("/api/labels/mine?set=t1&frame=f1&name=Ali")).json();
+    assert.ok(!JSON.stringify(other).includes("777"));
+  });
   await t("species and views: cleaned, limited, stored, read back", async () => {
     const pts = [{ x: 1, y: 2, kind: "fish", species: "  Gadus \u0007 morhua\n " }, { x: 3, y: 4, kind: "invertebrate", species: "   " }, { x: 5, y: 6, kind: "fish", species: null }, { x: 7, y: 8, kind: "fish" }];
     assert.equal((await post({ ...lab, frame: "f2", points: pts, views: ["clip", "frame", "movement", "frame"] })).status, 200);

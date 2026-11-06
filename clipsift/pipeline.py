@@ -22,7 +22,8 @@ import cv2
 import numpy as np
 
 from . import protocol as proto
-from .config import config_hash
+from . import static_filter as sfm
+from .config import ROOT as ROOT_DIR, config_hash
 from .schema import (Counts, Detection, Recording, Results, Run, Subsample, Track, validate)
 from .stages import get_backend
 from .stages.layer1 import tiled_detect
@@ -48,6 +49,7 @@ class _Timer:
 
 def _mid_share(dets, rc) -> float:
     """Share of detections whose score sits in the mid-confidence band (review.mid_conf_*)."""
+    dets = sfm.live(dets)  # rejected static boxes do not drive review order
     if not dets or not rc:
         return 0.0
     lo, hi = rc["mid_conf_low"], rc["mid_conf_high"]
@@ -73,7 +75,7 @@ def review_priority_subsample(ss, rc=None, detector_ran=False) -> float:
     p = 0.5 + (0.2 if a["motion_near_point"] else 0.0) + (0.1 if a["movement_unidentified"] else 0.0)
     p += 0.1 if a["visibility_score"] < 0.25 else 0.0
     if detector_ran:
-        has = bool(a["detections"])
+        has = bool(sfm.live(a["detections"]))
         if has != bool(a["motion_near_point"]):
             p += 0.2
         p += 0.25 * _mid_share(a["detections"], rc)  # scaled by share, so points stay distinguishable
@@ -86,7 +88,7 @@ def review_priority_subsample(ss, rc=None, detector_ran=False) -> float:
 def subsample_status(auto: dict) -> str:
     """Suggested status for a point: boxes present is fish_unknown; motion without boxes stays
     movement_unidentified (never dropped); neither is none."""
-    if auto["detections"]:
+    if sfm.live(auto["detections"]):
         return "fish_unknown"
     if auto["motion_near_point"] or auto["movement_unidentified"]:
         return "movement_unidentified"
@@ -176,6 +178,16 @@ def sparse_detect(frames, detector, log=None):
                                mean_count=sum(per_t.values()) / len(per_t), unique_tracks=None)
 
 
+def recount_frames(per_t_dets: dict) -> Counts:
+    """Counts from {t: [Detection]} ignoring static boxes. Same fields as sparse_detect's Counts."""
+    per_t = {t: len(sfm.live(ds)) for t, ds in per_t_dets.items()}
+    if not per_t:
+        return Counts(maxn=0, maxn_time_s=None, mean_count=0.0, unique_tracks=None)
+    tmax = max(per_t, key=lambda k: per_t[k])
+    return Counts(maxn=per_t[tmax], maxn_time_s=tmax if per_t[tmax] else None,
+                  mean_count=sum(per_t.values()) / len(per_t), unique_tracks=None)
+
+
 def _score(d) -> float:
     return d["score"] if isinstance(d, dict) else getattr(d, "score", 0.0)
 
@@ -236,6 +248,10 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
     dw = cfg["detect_width"]
 
     # ---- 1. subsample points: media from originals, then quick pass over context windows
+    sfm_base = ROOT_DIR
+    sf_on = full_res and bool(sfm.settings(cfg)["enabled"])
+    sf_frames: list = []   # (t, [Detection]) for every full-resolution frame the detector saw
+    sf_segs: dict = {}     # segment_id -> {t: [Detection]}
     times = proto.subsample_times(ws, we, pc)
     qc = proto.pick_qc(len(times), pc)
     subsamples = []
@@ -260,6 +276,10 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
             # Suggestions only. invertebrate_count stays null: the model finds fish only.
             with tm.stage("subsample_detect"):
                 dets = det.detect(still, t)
+            if sf_on:
+                with tm.stage("static_movement"):
+                    sfm.score_movement(timeline, t, still, dets, cfg)
+                sf_frames.append((t, dets))
             ss.auto["detections"] = dets
             # Boxes at the sensitive threshold are review candidates. The suggested count uses a stricter
             # one, because at 0.05 an empty frame still gets about 50 boxes (pole, seabed, noise).
@@ -308,7 +328,17 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
                 with tm.stage("segment_detect"):
                     frs = timeline.iter_samples(cfg["detect_fps_segments"], width=0,
                                                 start_s=seg.start_s, end_s=seg.end_s)
-                    dets, _, seg.counts = sparse_detect(frs, det)
+                    dets, per_t, seg.counts = sparse_detect(frs, det)
+                if sf_on:
+                    by_t = {t_: [] for t_ in per_t}
+                    for x in dets:
+                        by_t[x.t].append(x)
+                    with tm.stage("static_movement"):
+                        for t_, ds_ in by_t.items():
+                            if ds_:
+                                sfm.score_movement(timeline, t_, timeline.get_frame(t_), ds_, cfg)
+                    sf_segs[seg.segment_id] = by_t
+                    sf_frames += list(by_t.items())
                 seg.detections, seg.tracks = dets, []
                 seg.status = "fish_unknown" if dets else "movement_unidentified"
                 if seg.counts.maxn_time_s is not None:
@@ -325,6 +355,27 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
             seg.status = segment_status(tracks, cfg["classifier"])
             if seg.counts.maxn_time_s is not None:
                 seg.still_time_s = seg.counts.maxn_time_s
+
+    # ---- static-object filter: persistence needs every sampled frame, so it runs once at the end
+    if sf_on:
+        with tm.stage("static_filter"):
+            summ = sfm.apply(sf_frames, cfg, timeline.width, timeline.height,
+                             names=[rec_id, vid, paths[0].stem], base_dir=sfm_base)
+        for n in summ["notes"]:
+            log(n)
+        log(f"static filter: {summ['static']} of {summ['boxes']} boxes marked static "
+            f"{summ['reasons']} over {summ['frames']} frames")
+        count_thr = cfg["detector"].get("cfd", {}).get("count_threshold", 0.0)
+        for ss in subsamples:
+            dets = ss.auto["detections"]
+            ss.auto["fish_count"] = sum(1 for d in sfm.live(dets) if _score(d) >= count_thr)
+            ss.auto["status"] = subsample_status(ss.auto)
+            ss.review_priority = review_priority_subsample(ss, rc, detector_ran=True)
+        for seg in segments:
+            if seg.segment_id in sf_segs:
+                seg.counts = recount_frames(sf_segs[seg.segment_id])
+                seg.status = "fish_unknown" if sfm.live(seg.detections) else "movement_unidentified"
+                seg.still_time_s = seg.counts.maxn_time_s if seg.counts.maxn_time_s is not None else seg.still_time_s
 
     # ---- media for active and audit segments
     with tm.stage("segment_media"):

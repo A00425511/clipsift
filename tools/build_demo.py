@@ -10,7 +10,8 @@ clips. Review files (*.jsonl) are never copied.
 
 With --label-set <id> (repeatable), also copies label_sets/<id> (frames, clips, diff, manifest.json only) to
 public/label_sets/<id>, so the blind labelling page (label.html) works. Same allow-list rule: nothing
-whose name contains "river" goes in.
+whose name contains "river" goes in. If the set has a calibration.json (a list of frame ids), it is put into the
+copied manifest as `calibration`.
 
 Limits checked (Cloudflare Workers static assets): under 20,000 files (free plan) and every file under
 25 MiB. The platform handles HTTP Range requests for video.
@@ -134,6 +135,17 @@ def copy_label_set(root: Path, sid: str, out: Path) -> dict:
         raise BuildError(f"Label set '{sid}' has an unreadable manifest.json.")
     if FORBIDDEN_WORD in json.dumps(manifest).lower():
         raise BuildError(f"Label set '{sid}' mentions '{FORBIDDEN_WORD}' in its manifest. Refusing.")
+    cal_file = src / "calibration.json"       # calibration frames: everyone labels these first (see tools/make_label_set.py)
+    if cal_file.is_file() and not cal_file.is_symlink():
+        try:
+            cal = json.loads(cal_file.read_text(encoding="utf-8"))
+        except ValueError:
+            raise BuildError(f"Label set '{sid}' has an unreadable calibration.json.") from None
+        cal = cal.get("calibration") if isinstance(cal, dict) else cal
+        known = {f.get("frame_id") for f in manifest["frames"] if isinstance(f, dict)}
+        if not isinstance(cal, list) or any(not isinstance(i, str) or i not in known for i in cal):
+            raise BuildError(f"Label set '{sid}': calibration.json must be a list of frame ids that are in the manifest.")
+        manifest["calibration"] = list(dict.fromkeys(cal))
     dest = out / "label_sets" / sid
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
@@ -147,7 +159,7 @@ def copy_label_set(root: Path, sid: str, out: Path) -> dict:
             if f.is_file() and not f.is_symlink() and f.suffix in exts and LABEL_FILE_RE.match(f.name) and ".tmp" not in f.name:
                 shutil.copy2(f, dest / sub / f.name)
                 n += 1
-    return {"set_id": sid, "n_frames": len(manifest["frames"]), "n_files": n}
+    return {"set_id": sid, "n_frames": len(manifest["frames"]), "n_files": n, "n_calibration": len(manifest.get("calibration") or [])}
 
 
 def check_limits(out: Path):
@@ -200,7 +212,7 @@ def main(argv=None):
         shutil.copy2(worker, Path(a.out) / "_worker.js")
     print("Included runs: " + ", ".join(m["run_id"] for m in manifest))
     if a.label_set:
-        print("Included label sets: " + ", ".join(f"{x['set_id']} ({x['n_frames']} frames)" for x in labels))
+        print("Included label sets: " + ", ".join(f"{x['set_id']} ({x['n_frames']} frames, {x['n_calibration']} calibration)" for x in labels))
     print(f"Wrote {a.out}: {n} files, {total / 2**20:.2f} MiB total")
     return 0
 

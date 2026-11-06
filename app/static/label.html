@@ -24,17 +24,25 @@
 
 <section id="help-panel" class="lb-help" aria-label="Instructions" hidden>
   <h2>How to label</h2>
+  <p><b>Work in this order:</b></p>
+  <ol>
+    <li>Look at the frame.</li>
+    <li>Play the clip (<kbd>Space</kbd>).</li>
+    <li>Switch to Movement view (<kbd>M</kbd>).</li>
+    <li>Then finish marking.</li>
+  </ol>
   <ul>
-    <li>Mark each animal you are confident about. One click per animal.</li>
-    <li>Mark only what is clearly there in this frame. The clip is only there to help you see.</li>
+    <li>Mark what is in this frame, not what shows up somewhere else in the clip.</li>
+    <li>Movement counts as evidence. An animal that is hard to see in the still but moves in the clip is a confident mark.</li>
+    <li>Mark every animal you are confident about. One click per animal. Pick the type before you click: fish (<kbd>F</kbd>) or invertebrate such as a crab (<kbd>I</kbd>).</li>
+    <li>Use Unsure (<kbd>U</kbd>) for maybes: something that might be an animal but does not meet the rule. Faint fish in a school are the usual case. Unsure marks are never counted.</li>
+    <li>Press <b>No animals</b> (<kbd>N</kbd>) only after you have checked both the clip and the Movement view.</li>
+    <li>Use Not fish (<kbd>X</kbd>) sparingly: at most 3 per frame, and only for things that truly look like a fish. Skip the pipe and ordinary seabed, because software handles those.</li>
     <li>You are confident when you can see at least two of these: shape, anatomy, colour or a flash, movement.</li>
-    <li>When you are unsure, leave it out.</li>
-    <li>Mark fish (<kbd>F</kbd>) and invertebrates such as crabs (<kbd>I</kbd>). Pick the type before you click.</li>
-    <li>Use Not fish (<kbd>X</kbd>) for things that could fool a computer, like algae or the pipe. You don't need to mark every one.</li>
-    <li>If the frame has no animals, press <b>No animals</b> (<kbd>N</kbd>).</li>
-    <li>Right-click a dot to change its type, set a species if you know it, or remove it. Species is optional.</li>
+    <li>Right-click a dot to change its type (including to or from Unsure), set a species if you know it, or remove it. Species is optional.</li>
+    <li>Stick to your own name. Do not discuss frames until both people have saved them.</li>
   </ul>
-  <p class="hint">Zoom with the mouse wheel and drag to move. Hold <kbd>Space</kbd> (or press Motion) to play the 10 second clip in the picture, 5 seconds before to 5 seconds after the frame. It is the same zoom, and your dots stay on top. Use 0.25x to slow it down. Count only what is in the frame during the <b>Count frame</b> second. Dots cannot be added while the clip plays. <b>Movement view</b> (<kbd>M</kbd>) shows what changed, in black and white, and you can mark in either view. Click a dot to remove it. Another person labels every frame too, on their own. You never see their marks, and there are no computer suggestions here, so label what you see.</p>
+  <p class="hint">Zoom with the mouse wheel and drag to move. Hold <kbd>Space</kbd> (or press Motion) to play the 10 second clip in the picture, 5 seconds before to 5 seconds after the frame. It is the same zoom, and your dots stay on top. Use 0.25x to slow it down. Count only what is in the frame during the <b>Count frame</b> second. Dots cannot be added while the clip plays. <b>Movement view</b> shows what changed, in black and white, and you can mark in either view. Click a dot to remove it. Another person labels every frame too, on their own. You never see their marks, and there are no computer suggestions here, so label what you see.</p>
   <button type="button" id="help-close">Got it</button>
 </section>
 
@@ -67,6 +75,7 @@
       <span id="frame-info" class="hint"></span>
       <span id="mark-count" class="lb-count" aria-live="polite"></span>
     </div>
+    <p id="nf-hint" class="hint lb-nfhint" hidden></p>
   </div>
 
   <div class="lb-tools">
@@ -74,7 +83,8 @@
       <span class="lbl">Mark as</span>
       <button type="button" id="k-fish" class="kind fish" aria-pressed="true">Fish <kbd>F</kbd></button>
       <button type="button" id="k-inv" class="kind inv" aria-pressed="false">Invertebrate <kbd>I</kbd></button>
-      <button type="button" id="k-nf" class="kind nf" aria-pressed="false" title="Something that looks like a fish to a computer but is not">Not fish <kbd>X</kbd></button>
+      <button type="button" id="k-uns" class="kind uns" aria-pressed="false" title="Might be an animal but does not meet the rule. Shown as a dashed ring with a question mark. Never counted.">Unsure <kbd>U</kbd></button>
+      <button type="button" id="k-nf" class="kind nf" aria-pressed="false" title="Something that truly looks like a fish but is not. At most 3 per frame. Skip the pipe and ordinary seabed.">Not fish <kbd>X</kbd></button>
       <button type="button" id="b-undo">Undo <kbd>Z</kbd></button>
       <button type="button" id="b-clear">Clear all</button>
       <button type="button" id="b-fit">Reset zoom</button>
@@ -132,6 +142,7 @@
   <div id="cm-main">
     <button type="button" role="menuitem" id="cm-to-fish">Change to fish</button>
     <button type="button" role="menuitem" id="cm-to-inv">Change to invertebrate</button>
+    <button type="button" role="menuitem" id="cm-to-uns">Change to unsure</button>
     <button type="button" role="menuitem" id="cm-to-nf">Change to not fish</button>
     <button type="button" role="menuitem" id="cm-category">Set category...</button>
     <button type="button" role="menuitem" id="cm-species">Set species...</button>

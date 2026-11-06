@@ -109,9 +109,9 @@ t("views are kept in a fixed order with unknown names dropped", () => {
 });
 t("not fish: counts leave them out and the text shows them", () => {
   const pts = [{ kind: "fish" }, { kind: "fish" }, { kind: "invertebrate" }, { kind: "not_fish", category: "algae" }, { kind: "not_fish" }];
-  assert.deepEqual(L.countMarks(pts), { fish: 2, invertebrate: 1, not_fish: 2 });
-  assert.equal(L.markCountText(pts, false), "Marked: 2 fish, 1 invertebrate, 2 not fish");
-  assert.equal(L.markCountText([{ kind: "not_fish" }], false), "Marked: 0 fish, 0 invertebrates, 1 not fish");
+  assert.deepEqual(L.countMarks(pts), { fish: 2, invertebrate: 1, unsure: 0, not_fish: 2 });
+  assert.equal(L.markCountText(pts, false), "Marked: 2 fish, 1 invertebrate, 0 unsure, 2 not fish");
+  assert.equal(L.markCountText([{ kind: "not_fish" }], false), "Marked: 0 fish, 0 invertebrates, 0 unsure, 1 not fish");
   assert.equal(L.markCountText([], false), "No marks yet");
   assert.equal(L.markCountText([], true), "Marked: no animals");
 });
@@ -127,5 +127,59 @@ t("not fish: points are cleaned, old points still load", () => {
   assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "invertebrate" }), { x: 1, y: 2, kind: "invertebrate" });
   assert.equal(L.cleanPoint({ x: "a", y: 2 }), null);
   assert.deepEqual(L.NOT_FISH_CATEGORIES.map((c) => c.id), ["algae", "debris", "equipment", "seabed", "bubbles", "other"]);
+});
+
+// ---- Unsure ----
+t("unsure: its own count, left out of fish and invertebrate, running text matches the brief", () => {
+  const pts = [...Array(12).fill({ kind: "fish" }), { kind: "invertebrate" }, ...Array(4).fill({ kind: "unsure" }), ...Array(2).fill({ kind: "not_fish" })];
+  assert.deepEqual(L.countMarks(pts), { fish: 12, invertebrate: 1, unsure: 4, not_fish: 2 });
+  assert.equal(L.markCountText(pts, false), "Marked: 12 fish, 1 invertebrate, 4 unsure, 2 not fish");
+});
+t("unsure: stored as kind unsure with no species or category, and old kinds still load", () => {
+  assert.ok(L.KINDS.includes("unsure") && L.KINDS.includes("fish"));
+  assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "unsure", species: "Gadus", category: "algae" }), { x: 1, y: 2, kind: "unsure" });
+  assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "fish", species: "Gadus" }), { x: 1, y: 2, kind: "fish", species: "Gadus" });
+});
+t("unsure: only unsure and not fish marks count as no confident animals; a fish does not", () => {
+  assert.ok(L.noConfidentAnimals([{ kind: "unsure" }, { kind: "not_fish" }]));
+  assert.ok(L.noConfidentAnimals([{ kind: "unsure" }]));
+  assert.ok(!L.noConfidentAnimals([{ kind: "unsure" }, { kind: "invertebrate" }]));
+  assert.ok(!L.noConfidentAnimals([]));
+});
+t("not fish hint: quiet up to 3, one gentle line above 3", () => {
+  const nf = (n) => Array(n).fill({ kind: "not_fish" });
+  assert.equal(L.notFishHint(nf(3)), "");
+  assert.equal(L.notFishHint([...nf(3), { kind: "unsure" }, { kind: "fish" }]), "");
+  const h = L.notFishHint(nf(4));
+  assert.ok(h.includes("more than 3") && !h.includes("\n") && !h.includes("\u2014"));
+});
+
+// ---- Calibration ----
+t("calibration: everyone gets those frames first, in order, whatever the two-label cap says", () => {
+  const cal = ["f9", "f3", "f5"];
+  const counts = { f9: 2, f3: 5, f5: 0 };            // already over the cap: still offered
+  const mine = {};
+  const order = [];
+  for (let i = 0; i < 3; i++) { const f = L.pickNext(frames, counts, mine, "Ali", null, cal); order.push(f.frame_id); mine[f.frame_id] = { state: "done" }; }
+  assert.deepEqual(order, cal);
+  const next = L.pickNext(frames, counts, mine, "Ali", null, cal);   // then normal assignment
+  assert.ok(next && !cal.includes(next.frame_id) && (counts[next.frame_id] || 0) < 2);
+  assert.deepEqual(["Jacob", "Gina"].map((p) => L.pickNext(frames, counts, {}, p, null, cal).frame_id), ["f9", "f9"]);   // same first frame for all
+});
+t("calibration: not assigned again as normal frames, and an empty list changes nothing", () => {
+  const cal = ["f0", "f1"];
+  const seen = new Set(); const mine = { f0: { state: "done" }, f1: { state: "done" } };
+  for (let i = 0; i < 300; i++) { const f = L.pickNext(frames, {}, mine, "Wang", null, cal); if (!f) break; seen.add(f.frame_id); mine[f.frame_id] = { state: "done" }; }
+  assert.ok(!seen.has("f0") && !seen.has("f1") && seen.size === 98);
+  assert.equal(L.pickNext(frames, {}, { f0: { state: "done" } }, "Wang", null, ["f0"]) !== null, true);
+  assert.equal(L.pickNext(frames, {}, {}, "Jacob", null, []).frame_id, L.pickNext(frames, {}, {}, "Jacob", null).frame_id);
+  const skipThis = L.pickNext(frames, {}, {}, "Ali", "f2", ["f2", "f4"]);
+  assert.equal(skipThis.frame_id, "f4");               // the exclude rule still works for the prefetch
+});
+t("calibration: the on-screen label", () => {
+  assert.equal(L.calibrationText(["a", "b", "c", "d", "e"], "b"), "Calibration frame 2 of 5");
+  assert.equal(L.calibrationText(["a"], "zz"), "");
+  assert.equal(L.calibrationText([], "a"), "");
+  assert.equal(L.calibrationText(undefined, "a"), "");
 });
 console.log(n + " checks passed");

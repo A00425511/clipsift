@@ -139,6 +139,15 @@ python tools/make_label_set.py "../Coastal Footage/T1-STAT2 411.MP4" --set t1s2_
 
 This writes `label_sets/<set>/frames/*.jpg` (full size, quality 88), `clips/*.mp4` (Coastal Action's protocol: 5 s before to 5 s after the frame, 10 s in all, 1920 wide, H.264, CRF 24, faststart, no audio), `diff/*.jpg` (the Movement view: absolute difference between the frame and the median of 7 frames across the same 10 s, 1920 wide, black and white, built with `diff_from_frames` in `clipsift/pipeline.py`, the same function as the review app) and `manifest.json` (each frame has `frame_url`, `clip_url`, `diff_url`, `clip_start_s`, `clip_length_s`, `clip_count_s`). Frame ids depend only on the time, so re-running the tool with the same arguments keeps existing labels valid; it keeps frames and diffs that exist and re-makes any clip that is not the protocol length. The set `t1s2_v1` is 100 frames, about 456 MiB (largest clip 7 MiB; every file is under 25 MiB). `label_sets/` is not in git.
 
+Add frames to a set that exists (nothing already there is touched or made again; times already in the set are skipped), and set the calibration frames:
+
+```
+python tools/make_label_set.py "../Coastal Footage/T1-STAT2 411.MP4" --set t1s2_v1 --add --times 1236:1374:6 --group school_block
+python tools/make_label_set.py --set t1s2_v1 --set-calibration ID1 ID2 ID3    # no ids = empty list
+```
+
+Every frame has a `group` in the manifest: `survey` (widely spaced) or `school_block` (close together in time, so correlated: all frames of a block must stay on the same side of any train and test split). Calibration frames come from `label_sets/<set>/calibration.json` (a list of frame ids, can be empty); `build_demo.py` puts the list in the manifest. Everyone labels them first, in that order, whatever the two-label limit says. There is a fourth mark, **Unsure** (key U, a dashed ring with a question mark): never counted, exported as ignore regions in `unsure.csv` and `coco_keypoints.json`. `pull_labels.py` also writes `calibration.csv` when the set has calibration frames. The team protocol is in `docs/LABELLING_PROTOCOL.md`.
+
 Local use: `python -m app.server --runs runs --port 8765`, then open `/label.html`. Marks are appended to `app/local_labels.jsonl` (the latest row for a set, frame and name wins). For the team: add `--label-set t1s2_v1` to `tools/build_demo.py`, apply the D1 migration, deploy (the steps are under Team demo). The Worker routes, all behind the team code: `GET /api/labels/status?set=&name=` (counts per frame, and your own done or skipped frames), `GET /api/labels/mine?set=&frame=&name=`, `POST /api/labels` (upsert; at most 2000 points, points must be inside the image, kind is fish or invertebrate, an optional `species` text of at most 80 characters per point, an optional `views` list of `frame`, `movement`, `clip`, a best-effort rate limit that a fast labeller never reaches). The table is `labels` in `deploy/schema.sql`, `deploy/migrations/002_labels.sql` and `deploy/migrations/003_label_views.sql` (adds `views_json`).
 
 Pull the results:
@@ -204,6 +213,19 @@ How it runs (`clipsift/stages/cfd.py`, settings in `detector.cfd`):
 - **Then a sparse pass over active segments** at `detect_fps_segments` (default 0.2, one frame per 5 s), not on every sampled frame. Frames that far apart are not tracked, so segment `unique_tracks` is null. MeanCount is the metric that matters here, and unique counts are not attempted.
 - **Review order:** mid-confidence detections (`review.mid_conf_low` to `mid_conf_high`) and disagreement between motion and detections (motion but no boxes, or boxes but no motion) rank first. QC samples stay on top.
 - Per-stage runtimes are in `run.stage_runtimes_s` (`detector_load`, `subsample_detect`, `segment_detect`, ...).
+
+### Static-object filter
+
+The camera is fixed, so the pipe, pole and rocks sit in the same place in every frame and the detector keeps boxing them. `clipsift/static_filter.py` runs after detection (cfd backend only) and marks such boxes `static: true` with a `static_reason`. **Nothing is deleted:** results.json keeps every box, the review app should hide `static` ones by default, and static boxes are left out of `fish_count`, `mean_count_auto`, `auto.status`, review order, segment counts and the CSV `n_detections`. Old results without the field read as `static: false`.
+
+Settings are in `static_filter` in `config/default.yaml`:
+
+- **Persistence:** a box that recurs at nearly the same place and size (IoU 0.5) in 30% or more of the sampled frames of a recording is static. Learns per recording, so a moved camera needs no hand work. Skipped under 6 frames.
+- **Movement:** per box, the 90th percentile of the absolute grey-level difference from a median background of frames t-5 to t+5 s (not the frame itself), 1920 wide, blur 1.5. Below 3 is static. A cutoff of 5 removed real fish on the test frame. Boxes it cannot score are kept.
+- **Hand mask:** `masks: [{match: "T1-STAT2*", file: config/masks/t1s2.json}]` or inline `polygons`, in original pixels. `python tools/make_static_mask.py --run runs/<id>/results.json --json mask.json --png mask.png --overlay frame.jpg` suggests polygons from persistent boxes. **A person must check the PNG before using it.**
+- Bias is toward keeping: boxes scoring 0.5 or higher are never rejected by persistence or movement, and a persistent place is kept if the box clearly moves. `enabled: false` switches it all off. `python tools/eval_detector.py --run ... --include-static` scores the rejected boxes too.
+
+**Limits.** It can remove a truly still animal (a resting crab, a hovering fish, a school that stays put), and the model only finds fish anyway. On 100 frames of one recording it marked about half the boxes static (mean boxes per frame at threshold 0.1: 28.8 to 14.2); on seven frames marked empty by one person it cut 169 boxes to 79, and did little on two frames where the scene was moving (camera sway or surge). Recall on the labelled dot frame did not change at 0.1 (24 of 103 hits before and after). One recording, tuned on those same frames. Details and controls: `2026 Problem Prep/detector-test/STATIC-FILTER.md`; reproduce with `tools/eval_static_filter.py`.
 
 Setups tried on **one** labelled frame (T1-STAT2 411 at 22:00.3, a dense school, 103 dots from Coastal Action), no fine-tuning. Not accuracy figures: thresholds were picked on that same frame.
 

@@ -46,7 +46,7 @@ LABEL_MAX_POINTS = 2000
 LABEL_MAX_BODY = 400000
 LABEL_NAME_MAX = 40
 LABEL_MAX_SECONDS = 86400
-LABEL_KINDS = ("fish", "invertebrate", "not_fish")
+LABEL_KINDS = ("fish", "invertebrate", "unsure", "not_fish")   # unsure: might be an animal, never counted; no species or category
 LABEL_NOT_FISH_CATEGORIES = ("algae", "debris", "equipment", "seabed", "bubbles", "other")   # keep in step with worker.js and label.js
 LABEL_VIEWS = ("frame", "movement", "clip")   # views used on a frame, kept for later analysis
 LABEL_SPECIES_MAX = 80
@@ -622,6 +622,24 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             ids = sorted(d.name for d in label_sets_root.iterdir() if d.is_dir() and LABEL_SET_RE.match(d.name) and (d / "manifest.json").is_file())
         return jsonify(sets=ids)
 
+    def manifest_with_calibration(path):
+        """The manifest, with `calibration` taken from calibration.json next to it when that file exists (same rule as tools/build_demo.py)."""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            abort(422, "manifest.json could not be read")
+        cal_path = path.parent / "calibration.json"
+        if isinstance(data, dict) and cal_path.is_file() and not cal_path.is_symlink():
+            try:
+                cal = json.loads(cal_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                abort(422, "calibration.json could not be read")
+            cal = cal.get("calibration") if isinstance(cal, dict) else cal
+            known = {f.get("frame_id") for f in data.get("frames") or [] if isinstance(f, dict)}
+            if isinstance(cal, list):
+                data["calibration"] = list(dict.fromkeys(i for i in cal if isinstance(i, str) and i in known))
+        return data
+
     @app.get("/label_sets/<set_id>/<path:rest>")
     def label_set_file(set_id, rest):
         """Frames, clips and the manifest. send_file answers Range requests, which the clips need."""
@@ -634,6 +652,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         path = (label_sets_root / set_id / rest).resolve()
         if label_sets_root not in path.parents or not path.is_file() or path.is_symlink():
             abort(404, "Not found")
+        if parts == ["manifest.json"]:
+            return jsonify(manifest_with_calibration(path))
         resp = send_file(path, conditional=True, max_age=0 if parts[0] == "manifest.json" else 3600)
         return resp
 
@@ -741,7 +761,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             if x < 0 or y < 0 or x > width or y > height:
                 raise BadInput(f"A point is outside the image ({width} x {height})")
             if pt.get("kind") not in LABEL_KINDS:
-                raise BadInput("kind must be fish, invertebrate or not_fish")
+                raise BadInput("kind must be fish, invertebrate, unsure or not_fish")
             out = {"x": round(x, 1), "y": round(y, 1), "kind": pt["kind"]}
             if pt["kind"] == "not_fish":
                 # A not-fish mark has a category (or none) and never a species.
@@ -750,6 +770,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                     if not isinstance(cat, str) or cat not in LABEL_NOT_FISH_CATEGORIES:
                         raise BadInput("category must be one of: " + ", ".join(LABEL_NOT_FISH_CATEGORIES) + " (or empty)")
                     out["category"] = cat
+            elif pt["kind"] == "unsure":
+                pass    # an unsure mark carries no species and no category: anything sent is dropped
             elif pt.get("species") is not None:
                 if not isinstance(pt["species"], str):
                     raise BadInput("species must be text")

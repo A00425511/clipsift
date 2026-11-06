@@ -166,3 +166,8 @@ See detector-test/RESULTS.md. Includes a correction: the simple background basel
 - Candidates at 0.05 give about 50 boxes on a frame that looks empty (pole, seabed, noise), so the suggested count uses 0.1. An empty-looking frame still gets about 10. A movement check is logged for testing.
 - Timings on the M4 Pro: 711 s for a 15 minute window with segment detection. Mac CPU only: Nano about 6.4 s per frame, Medium with CLAHE about 17.8 s. Not Coastal's PC.
 - Demo run coastal_school_model shows suggested counts of 24 to 114 per point; these are untrained suggestions, not validated.
+
+## Labelling protocol round (6 Nov)
+Jacob confirmed by movement that the marks at 1:00 and both at 24:20 are crabs; orchestrator had doubted two from stills. Some animals are identifiable only from motion.
+Added: Unsure mark, 22 school frames (122 in total), calibration mode, docs/LABELLING_PROTOCOL.md, and a static filter. On 100 frames, mean boxes at 0.1 fell from 28.8 to 14.2; Jacob's 7 empty frames 169 to 79; labelled frame recall 0.23 kept, precision 0.69 to 0.73. Small sample, tuned on itself. See detector-test/STATIC-FILTER.md.
+Candidates: calibration-candidates.jpg. Corrected view: labelled frames already act as negatives, so not-fish marks add little to training.

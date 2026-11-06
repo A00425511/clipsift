@@ -145,7 +145,7 @@ const LABEL_RATE_BURST = 120;           // saves in a quick run
 const LABEL_RATE_PER_SEC = 10;          // then 600 a minute; a fast labeller saves about once every 3 seconds
 const SET_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,39}$/;
 const FRAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$/;
-const KINDS = ["fish", "invertebrate", "not_fish"];
+const KINDS = ["fish", "invertebrate", "unsure", "not_fish"];   // unsure: might be an animal, never counted; no species or category
 const NOT_FISH_CATEGORIES = ["algae", "debris", "equipment", "seabed", "bubbles", "other"];   // keep in step with label.js and app/server.py
 const VIEWS = ["frame", "movement", "clip"];   // which views the labeller used on this frame, in this order
 const SPECIES_MAX = 80;
@@ -224,7 +224,7 @@ function validateLabel(body, frames) {
     if (!p || typeof p !== "object" || Array.isArray(p)) return { error: "Each point needs x, y and kind." };
     if (typeof p.x !== "number" || typeof p.y !== "number" || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return { error: "Point coordinates must be numbers." };
     if (p.x < 0 || p.y < 0 || p.x > frame.width || p.y > frame.height) return { error: `A point is outside the image (${frame.width} x ${frame.height}).` };
-    if (!KINDS.includes(p.kind)) return { error: "kind must be fish, invertebrate or not_fish." };
+    if (!KINDS.includes(p.kind)) return { error: "kind must be fish, invertebrate, unsure or not_fish." };
     const out = { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, kind: p.kind };
     if (p.kind === "not_fish") {
       // A not-fish mark has a category (or none) and never a species.
@@ -232,6 +232,8 @@ function validateLabel(body, frames) {
         if (typeof p.category !== "string" || !NOT_FISH_CATEGORIES.includes(p.category)) return { error: "category must be one of: " + NOT_FISH_CATEGORIES.join(", ") + " (or empty)." };
         out.category = p.category;
       }
+    } else if (p.kind === "unsure") {
+      // An unsure mark carries no species and no category: anything sent is dropped.
     } else if (p.species != null) {
       if (typeof p.species !== "string") return { error: "species must be text." };
       const sp = cleanSpecies(p.species);

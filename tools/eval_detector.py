@@ -184,7 +184,7 @@ def boxes_from_detector(frame_path, cfg, thr_min):
                                                "device": getattr(det, "device", None)}
 
 
-def frames_from_run(results_path, labels):
+def frames_from_run(results_path, labels, include_static=False):
     res = json.loads(Path(results_path).read_text(encoding="utf-8"))
     width = res["recording"]["width"]
     sss = res["subsamples"]
@@ -198,7 +198,7 @@ def frames_from_run(results_path, labels):
         if ss is None:
             raise ValueError(f"Labels group '{key}' matches no subsample in the run. Give a subsample_id or "
                              "time_s column that falls within 1 s of a subsample point.")
-        dets = ss["auto"]["detections"]
+        dets = [d for d in ss["auto"]["detections"] if include_static or not d.get("static")]
         B = np.array([[d["box"][0], d["box"][1], d["box"][0] + d["box"][2], d["box"][1] + d["box"][3]]
                       for d in dets], dtype=float).reshape(-1, 4)
         frames.append({"boxes": B, "scores": [d["score"] for d in dets], "dots": g["dots"], "width": width})
@@ -255,6 +255,8 @@ def main(argv=None) -> int:
     ap.add_argument("--thresholds", type=_thresholds, default=[0.03, 0.05, 0.1, 0.2, 0.3])
     ap.add_argument("--preset"); ap.add_argument("--variant"); ap.add_argument("--enhancement")
     ap.add_argument("--tile", type=int); ap.add_argument("--overlap", type=float)
+    ap.add_argument("--include-static", action="store_true",
+                    help="with --run: also score boxes the static filter rejected (default: leave them out)")
     ap.add_argument("--device"); ap.add_argument("--weights"); ap.add_argument("--json", help="write rows here")
     a = ap.parse_args(argv)
     try:
@@ -271,7 +273,7 @@ def main(argv=None) -> int:
             groups = {"all": load_dots_json(a.labels)} if a.labels.endswith(".json") else load_points_csv(a.labels)
             if a.labels.endswith(".json"):
                 groups = {"json": groups["all"]}
-            frames, used, mv = frames_from_run(a.run, groups)
+            frames, used, mv = frames_from_run(a.run, groups, a.include_static)
             head = f"run {a.run}: {mv}; frames {used}. Thresholds below the run's own are not meaningful."
         rows = sweep(frames, a.thresholds)
         print(format_table(rows, head))

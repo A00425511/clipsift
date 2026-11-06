@@ -24,7 +24,8 @@
     { id: "equipment", label: "Equipment (pole, pipe, tape, frame)" }, { id: "seabed", label: "Seabed or rock" },
     { id: "bubbles", label: "Bubbles or sediment" }, { id: "other", label: "Other" },
   ];
-  const KINDS = ["fish", "invertebrate", "not_fish"];
+  const KINDS = ["fish", "invertebrate", "unsure", "not_fish"];   // unsure: might be an animal but does not meet the rule; never counted
+  const NOT_FISH_SOFT_LIMIT = 3;   // the protocol asks for at most 3 Not fish marks per frame
 
   function cleanName(v) {
     const n = String(v == null ? "" : v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40);
@@ -39,11 +40,19 @@
   }
   // Next frame for this person: fewest labels so far (under 2), not done or skipped by them, then a shuffle
   // that depends on their name so five people do not all land on the same frame.
-  function pickNext(frames, counts, mine, name, exclude) {
+  // Calibration frames (a list of frame ids) come first, in that order, for everyone, whatever the two-label cap
+  // says. They are never offered again as normal frames. After them, normal assignment.
+  function pickNext(frames, counts, mine, name, exclude, calibration) {
+    const cal = Array.isArray(calibration) ? calibration : [];
+    for (const id of cal) {
+      if (id === exclude || mine[id]) continue;
+      const f = frames.find((x) => x.frame_id === id);
+      if (f) return f;
+    }
     let best = null, bestKey = null;
     for (const f of frames) {
       const id = f.frame_id;
-      if (id === exclude || mine[id]) continue;
+      if (id === exclude || mine[id] || cal.includes(id)) continue;
       const n = counts[id] || 0;
       if (n >= NEEDED) continue;
       const key = [n, hash32(name.toLowerCase() + "|" + id)];
@@ -69,6 +78,11 @@
     return "brightness(" + bright + "%) contrast(" + contrast + "%)" + (enhance ? " contrast(135%) saturate(125%) brightness(105%)" : "");
   }
   function fmtTime(s) { s = Math.round(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+  // "Calibration frame 2 of 5" for a calibration frame, "" for any other frame.
+  function calibrationText(calibration, frameId) {
+    const i = Array.isArray(calibration) ? calibration.indexOf(frameId) : -1;
+    return i < 0 ? "" : "Calibration frame " + (i + 1) + " of " + calibration.length;
+  }
   function progressText(myDone, team, total) {
     return "You: " + myDone + (myDone === 1 ? " frame" : " frames") + ". Team: " + team + " of " + total + " frames have two labels.";
   }
@@ -128,13 +142,14 @@
   function cleanPoint(p) {
     if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
     const kind = KINDS.includes(p.kind) ? p.kind : "fish", out = { x: p.x, y: p.y, kind };
-    if (kind === "not_fish") { if (categoryLabel(p.category)) out.category = p.category; }
+    if (kind === "unsure") { /* no species, no category */ }
+    else if (kind === "not_fish") { if (categoryLabel(p.category)) out.category = p.category; }
     else { const sp = cleanSpecies(p.species); if (sp) out.species = sp; }
     return out;
   }
-  // Not fish marks are never counted as animals.
+  // Unsure and Not fish marks are never counted as animals.
   function countMarks(points) {
-    const c = { fish: 0, invertebrate: 0, not_fish: 0 };
+    const c = { fish: 0, invertebrate: 0, unsure: 0, not_fish: 0 };
     for (const p of points || []) if (p && c[p.kind] != null) c[p.kind]++;
     return c;
   }
@@ -142,13 +157,20 @@
     if (noAnimals) return "Marked: no animals";
     if (!points || !points.length) return "No marks yet";
     const c = countMarks(points);
-    return "Marked: " + c.fish + " fish, " + c.invertebrate + " invertebrate" + (c.invertebrate === 1 ? "" : "s") + ", " + c.not_fish + " not fish";
+    return "Marked: " + c.fish + " fish, " + c.invertebrate + " invertebrate" + (c.invertebrate === 1 ? "" : "s") + ", " + c.unsure + " unsure, " + c.not_fish + " not fish";
+  }
+  // A gentle one-line hint when there are more Not fish marks than the protocol asks for. "" otherwise.
+  function notFishHint(points) {
+    if (countMarks(points).not_fish <= NOT_FISH_SOFT_LIMIT) return "";
+    return "That is more than " + NOT_FISH_SOFT_LIMIT + " Not fish marks. Keep them for things that truly look like a fish. The pipe and ordinary seabed are handled in software.";
   }
   // True when a frame has marks but none of them is an animal: it counts as a frame with no animals.
   function onlyNotFish(points) { return !!points && points.length > 0 && points.every((p) => p.kind === "not_fish"); }
+  // True when none of the marks is a confident animal (only Unsure and Not fish): also a frame with no counted animals.
+  function noConfidentAnimals(points) { return !!points && points.length > 0 && points.every((p) => p.kind === "not_fish" || p.kind === "unsure"); }
   function orderedViews(list) { return VIEWS.filter((v) => Array.isArray(list) && list.includes(v)); }
 
-  const api = { NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
+  const api = { KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document === "undefined") return;
 
@@ -160,7 +182,7 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
   const S = {
-    set: null, frames: [], byId: {}, name: "", counts: {}, mine: {}, team: { frames_with_two: 0 }, total: 0,
+    set: null, frames: [], byId: {}, calibration: [], name: "", counts: {}, mine: {}, team: { frames_with_two: 0 }, total: 0,
     cur: null, points: [], noAnimals: false, seconds: 0, kind: "fish", category: "", undo: [],
     view: { k: 1, x: 0, y: 0 }, fit: 1, motion: false, loadToken: 0,
     saving: false, retryTimer: null, retries: 0, lastInput: Date.now(), draftTimer: null, raf: 0,
@@ -255,7 +277,8 @@
     S.cur = frame; S.points = []; S.noAnimals = false; S.seconds = 0; S.undo = []; S.views = [];
     $("done-panel").hidden = true; $("loading").hidden = false; setMotion(false); closeMenu(false);
     LS.set(curKey(), frame.frame_id);
-    $("frame-info").textContent = "Frame at " + fmtTime(frame.time_s) + " in the video";
+    const calText = calibrationText(S.calibration, frame.frame_id);
+    $("frame-info").textContent = (calText ? calText + ". " : "") + "Frame at " + fmtTime(frame.time_s) + " in the video";
     const note = [];
     const draft = readDraft(frame.frame_id);
     if (draft) {
@@ -294,13 +317,13 @@
     prefetchNext();
   }
   function prefetchNext() {
-    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, S.cur && S.cur.frame_id);
+    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, S.cur && S.cur.frame_id, S.calibration);
     if (nxt) { const i = new Image(); i.src = nxt.frame_url; }
   }
 
   async function goNext() {
     try { await refreshStatus(); } catch (e) { /* use what we have */ }
-    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, null);
+    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, null, S.calibration);
     if (nxt) { await openFrame(nxt); return; }
     showDone();
   }
@@ -346,16 +369,21 @@
     for (const p of S.points) {
       const x = S.view.x + p.x * s, y = S.view.y + p.y * s;
       if (x < -20 || y < -20 || x > w + 20 || y > h + 20) continue;
-      const inv = p.kind === "invertebrate", nf = p.kind === "not_fish", col = nf ? "#ff7ad9" : inv ? "#6fd3ff" : "#ffe94d";
+      const inv = p.kind === "invertebrate", nf = p.kind === "not_fish", uns = p.kind === "unsure", col = nf ? "#ff7ad9" : uns ? "#ffb04d" : inv ? "#6fd3ff" : "#ffe94d";
       c.lineJoin = "round"; c.lineCap = "round";
       for (const pass of [0, 1]) {
         c.lineWidth = pass ? 2 : 4.5; c.strokeStyle = pass ? col : "rgba(0,0,0,.85)";
         c.beginPath();
+        c.setLineDash(uns ? [3.5, 3.5] : []);          // Unsure: a dashed ring with a question mark, not a solid shape
         if (nf) { const r = DOT_R * 0.9; c.moveTo(x - r, y - r); c.lineTo(x + r, y + r); c.moveTo(x + r, y - r); c.lineTo(x - r, y + r); }   // an X: not a circle or a square
-        else if (inv) c.rect(x - DOT_R, y - DOT_R, DOT_R * 2, DOT_R * 2); else c.arc(x, y, DOT_R, 0, Math.PI * 2);
+        else if (inv) c.rect(x - DOT_R, y - DOT_R, DOT_R * 2, DOT_R * 2); else c.arc(x, y, uns ? DOT_R + 1.5 : DOT_R, 0, Math.PI * 2);
         c.stroke();
       }
-      if (!nf) { c.fillStyle = col; c.fillRect(x - 1, y - 1, 2, 2); }
+      c.setLineDash([]);
+      if (uns) {
+        c.font = "bold 12px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+        c.lineWidth = 3; c.strokeStyle = "rgba(0,0,0,.85)"; c.strokeText("?", x, y + 0.5); c.fillStyle = col; c.fillText("?", x, y + 0.5);
+      } else if (!nf) { c.fillStyle = col; c.fillRect(x - 1, y - 1, 2, 2); }
       if (p.species) {      // small badge at the upper right: this mark has a species
         c.beginPath(); c.arc(x + DOT_R * 0.85, y - DOT_R * 0.85, 4, 0, Math.PI * 2);
         c.fillStyle = "#ffffff"; c.fill(); c.lineWidth = 1.5; c.strokeStyle = "#000"; c.stroke();
@@ -398,7 +426,7 @@
   }
   function setKind(k) {
     S.kind = k;
-    $("k-fish").setAttribute("aria-pressed", k === "fish"); $("k-inv").setAttribute("aria-pressed", k === "invertebrate"); $("k-nf").setAttribute("aria-pressed", k === "not_fish");
+    $("k-fish").setAttribute("aria-pressed", k === "fish"); $("k-inv").setAttribute("aria-pressed", k === "invertebrate"); $("k-nf").setAttribute("aria-pressed", k === "not_fish"); $("k-uns").setAttribute("aria-pressed", k === "unsure");
     $("nf-picker").hidden = k !== "not_fish";
   }
   function setCategory(id) {
@@ -419,6 +447,8 @@
   }
   function paintCount() {
     $("mark-count").textContent = markCountText(S.points, S.noAnimals) + (S.points.length && !S.noAnimals ? speciesNote() : "");
+    const hint = $("nf-hint"), h = notFishHint(S.points);
+    hint.textContent = h; hint.hidden = !h;
   }
   function speciesNote() { const n = S.points.filter((p) => p.species).length; return n ? ", " + n + " with a species" : ""; }
   function paintButtons() {
@@ -570,12 +600,12 @@
   function openMenu(point, cx, cy) {
     const m = menuEl();
     S.menuPoint = point;
-    const nf = point.kind === "not_fish";
-    $("cm-title").textContent = nf ? "Not fish: " + (categoryLabel(point.category) || "no category") :
+    const nf = point.kind === "not_fish", uns = point.kind === "unsure";
+    $("cm-title").textContent = nf ? "Not fish: " + (categoryLabel(point.category) || "no category") : uns ? "Unsure" :
       (point.kind === "invertebrate" ? "Invertebrate" : "Fish") + (point.species ? ": " + point.species : ", no species");
-    $("cm-to-fish").hidden = point.kind === "fish"; $("cm-to-inv").hidden = point.kind === "invertebrate"; $("cm-to-nf").hidden = nf;
-    $("cm-category").hidden = !nf; $("cm-species").hidden = nf;
-    $("cm-clear").hidden = nf || !point.species;
+    $("cm-to-fish").hidden = point.kind === "fish"; $("cm-to-inv").hidden = point.kind === "invertebrate"; $("cm-to-nf").hidden = nf; $("cm-to-uns").hidden = uns;
+    $("cm-category").hidden = !nf; $("cm-species").hidden = nf || uns;
+    $("cm-clear").hidden = nf || uns || !point.species;
     $("cm-main").hidden = false; $("cm-sp").hidden = true; $("cm-cat").hidden = true;
     m.hidden = false;
     placeMenu(cx, cy);
@@ -668,10 +698,11 @@
     }, true);
     window.addEventListener("blur", () => closeMenu(false)); window.addEventListener("resize", () => closeMenu(false));
     st.addEventListener("wheel", () => closeMenu(false), { passive: true });
-    const toKind = (k) => editPoint((p) => { p.kind = k; if (k === "not_fish") delete p.species; else delete p.category; });
+    const toKind = (k) => editPoint((p) => { p.kind = k; if (k !== "fish" && k !== "invertebrate") delete p.species; if (k !== "not_fish") delete p.category; });
     $("cm-to-fish").addEventListener("click", () => toKind("fish"));
     $("cm-to-inv").addEventListener("click", () => toKind("invertebrate"));
     $("cm-to-nf").addEventListener("click", () => toKind("not_fish"));
+    $("cm-to-uns").addEventListener("click", () => toKind("unsure"));
     $("cm-category").addEventListener("click", showCategories);
     $("cm-cat-back").addEventListener("click", () => { $("cm-cat").hidden = true; $("cm-main").hidden = false; placeMenu(...m._at); menuItems()[0].focus(); });
     $("cm-remove").addEventListener("click", () => editPoint((p, i) => { S.points.splice(i, 1); }));
@@ -706,7 +737,7 @@
   async function commit(kind) {
     if (!S.cur || S.saving) return;
     if (kind === "done" && !S.points.length) { msg("No marks yet. Click each animal you are sure about. If the frame is empty press No animals (N); to leave it, press Skip (S).", "warn"); return; }
-    if (kind === "none" && onlyNotFish(S.points)) kind = "done";   // only Not fish marks: the same as no animals, saved with the marks kept as negatives
+    if (kind === "none" && noConfidentAnimals(S.points)) kind = "done";   // only Unsure and Not fish marks: the same as no counted animals, saved with the marks kept
     if (kind === "none" && S.points.length) { msg("You have marks on this frame. Clear them first if it really has no animals.", "warn"); return; }
     if (kind === "skip" && S.points.length && !confirm("Skipping throws away your marks on this frame. Skip anyway?")) return;
     clearTimeout(S.retryTimer); setMotion(false); closeMenu(false);
@@ -772,6 +803,7 @@
     else if (k === "f") setKind("fish");
     else if (k === "i") setKind("invertebrate");
     else if (k === "x") setKind("not_fish");
+    else if (k === "u") setKind("unsure");
     else if (S.kind === "not_fish" && /^[1-9]$/.test(e.key) && NOT_FISH_CATEGORIES[+e.key - 1]) setCategory(NOT_FISH_CATEGORIES[+e.key - 1].id);
     else if (k === "z") undo();
     else if (k === "m") setMovement(!S.movement);
@@ -800,6 +832,8 @@
     const mf = await apiJson("/label_sets/" + encodeURIComponent(setId) + "/manifest.json");
     S.set = setId; S.frames = (mf.frames || []).slice().sort((a, b) => a.time_s - b.time_s); S.total = S.frames.length;
     S.byId = {}; for (const f of S.frames) S.byId[f.frame_id] = f;
+    const seen = new Set();
+    S.calibration = (Array.isArray(mf.calibration) ? mf.calibration : []).filter((id) => typeof id === "string" && S.byId[id] && !seen.has(id) && seen.add(id));
   }
   async function start() {
     try {
@@ -818,7 +852,7 @@
     st.addEventListener("wheel", wheel, { passive: false });
     window.addEventListener("resize", () => layout(false));
     if (window.ResizeObserver) new ResizeObserver(() => layout(false)).observe(st);
-    $("k-fish").addEventListener("click", () => setKind("fish")); $("k-inv").addEventListener("click", () => setKind("invertebrate")); $("k-nf").addEventListener("click", () => setKind("not_fish"));
+    $("k-fish").addEventListener("click", () => setKind("fish")); $("k-inv").addEventListener("click", () => setKind("invertebrate")); $("k-nf").addEventListener("click", () => setKind("not_fish")); $("k-uns").addEventListener("click", () => setKind("unsure"));
     buildPicker();
     $("b-undo").addEventListener("click", undo); $("b-clear").addEventListener("click", clearAll);
     $("b-fit").addEventListener("click", () => layout(true));

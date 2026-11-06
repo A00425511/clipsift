@@ -19,8 +19,11 @@ Logged 5 Nov 2026 from the team check-in and app feedback. Ticked items are done
 - [ ] Windows package that needs no setup, for handoff (Ali).
 
 ## Model work
-- [ ] Reject static boxes (pole, seabed) with a movement check. On two frames, threshold 0.1 plus movement 3 cut an empty frame from 10 boxes to 3 and kept the school. Needs more frames.
-- [ ] Mask or ignore the measuring pole, which the detector often boxes.
+- [x] Reject static boxes (pole, seabed). Done 6 Nov: `clipsift/static_filter.py`, persistence plus movement check, rejected boxes kept with `static: true`. On 100 frames of T1-STAT2 411, boxes at threshold 0.1 went from 28.8 to 14.2 per frame; empty-frame checks 169 to 79 boxes; labelled-frame hits unchanged (24 of 103). One recording, tuned on the same frames. See `2026 Problem Prep/detector-test/STATIC-FILTER.md`.
+- [x] Mask the measuring pole. Config `static_filter.masks` (polygons or a JSON file) and `tools/make_static_mask.py` to suggest one from persistent boxes. A person must check the mask.
+- [ ] Review app: hide `static` detections by default with a "show static" toggle (field is in results.json; app not changed yet).
+- [ ] Static filter on frames where the whole scene moves (camera sway or surge, e.g. 1220 s and 1240 s): align frames or subtract a global movement baseline before the movement check. Persistence also misses boxes that shift a few pixels.
+- [ ] Check the static filter on a second recording or site, and on a crab or still-fish case, before trusting it.
 - [x] Add a Community Fish Detector backend with tiling. See `2026 Problem Prep/detector-test/RESULTS.md`. Done 5 Nov: `clipsift/stages/cfd.py`, fish only, untrained on Nova Scotia footage, scored on one frame. Next: more labelled frames and a held-out test.
 - [ ] Turn dots into boxes for fine-tuning.
 - [ ] Separate approach for crabs and other invertebrates.

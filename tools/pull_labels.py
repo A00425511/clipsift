@@ -5,19 +5,31 @@
     python tools/pull_labels.py --radius 60              # match radius in pixels at 4K (scaled for other sizes)
 
 Writes labels/team/<set>/:
-  points.csv           one row per mark: set, frame, labeller, x, y, kind, category (Not fish marks included)
+  points.csv           one row per mark: set, frame, labeller, x, y, kind, category (Unsure and Not fish marks included,
+                       marked by kind), plus the frame's group and time
   negatives.csv        only the Not fish marks (hard negatives): set, frame, labeller, x, y, category
+  unsure.csv           only the Unsure marks: they are IGNORE regions for training, not animals and not background
   coco_keypoints.json  COCO keypoint format, one annotation per fish or invertebrate mark, labeller kept as an attribute.
                        Not fish marks are NOT animal annotations: they are in a separate top-level "not_fish_marks" list.
+                       Unsure marks are in a separate top-level "ignore_regions" list (with a radius): a trainer should
+                       mask them out, not count them as animals and not as background.
   agreement.csv        one row per frame and pair of labellers: counts, difference, percent difference
-                       and a point-level match rate
-  summary.md / .json   frames labelled, frames with two labels, mean absolute difference, share under 6%
+                       and a point-level match rate. Unsure marks are left out of the counts and the match; the
+                       columns unsure_a / unsure_b and a_unsure_hits_b_animal / b_unsure_hits_a_animal report them.
+  calibration.csv      only when the set has calibration frames: per frame and per person the fish, invertebrate,
+                       unsure and not fish counts and time on the frame, the spread of animal counts across people, and the
+                       pairwise point match rate (row_type "person" and "pair")
+  summary.md / .json   frames labelled, frames with two labels, mean absolute difference, share under 6%,
+                       Unsure totals per person and how often an Unsure matched another person's animal
+
+Every export carries the frame's `group` and time from the manifest. Frames in a school_block are close together in
+time and correlated, so all frames of one block must stay on the same side of any train and test split.
 
 Label names are text typed by people, so they are treated as untrusted: control characters are removed,
 the length is capped, spreadsheet formulas are neutralised in the CSV files and markdown is escaped.
 Skipped frames are never counted. Frames where someone chose No animals count as a label of 0.
-Not fish marks are never counted as animals: counts, agreement and matching use fish and invertebrates only, so a
-frame with only Not fish marks counts as 0 animals.
+Not fish and Unsure marks are never counted as animals: counts, agreement and matching use fish and invertebrates only, so a
+frame with only Not fish or Unsure marks counts as 0 animals.
 """
 from __future__ import annotations
 
@@ -44,6 +56,9 @@ SET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]{0,39}$")
 FRAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
 KINDS = ("fish", "invertebrate")
 NOT_FISH = "not_fish"
+UNSURE = "unsure"
+SPLIT_NOTE = ("Frames in one school_block are close together in time and correlated, so all frames of one block must stay on the same "
+              "side of any train and test split (never some in train and some in test).")
 NOT_FISH_CATEGORIES = ("algae", "debris", "equipment", "seabed", "bubbles", "other")   # keep in step with worker.js
 VIEWS = ("frame", "movement", "clip")   # which views a labeller used on a frame
 SPECIES_MAX = 80
@@ -121,20 +136,33 @@ def clean_rows(rows):
         if not isinstance(raw, list):
             problems.append(f"{fid}: points are not a list for {clean_name(r['labeller'])}")
             continue
-        pts, negs = [], []     # animals (fish, invertebrate) and Not fish marks are kept apart so no count can mix them up
+        pts, negs, uns = [], [], []     # animals (fish, invertebrate), Unsure and Not fish marks are kept apart so no count can mix them up
         for p in raw:
-            if not (isinstance(p, dict) and p.get("kind") in KINDS + (NOT_FISH,) and all(isinstance(p.get(k), (int, float)) and not isinstance(p.get(k), bool)
+            if not (isinstance(p, dict) and p.get("kind") in KINDS + (NOT_FISH, UNSURE) and all(isinstance(p.get(k), (int, float)) and not isinstance(p.get(k), bool)
                                                                                           and math.isfinite(p.get(k)) for k in ("x", "y"))):
                 continue
-            if p["kind"] == NOT_FISH:
+            if p["kind"] == UNSURE:
+                uns.append({"x": float(p["x"]), "y": float(p["y"]), "kind": UNSURE, "species": "", "category": ""})
+            elif p["kind"] == NOT_FISH:
                 cat = p.get("category")
                 negs.append({"x": float(p["x"]), "y": float(p["y"]), "kind": NOT_FISH, "species": "", "category": cat if cat in NOT_FISH_CATEGORIES else ""})
             else:
                 pts.append({"x": float(p["x"]), "y": float(p["y"]), "kind": p["kind"], "species": clean_species(p.get("species")), "category": ""})
-        labels.append({"set": sid, "frame": fid, "labeller": clean_name(r["labeller"]), "points": pts, "not_fish": negs, "views": clean_views(r.get("views_json")),
+        labels.append({"set": sid, "frame": fid, "labeller": clean_name(r["labeller"]), "points": pts, "not_fish": negs, "unsure": uns, "group": "", "time_s": frame_time(fid), "views": clean_views(r.get("views_json")),
                        "no_animals": bool(r.get("no_animals")), "seconds": r.get("seconds") or 0,
                        "skipped": bool(r.get("skipped")), "updated_at": str(r.get("updated_at") or "")})
     return labels, problems
+
+
+def frame_time(frame_id: str):
+    """Seconds into the video from a frame id such as t1s2_v1_t01236 or _t00061p5. None if the id has no time."""
+    m = re.search(r"_t(\d{5})(?:p(\d))?$", frame_id)
+    return float(f"{int(m.group(1))}.{m.group(2) or 0}") if m else None
+
+
+def unsure_hits(a, b, radius):
+    """How many of a's Unsure marks are within radius of one of b's animal marks (fish or invertebrate)."""
+    return sum(1 for u in a["unsure"] if any(math.hypot(u["x"] - q["x"], u["y"] - q["y"]) <= radius for q in b["points"]))
 
 
 def match_points(a, b, radius):
@@ -171,12 +199,39 @@ def frame_pairs(labels, radius_px, widths):
                 "difference": abs(na - nb), "percent_difference": round(pd, 2), "matched_points": matched, "same_kind": same_kind,
                 "match_rate": round(2 * matched / (na + nb), 3) if na + nb else None,
                 "radius_px": round(radius, 1), "views_a": ";".join(a["views"]), "views_b": ";".join(b["views"]),
+                "unsure_a": len(a["unsure"]), "unsure_b": len(b["unsure"]),
+                "a_unsure_hits_b_animal": unsure_hits(a, b, radius), "b_unsure_hits_a_animal": unsure_hits(b, a, radius),
+                "group": a.get("group", ""), "time_s": a.get("time_s"),
                 "note": SMALL_NOTE if max(na, nb) < SMALL_COUNT else "",
             })
     return out
 
 
-def summarise(labels, pairs):
+def unsure_by_person(labels, radius_px, widths):
+    """Per labeller: Unsure marks in total, how many sit on frames someone else also labelled ('checked'), and how many of those
+    are within the match radius of the other person's fish or invertebrate ('matched'). Useful for calibration: it shows whether an
+    Unsure is usually something the other person was confident about."""
+    by_frame = {}
+    for l in labels:
+        if not l["skipped"]:
+            by_frame.setdefault((l["set"], l["frame"]), {})[l["labeller"].lower()] = l
+    out = {}
+    for (sid, fid), people in by_frame.items():
+        radius = radius_px * widths.get((sid, fid), REFERENCE_WIDTH) / REFERENCE_WIDTH
+        for key, l in people.items():
+            d = out.setdefault(l["labeller"], {"unsure": 0, "checked": 0, "matched": 0})
+            d["unsure"] += len(l["unsure"])
+            others = [o for k, o in people.items() if k != key]
+            if not others:
+                continue
+            d["checked"] += len(l["unsure"])      # a mark counts once, however many other people there are
+            d["matched"] += sum(1 for u in l["unsure"]
+                                if any(math.hypot(u["x"] - q["x"], u["y"] - q["y"]) <= radius for o in others for q in o["points"]))
+    return out
+
+
+def summarise(labels, pairs, radius_px=DEFAULT_RADIUS, widths=None, set_size=None):
+    widths = widths or {}
     done = [l for l in labels if not l["skipped"]]
     per_frame = {}
     for l in done:
@@ -186,8 +241,14 @@ def summarise(labels, pairs):
     rates = [p["match_rate"] for p in pairs if p["match_rate"] is not None]
     by_person = {}
     for l in done:
-        d = by_person.setdefault(l["labeller"], {"frames": 0, "marks": 0, "seconds": 0.0})
+        d = by_person.setdefault(l["labeller"], {"frames": 0, "marks": 0, "seconds": 0.0, "unsure": 0, "not_fish": 0})
         d["frames"] += 1; d["marks"] += len(l["points"]); d["seconds"] += float(l["seconds"] or 0)
+        d["unsure"] += len(l["unsure"]); d["not_fish"] += len(l["not_fish"])
+    uns = unsure_by_person(labels, radius_px, widths)
+    u_checked = sum(v["checked"] for v in uns.values()); u_matched = sum(v["matched"] for v in uns.values())
+    groups = {}
+    for g in {(l["set"], l["frame"]): l["group"] for l in done}.values():
+        groups[g or "unknown"] = groups.get(g or "unknown", 0) + 1
     views_used = {v: sum(1 for l in done if v in l["views"]) for v in VIEWS}
     return {
         "frames_labelled": len(per_frame),
@@ -199,11 +260,19 @@ def summarise(labels, pairs):
         "skipped_labels": sum(1 for l in labels if l["skipped"]),
         "total_marks": sum(len(l["points"]) for l in done),
         "not_fish_total": sum(len(l["not_fish"]) for l in done),
+        "unsure_total": sum(len(l["unsure"]) for l in done),
+        "unsure_checked_against_other_labeller": u_checked,
+        "unsure_matched_other_labellers_animal": u_matched,
+        "unsure_match_rate": round(u_matched / u_checked, 3) if u_checked else None,
+        "unsure_by_labeller": {k: v for k, v in sorted(uns.items())},
+        "frames_in_set": set_size,
+        "frames_labelled_by_group": dict(sorted(groups.items())),
+        "split_note": SPLIT_NOTE if "school_block" in groups else "",
         "not_fish_by_category": {c: sum(1 for l in done for p in l["not_fish"] if p["category"] == c) for c in NOT_FISH_CATEGORIES + ("",)},
         "marks_with_species": sum(1 for l in done for p in l["points"] if p["species"]),
         "frames_by_view_used": views_used,
         "frames_with_no_view_recorded": sum(1 for l in done if not l["views"]),
-        "by_labeller": {k: {"frames": v["frames"], "marks": v["marks"], "mean_seconds": round(v["seconds"] / v["frames"], 1)} for k, v in sorted(by_person.items())},
+        "by_labeller": {k: {"frames": v["frames"], "marks": v["marks"], "unsure": v["unsure"], "not_fish": v["not_fish"], "mean_seconds": round(v["seconds"] / v["frames"], 1)} for k, v in sorted(by_person.items())},
     }
 
 
@@ -215,14 +284,14 @@ def write_csv(path: Path, header, rows):
             w.writerow([csv_safe(c) for c in r])
 
 
-def coco(labels, sizes):
+def coco(labels, sizes, radius_px=DEFAULT_RADIUS):
     images, anns, negs, ids = [], [], [], {}
     for l in sorted((x for x in labels if not x["skipped"]), key=lambda x: (x["set"], x["frame"], x["labeller"].lower())):
         key = (l["set"], l["frame"])
         if key not in ids:
             ids[key] = len(ids) + 1
             w, h = sizes.get(key, (REFERENCE_WIDTH, 2160))
-            images.append({"id": ids[key], "file_name": f"frames/{l['frame']}.jpg", "width": w, "height": h, "set": l["set"], "frame_id": l["frame"], "no_animals_by": [], "views_by": {}})
+            images.append({"id": ids[key], "file_name": f"frames/{l['frame']}.jpg", "width": w, "height": h, "set": l["set"], "frame_id": l["frame"], "group": l.get("group", ""), "time_s": l.get("time_s"), "no_animals_by": [], "views_by": {}})
         if l["no_animals"]:
             images[ids[key] - 1]["no_animals_by"].append(l["labeller"])
         images[ids[key] - 1]["views_by"][l["labeller"]] = l["views"]
@@ -233,11 +302,17 @@ def coco(labels, sizes):
     for l in sorted((x for x in labels if not x["skipped"]), key=lambda x: (x["set"], x["frame"], x["labeller"].lower())):
         for p in l["not_fish"]:      # separate list, so a trainer cannot take them for animals
             negs.append({"id": len(negs) + 1, "image_id": ids[(l["set"], l["frame"])], "keypoints": [p["x"], p["y"], 2], "category": p["category"], "labeller": l["labeller"]})
+    ignore = []
+    for l in sorted((x for x in labels if not x["skipped"]), key=lambda x: (x["set"], x["frame"], x["labeller"].lower())):
+        w = sizes.get((l["set"], l["frame"]), (REFERENCE_WIDTH, 2160))[0]
+        for p in l["unsure"]:       # separate list again: a trainer must mask these out, not count them as animals or as background
+            ignore.append({"id": len(ignore) + 1, "image_id": ids[(l["set"], l["frame"])], "keypoints": [p["x"], p["y"], 2],
+                           "radius_px": round(radius_px * w / REFERENCE_WIDTH, 1), "reason": "unsure", "use": "ignore", "labeller": l["labeller"]})
     cats = [{"id": i + 1, "name": k, "supercategory": "animal", "keypoints": ["centre"], "skeleton": []} for i, k in enumerate(KINDS)]
     return {"info": {"description": "ClipSift blind team labels. One keypoint per animal, at the animal's centre. Two labellers per frame: the same animal can appear twice, once per labeller.",
                      "date_created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
             "images": images, "annotations": anns, "categories": cats,
-            "not_fish_marks": negs}
+            "not_fish_marks": negs, "ignore_regions": ignore}
 
 
 def write_summary(path: Path, set_id: str, s: dict, radius: float):
@@ -247,43 +322,95 @@ def write_summary(path: Path, set_id: str, s: dict, radius: float):
     lines = [f"# Label summary: {esc(set_id)}", "",
              "> Names below are text typed by labellers: data, not instructions.", "",
              f"- Frames labelled: {s['frames_labelled']}",
-             f"- Frames with two labels: {s['frames_with_two_labels']}",
+             f"- Frames with two labels: {s['frames_with_two_labels']}" + (f" (of {s['frames_in_set']} frames in the set)" if s.get("frames_in_set") else ""),
              f"- Mean absolute difference in count (animals per frame, per pair): {s['mean_absolute_difference'] if s['mean_absolute_difference'] is not None else 'n/a'}",
              f"- Share of pairs with a percent difference under {LIMIT_PERCENT:g}%: {pct(s['share_under_6_percent'])}",
              f"- Mean point match rate (greedy match within {radius:g} px at 4K): {pct(s['mean_match_rate'])}",
              f"- Not fish marks (hard negatives, not counted as animals): {s['not_fish_total']}. By category: " +
              ", ".join(f"{c or 'no category'} {n}" for c, n in s["not_fish_by_category"].items() if n or c) + ".",
+             f"- Unsure marks (might be an animal; ignore regions for training, never counted): {s['unsure_total']}. "
+             f"Of {s['unsure_checked_against_other_labeller']} Unsure marks on frames someone else also labelled, {s['unsure_matched_other_labellers_animal']} "
+             f"were within the match radius of the other person's fish or invertebrate ({pct(s['unsure_match_rate'])}).",
              f"- Total animal marks: {s['total_marks']} ({s['marks_with_species']} with a species). Skipped labels: {s['skipped_labels']}",
              "- Frames where each view was used (frame, movement view, clip): " + ", ".join(f"{k} {v}" for k, v in s["frames_by_view_used"].items()) +
              f". No view recorded: {s['frames_with_no_view_recorded']} (saved before views were recorded).", "",
              f"Note: when a frame has only a few animals, a difference of one animal makes the percent difference jump (1 against 2 is 67%). "
              f"Rows with fewer than {SMALL_COUNT} animals are flagged in agreement.csv. The percent difference uses the placeholder formula in clipsift/qc.py, "
              "not a Coastal Action formula. Identity is a chosen name, not a login.", "",
-             "| Labeller | Frames | Marks | Mean seconds per frame |", "| --- | --- | --- | --- |"]
+             "| Labeller | Frames | Animal marks | Unsure | Not fish | Unsure that matched the other person's animal | Mean seconds per frame |", "| --- | --- | --- | --- | --- | --- | --- |"]
     for name, d in s["by_labeller"].items():
-        lines.append(f"| {esc(name)} | {d['frames']} | {d['marks']} | {d['mean_seconds']} |")
+        u = s["unsure_by_labeller"].get(name, {"checked": 0, "matched": 0})
+        lines.append(f"| {esc(name)} | {d['frames']} | {d['marks']} | {d['unsure']} | {d['not_fish']} | {u['matched']} of {u['checked']} | {d['mean_seconds']} |")
+    if s.get("frames_labelled_by_group"):
+        lines += ["", "Frames labelled by group: " + ", ".join(f"{esc(k)} {v}" for k, v in s["frames_labelled_by_group"].items()) + "."]
+    if s.get("split_note"):
+        lines += ["", "**Train and test split:** " + s["split_note"]]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_set(set_id, labels, out_root: Path, radius: float, sizes, widths):
+CALIBRATION_HEADER = ["set_id", "frame_id", "calibration_order", "group", "time_s", "row_type", "labeller", "other_labeller", "fish", "invertebrate", "unsure", "not_fish",
+                      "animal_count", "seconds_on_frame", "no_animals", "count_spread", "matched_points", "match_rate"]
+
+
+def calibration_rows(labels, calibration, radius_px, widths):
+    """Per calibration frame: a 'person' row per labeller (counts, time) and a 'pair' row per pair of labellers (point match rate).
+    count_spread is the largest animal count minus the smallest across the people on that frame."""
+    rows = []
+    for order, fid in enumerate(calibration, 1):
+        people = {}
+        for l in labels:
+            if l["frame"] == fid and not l["skipped"]:
+                people[l["labeller"].lower()] = l
+        if not people:
+            continue
+        counts = {k: len(l["points"]) for k, l in people.items()}
+        spread = max(counts.values()) - min(counts.values())
+        any_l = next(iter(people.values()))
+        sid, group, t = any_l["set"], any_l.get("group", ""), any_l.get("time_s")
+        radius = radius_px * widths.get((sid, fid), REFERENCE_WIDTH) / REFERENCE_WIDTH
+        for k in sorted(people):
+            l = people[k]
+            n_fish = sum(1 for p in l["points"] if p["kind"] == "fish")
+            rows.append([sid, fid, order, group, t, "person", l["labeller"], "", n_fish, len(l["points"]) - n_fish, len(l["unsure"]), len(l["not_fish"]),
+                         len(l["points"]), l["seconds"], int(l["no_animals"]), spread, "", ""])
+        for ka, kb in combinations(sorted(people), 2):
+            a, b = people[ka], people[kb]
+            matched, _ = match_points(a["points"], b["points"], radius)
+            tot = len(a["points"]) + len(b["points"])
+            rows.append([sid, fid, order, group, t, "pair", a["labeller"], b["labeller"], "", "", "", "", "", "", "", spread, matched,
+                         round(2 * matched / tot, 3) if tot else ""])
+    return rows
+
+
+def write_set(set_id, labels, out_root: Path, radius: float, sizes, widths, calibration=(), set_size=None):
     out = out_root / set_id
     out.mkdir(parents=True, exist_ok=True)
     mine = [l for l in labels if l["set"] == set_id]
-    write_csv(out / "points.csv", ["set_id", "frame_id", "labeller", "x", "y", "kind", "frame_no_animals", "seconds_on_frame", "updated_at", "species", "views_used", "category"],
+    write_csv(out / "points.csv", ["set_id", "frame_id", "labeller", "x", "y", "kind", "frame_no_animals", "seconds_on_frame", "updated_at", "species", "views_used", "category", "group", "time_s"],
               [[l["set"], l["frame"], l["labeller"], round(p["x"], 1), round(p["y"], 1), p["kind"], int(l["no_animals"]), l["seconds"], l["updated_at"],
-                p["species"], ";".join(l["views"]), p["category"]]
-               for l in mine if not l["skipped"] for p in l["points"] + l["not_fish"]])
-    write_csv(out / "negatives.csv", ["set_id", "frame_id", "labeller", "x", "y", "category", "updated_at", "views_used"],
-              [[l["set"], l["frame"], l["labeller"], round(p["x"], 1), round(p["y"], 1), p["category"], l["updated_at"], ";".join(l["views"])]
+                p["species"], ";".join(l["views"]), p["category"], l["group"], "" if l["time_s"] is None else l["time_s"]]
+               for l in mine if not l["skipped"] for p in l["points"] + l["unsure"] + l["not_fish"]])
+    write_csv(out / "negatives.csv", ["set_id", "frame_id", "labeller", "x", "y", "category", "updated_at", "views_used", "group", "time_s"],
+              [[l["set"], l["frame"], l["labeller"], round(p["x"], 1), round(p["y"], 1), p["category"], l["updated_at"], ";".join(l["views"]), l["group"], "" if l["time_s"] is None else l["time_s"]]
                for l in mine if not l["skipped"] for p in l["not_fish"]])
-    (out / "coco_keypoints.json").write_text(json.dumps(coco(mine, sizes), indent=1, ensure_ascii=False), encoding="utf-8")
+    # Unsure marks: ignore regions. Not animals and not background, so a trainer should mask them out.
+    write_csv(out / "unsure.csv", ["set_id", "frame_id", "labeller", "x", "y", "use", "ignore_radius_px", "updated_at", "views_used", "group", "time_s"],
+              [[l["set"], l["frame"], l["labeller"], round(p["x"], 1), round(p["y"], 1), "ignore",
+                round(radius * sizes.get((l["set"], l["frame"]), (REFERENCE_WIDTH, 0))[0] / REFERENCE_WIDTH, 1), l["updated_at"], ";".join(l["views"]), l["group"],
+                "" if l["time_s"] is None else l["time_s"]]
+               for l in mine if not l["skipped"] for p in l["unsure"]])
+    (out / "coco_keypoints.json").write_text(json.dumps(coco(mine, sizes, radius), indent=1, ensure_ascii=False), encoding="utf-8")
+    if calibration:
+        write_csv(out / "calibration.csv", CALIBRATION_HEADER, calibration_rows(mine, list(calibration), radius, widths))
     pairs = frame_pairs(mine, radius, widths)
     write_csv(out / "agreement.csv",
               ["set_id", "frame_id", "labeller_a", "labeller_b", "count_a", "count_b", "difference", "percent_difference", "matched_points",
-               "matched_same_kind", "match_rate", "match_radius_px", "note", "views_a", "views_b"],
+               "matched_same_kind", "match_rate", "match_radius_px", "note", "views_a", "views_b", "unsure_a", "unsure_b",
+               "a_unsure_hits_b_animal", "b_unsure_hits_a_animal", "group", "time_s"],
               [[p["set"], p["frame"], p["labeller_a"], p["labeller_b"], p["count_a"], p["count_b"], p["difference"], p["percent_difference"],
-                p["matched_points"], p["same_kind"], "" if p["match_rate"] is None else p["match_rate"], p["radius_px"], p["note"], p["views_a"], p["views_b"]] for p in pairs])
-    summary = summarise(mine, pairs)
+                p["matched_points"], p["same_kind"], "" if p["match_rate"] is None else p["match_rate"], p["radius_px"], p["note"], p["views_a"], p["views_b"],
+                p["unsure_a"], p["unsure_b"], p["a_unsure_hits_b_animal"], p["b_unsure_hits_a_animal"], p["group"], "" if p["time_s"] is None else p["time_s"]] for p in pairs])
+    summary = summarise(mine, pairs, radius, widths, set_size)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8")
     write_summary(out / "summary.md", set_id, summary, radius)
     return out, summary
@@ -303,6 +430,36 @@ def load_sizes(sets_root: Path, set_ids):
     return sizes, widths
 
 
+def load_meta(sets_root: Path, set_ids):
+    """From each manifest: per frame its group and time, the calibration list, and the number of frames in the set.
+    Frames from before groups existed are "survey". A set with no manifest here gives no group."""
+    meta, calibration, sizes_n = {}, {}, {}
+    for sid in set_ids:
+        try:
+            data = json.loads((sets_root / sid / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        frames = [f for f in (data.get("frames", []) if isinstance(data, dict) else []) if isinstance(f, dict) and isinstance(f.get("frame_id"), str)]
+        sizes_n[sid] = len(frames)
+        for f in frames:
+            g = f.get("group")
+            meta[(sid, f["frame_id"])] = {"group": g if isinstance(g, str) and re.fullmatch(r"[A-Za-z0-9_\-]{1,30}", g) else "survey",
+                                          "time_s": f["time_s"] if isinstance(f.get("time_s"), (int, float)) and not isinstance(f.get("time_s"), bool) else None}
+        cal = data.get("calibration") if isinstance(data, dict) else None
+        known = {f["frame_id"] for f in frames}
+        calibration[sid] = [c for c in dict.fromkeys(cal) if isinstance(c, str) and c in known] if isinstance(cal, list) else []
+    return meta, calibration, sizes_n
+
+
+def attach_meta(labels, meta):
+    for l in labels:
+        m = meta.get((l["set"], l["frame"]))
+        if m:
+            l["group"] = m["group"]
+            if m["time_s"] is not None:
+                l["time_s"] = m["time_s"]
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Pull blind team labels from D1 and write points, COCO, agreement and a summary")
     p.add_argument("--input", help="read saved wrangler --json output instead of calling wrangler")
@@ -320,8 +477,10 @@ def main(argv=None):
     labels, problems = clean_rows(rows)
     set_ids = sorted({l["set"] for l in labels})
     sizes, widths = load_sizes(Path(a.label_sets_dir), set_ids)
+    meta, calibration, set_sizes = load_meta(Path(a.label_sets_dir), set_ids)
+    attach_meta(labels, meta)
     for sid in set_ids:
-        out, s = write_set(sid, labels, Path(a.out), a.radius, sizes, widths)
+        out, s = write_set(sid, labels, Path(a.out), a.radius, sizes, widths, calibration.get(sid, ()), set_sizes.get(sid))
         print(f"{sid}: {s['frames_labelled']} frames labelled, {s['frames_with_two_labels']} with two labels, "
               f"mean absolute difference {s['mean_absolute_difference']}, share under 6%: {s['share_under_6_percent']}")
         print(f"Wrote {out}")

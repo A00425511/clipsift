@@ -155,8 +155,9 @@
         <button type="button" data-tool="ellipse" aria-pressed="false">Ellipse <kbd>E</kbd></button>
         <button type="button" data-tool="box" aria-pressed="false">Box <kbd>B</kbd></button>
         <span class="lbl">Marking</span>
-        <label class="check"><input type="radio" name="pkind" value="fish" checked> Fish</label>
-        <label class="check"><input type="radio" name="pkind" value="invertebrate"> Invertebrate</label>
+        <label class="check"><input type="radio" name="pkind" value="fish" checked> Fish <kbd>F</kbd></label>
+        <label class="check"><input type="radio" name="pkind" value="invertebrate"> Invertebrate <kbd>I</kbd></label>
+        <label class="check" title="Might be an animal but does not meet the two of four rule. Never counted."><input type="radio" name="pkind" value="unsure"> Unsure <kbd>U</kbd></label>
         <div class="combo" id="p-species-wrap">
           <input id="p-species" type="text" role="combobox" aria-expanded="false" aria-controls="p-species-list" aria-autocomplete="list" autocomplete="off" maxlength="200" placeholder="Fish species (optional)" aria-label="Species for new marks">
           <ul id="p-species-list" role="listbox" hidden></ul>
@@ -168,7 +169,7 @@
         <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
         <button type="button" id="z-reset" title="Back to the whole picture">Reset zoom</button>
         <span id="p-totals" class="p-totals" aria-live="polite"></span>
-        <span class="hint">Dot = one animal (circle for fish, square for invertebrate). Use an ellipse or box for a larger animal. Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove a dot, ellipse or box, right-click it.</span>
+        <span class="hint">Dot = one animal (circle for fish, square for invertebrate, dashed ring for Unsure, which is never counted). Use an ellipse or box for a larger animal. Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove a dot, ellipse or box, right-click it.</span>
       </div>
       <div class="sliders adv">
         <label>Brightness <input type="range" id="f-brightness" min="50" max="300" value="100"><output></output></label>
@@ -236,10 +237,16 @@
       <label class="check"><input type="checkbox" id="c-move"> Possible animals I could not confirm (a note only, never counted)</label>
       <div class="count-grid">
         <label>Visibility
-          <select id="c-vis"><option value="">Not recorded</option><option>&lt;0.5 m</option><option>0.5-1.0 m</option><option>1.0-1.5 m</option><option>&gt;1.5 m</option></select></label>
+          <select id="c-vis" aria-describedby="c-vis-hint"><option value="">Not recorded</option><option>&lt;0.5 m</option><option>0.5-1.0 m</option><option>1.0-1.5 m</option><option>&gt;1.5 m</option></select></label>
         <label class="check"><input type="checkbox" id="c-vchange"> Visibility changed by 0.5 m or more</label>
       </div>
+      <p id="c-vis-hint" class="hint" hidden>Visibility carried over from the last point. Change it if it has shifted.</p>
       <label class="note-row">Notes <textarea id="c-notes" rows="2" maxlength="2000"></textarea></label>
+      <div class="note-chips" aria-label="Quick notes">
+        <button type="button" class="quiet" data-note="Seen just outside the count second, not counted.">Just outside the second</button>
+        <button type="button" class="quiet" data-note="School present, more fish likely but not confirmed.">School, more not confirmed</button>
+        <button type="button" class="quiet" data-note="Counted one extra: certain it was a different fish.">Certain it was a different fish</button>
+      </div>
       <label class="count-row" id="pass-row" hidden>Pass
         <select id="c-pass"><option value="qc_blind">QC blind count</option><option value="recount">Recount</option></select></label>
       <div class="save-row">
@@ -339,7 +346,8 @@
         <tr><td>Right-click</td><td>Remove a dot, ellipse or box</td></tr>
         <tr><td><kbd>,</kbd> and <kbd>.</kbd></td><td>Step the clip back or forward one frame</td></tr>
         <tr><td><kbd>P</kbd></td><td>Dot tool</td></tr>
-        <tr><td><kbd>Z</kbd></td><td>Undo your last mark</td></tr>
+        <tr><td><kbd>F</kbd>, <kbd>I</kbd> and <kbd>U</kbd></td><td>Mark as fish, invertebrate or Unsure</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>Undo your last mark or removal</td></tr>
         <tr><td><kbd>1</kbd> to <kbd>4</kbd></td><td>Tick shape, anatomy, colour, movement</td></tr>
         <tr><td><kbd>D</kbd></td><td>Show or hide the movement view</td></tr>
         <tr><td><kbd>G</kbd></td><td>Show or hide the grid</td></tr>

@@ -171,6 +171,13 @@ def test_percent_difference_function():
     assert round(percent_difference(11, 14), 1) == 24.0
 
 
+def test_unsure_marks_are_saved_without_a_species(env):
+    c, _, _, _ = env
+    r = c.post(R + "/point_labels", json={"subsample_id": "ss_02", "counter": "Ana", "kind": "unsure", "x": 10, "y": 20, "species": "Gadus morhua"})
+    assert r.status_code == 201 and r.get_json()["species"] is None
+    assert c.post(R + "/point_labels", json={"subsample_id": "ss_02", "counter": "Ana", "kind": "seaweed", "x": 1, "y": 2}).status_code == 400
+
+
 def test_point_labels_add_undo_append_only(env):
     c, run, *_ = env
     base = {"subsample_id": "ss_02", "counter": "Ana", "kind": "fish", "x": 120.4, "y": 200}

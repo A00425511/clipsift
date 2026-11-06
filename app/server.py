@@ -511,15 +511,15 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             record = {"op": "remove", "label_id": lid, "subsample_id": ss["subsample_id"], "counter": counter, "at": now_iso()}
         elif op == "add":
             kind = data.get("kind")
-            if kind not in ("fish", "invertebrate"):
-                raise BadInput("kind must be fish or invertebrate")
+            if kind not in ("fish", "invertebrate", "unsure"):   # unsure: never counted, and carries no species
+                raise BadInput("kind must be fish, invertebrate or unsure")
             shape = data.get("shape", "point")
             if shape not in ("point", "ellipse", "box"):
                 raise BadInput("shape must be point, ellipse or box")
             record = {"op": "add", "label_id": "pl_" + uuid.uuid4().hex[:12], "subsample_id": ss["subsample_id"],
                       "time_s": data.get("time_s", ss.get("t_s")), "x": finite(data.get("x"), "x", 0, 100000),
                       "y": finite(data.get("y"), "y", 0, 100000), "shape": shape, "kind": kind,
-                      "species": clean_str(data.get("species"), "species", 200), "counter": counter, "at": now_iso()}
+                      "species": None if kind == "unsure" else clean_str(data.get("species"), "species", 200), "counter": counter, "at": now_iso()}
             if record["time_s"] is not None:
                 finite(record["time_s"], "time_s", 0, 86400)
             if shape != "point":

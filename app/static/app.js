@@ -20,7 +20,7 @@
    
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
-    motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, stopAfterDrag: false, loopWasPlaying: false, hudRaf: 0, names: "common",
+    markHistory: [], motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, stopAfterDrag: false, loopWasPlaying: false, hudRaf: 0, names: "common",
     zoom: { k: 1, x: 0, y: 0 }, tool: "pan", drag: null,
     more: localStorage.getItem("clipsift.moretools") === "1",   // "More tools" toggle, remembered
   };
@@ -473,7 +473,6 @@
       b.append(el("span", { class: "q-id", text: id }));
       if (S.mode === "sub") {
         b.append(el("span", { class: "q-time", text: fmtTime(u.t_s) }));
-        if (u.qc_sample) b.append(badge("QC", "info"));
       } else {
         b.append(el("span", { class: "q-time", text: fmtTime(u.start_s) + " to " + fmtTime(u.end_s) }));
         if (u.audit_sample) b.append(badge("Random check", "audit"));
@@ -659,10 +658,12 @@
   }
   // A species from the other list must not ride along on the next mark.
   function kindChanged() {
-    const k = markKind(), r = resolve($("p-species").value);
-    if (r && r.kind && r.kind !== k) $("p-species").value = "";
-    $("p-species").placeholder = (k === "invertebrate" ? "Invertebrate" : "Fish") + " species (optional)";
+    const k = markKind(), r = resolve($("p-species").value), box = $("p-species");
+    if (k === "unsure" || (r && r.kind && r.kind !== k)) box.value = "";
+    box.disabled = k === "unsure";
+    box.placeholder = k === "unsure" ? "No species for Unsure" : (k === "invertebrate" ? "Invertebrate" : "Fish") + " species (optional)";
   }
+  function setMarkKind(k) { document.querySelector('input[name=pkind][value="' + k + '"]').checked = true; kindChanged(); }
 
   // ---------- grid (optional tool) ----------
   function gridSize() {
@@ -723,7 +724,7 @@
   function labelCenter(l) { return l.w != null && l.h != null ? [l.x + l.w / 2, l.y + l.h / 2] : [l.x, l.y]; }
   function cellTotals(rows, cols) {
     const [W, H] = dims(), t = Array.from({ length: rows }, () => new Array(cols).fill(0));
-    for (const l of myLabels()) {
+    for (const l of myLabels().filter((x) => x.kind !== "unsure")) {
       const [cx, cy] = labelCenter(l);
       t[Math.min(rows - 1, Math.max(0, Math.floor((cy / H) * rows)))][Math.min(cols - 1, Math.max(0, Math.floor((cx / W) * cols)))] += 1;
     }
@@ -742,7 +743,7 @@
     const labels = blocked ? [] : myLabels();
     const rad = (6 * W) / Math.max(200, $("stage").clientWidth) / S.zoom.k;
     for (const l of labels) {
-      const inv = l.kind === "invertebrate", cls = "mark " + (inv ? "inv" : "fish");
+      const inv = l.kind === "invertebrate", cls = "mark " + (l.kind === "unsure" ? "uns" : inv ? "inv" : "fish");
       let n;
       if (l.w != null && l.h != null) {
         n = document.createElementNS(NS, l.shape === "ellipse" ? "ellipse" : "rect");
@@ -757,8 +758,8 @@
       n.setAttribute("class", cls + (l.w != null ? " big" : "")); n.setAttribute("vector-effect", "non-scaling-stroke");
       svg.append(n);
     }
-    const fish = labels.filter((l) => l.kind === "fish").length, inv = labels.length - fish;
-    $("p-totals").textContent = blocked ? "Use a different name for the blind second count." : (labels.length ? "Marked: " + fish + " fish, " + inv + " invertebrates, " + labels.length + " total" : "No marks yet. Click an animal on the picture to place a dot.");
+    const fish = labels.filter((l) => l.kind === "fish").length, inv = labels.filter((l) => l.kind === "invertebrate").length, uns = labels.length - fish - inv;
+    $("p-totals").textContent = blocked ? "Use a different name for the blind second count." : (labels.length ? "Marked: " + fish + " fish, " + inv + " invertebrates" + (uns ? ", " + uns + " Unsure (not counted)" : "") : "No marks yet. Click an animal on the picture to place a dot.");
     if (feed && labels.length && !blocked) {
       $("c-fish").value = fish; $("c-inv").value = inv;
       const withSp = labels.filter((l) => l.species);
@@ -800,6 +801,7 @@
     try {
       const rec = await Data.save(S.runId, "point_labels", payload);
       S.saved.point_labels = (S.saved.point_labels || []).concat([rec]);
+      S.markHistory.push({ type: "add", label: rec });
       renderLabels(true);
     } catch (err) { message("Mark not saved: " + err.message, "error"); }
   }
@@ -821,8 +823,10 @@
     try {
       await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: l.label_id });
       S.saved.point_labels = (S.saved.point_labels || []).filter((x) => x.label_id !== l.label_id);
+      S.markHistory.push({ type: "remove", label: l });
       renderLabels(true);
       if (!myLabels().length) $("p-totals").textContent += " Count fields were not changed; edit them by hand.";
+      message("Mark removed. Press Z to bring it back.", "");
     } catch (err) { message("Could not remove that mark: " + err.message, "error"); }
   }
   async function clearAllLabels() {
@@ -840,8 +844,21 @@
   }
   async function undoLabel() {
     if (S.mode !== "sub") return;
+    // The latest add or removal on this point, by this person, in this session.
+    let at = S.markHistory.length - 1;
+    while (at >= 0 && !(S.markHistory[at].label.subsample_id === S.selId && S.markHistory[at].label.counter === reviewer())) at--;
+    const step = at >= 0 ? S.markHistory.splice(at, 1)[0] : null;
+    if (step && step.type === "remove") {
+      const { subsample_id, counter, shape, kind, species, x, y, w, h } = step.label;
+      try {
+        const rec = await Data.save(S.runId, "point_labels", Object.assign({ subsample_id, counter, op: "add", shape, kind, species, x, y }, w != null ? { w, h } : {}));
+        S.saved.point_labels = (S.saved.point_labels || []).concat([rec]);
+        renderLabels(true); message("Mark brought back.", "");
+      } catch (err) { message("Undo failed: " + err.message, "error"); }
+      return;
+    }
     const mine = myLabels(); if (!mine.length) { message("Nothing to undo.", ""); return; }
-    const last = mine[mine.length - 1];
+    const last = step ? (mine.find((l) => l.label_id === step.label.label_id) || mine[mine.length - 1]) : mine[mine.length - 1];
     try {
       await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: last.label_id });
       S.saved.point_labels = S.saved.point_labels.filter((l) => l.label_id !== last.label_id);
@@ -1075,7 +1092,6 @@
   function renderSubsample(u) {
     const head = $("seg-head"); clear(head);
     head.append(el("h2", { text: u.subsample_id }), el("span", { text: "at " + fmtTime(u.t_s) }));
-    if (u.qc_sample) head.append(badge("QC sample", "info"));
     if (S.qc) head.append(badge("QC mode: blind second count", "audit"));
     $("audit-banner").hidden = !S.qc;
     $("audit-banner").textContent = "QC mode. Count this point fresh. The first count and the model suggestion are hidden on purpose.";
@@ -1086,7 +1102,9 @@
     $("c-fish").value = prev ? prev.total_fish_count : ""; $("c-inv").value = prev ? prev.invertebrate_count : "";
     $("c-unk").value = prev && prev.unknown_count ? prev.unknown_count : "";
     S.ss.rows = prev ? Object.entries(prev.species_counts || {}).map(([name, n]) => ({ name, n, free: !resolve(name) })) : [];
-    $("c-vis").value = prev && prev.visibility_category ? prev.visibility_category : "";
+    const carried = !prev && !S.qc ? carriedVisibility(u) : null;
+    $("c-vis").value = prev && prev.visibility_category ? prev.visibility_category : (carried || "");
+    $("c-vis-hint").hidden = !carried;
     $("c-vchange").checked = !!(prev && prev.visibility_change);
     $("c-notes").value = prev ? (prev.notes || "").replace(/^Movement, unidentified\. ?/, "") : "";
     $("c-move").checked = !!(prev && /^Movement, unidentified/.test(prev.notes || ""));
@@ -1095,6 +1113,12 @@
     paintSpeciesRows(); paintCharsWarn();
     const r = !S.qc && prev ? "Your earlier count is loaded. Saving adds a new row; earlier rows are kept." : "";
     $("sub-result").textContent = r;
+  }
+  // Visibility from the nearest earlier counted point, so it is only typed when it changes. Never in a blind count.
+  function carriedVisibility(u) {
+    const earlier = subs().filter((s) => (s.t_s ?? 0) < (u.t_s ?? 0)).sort((a, b) => (b.t_s ?? 0) - (a.t_s ?? 0));
+    for (const s of earlier) { const r = primaryOf(s.subsample_id); if (r && r.visibility_category) return r.visibility_category; }
+    return null;
   }
   function paintSpeciesRows() {
     const ul = $("species-rows"); clear(ul);
@@ -1199,6 +1223,9 @@
     else if (S.mode === "sub" && k === "e") setTool("ellipse");
     else if (S.mode === "sub" && k === "b") setTool("box");
     else if (S.mode === "sub" && k === "z") undoLabel();
+    else if (S.mode === "sub" && k === "f") setMarkKind("fish");
+    else if (S.mode === "sub" && k === "i") setMarkKind("invertebrate");
+    else if (S.mode === "sub" && k === "u") setMarkKind("unsure");
     else if (S.mode === "seg" && DECISION_KEYS[k]) saveDecision(DECISION_KEYS[k]);
     else if (S.mode === "sub" && k in CHAR_KEYS) { const cb = $("chars").querySelectorAll("input")[CHAR_KEYS[k]]; cb.checked = !cb.checked; paintCharsWarn(); }
     else if (k === "," ) frameStep(-1);
@@ -1430,7 +1457,7 @@
       const rec = S.results.recording || {}, k = w / (rec.width || img.naturalWidth);
       g.drawImage(img, 0, 0, w, h); g.lineWidth = 2;
       for (const l of (S.saved.point_labels || []).filter((x) => x.subsample_id === p.id && x.counter === p.counter)) {
-        g.strokeStyle = l.kind === "invertebrate" ? "#6fd3ff" : "#ffe94d"; g.beginPath();
+        g.strokeStyle = l.kind === "unsure" ? "#ffb04d" : l.kind === "invertebrate" ? "#6fd3ff" : "#ffe94d"; g.setLineDash(l.kind === "unsure" ? [4, 3] : []); g.beginPath();
         if (l.w != null && l.h != null) g.ellipse((l.x + l.w / 2) * k, (l.y + l.h / 2) * k, (l.w / 2) * k, (l.h / 2) * k, 0, 0, Math.PI * 2);
         else g.arc(l.x * k, l.y * k, 7, 0, Math.PI * 2);
         g.stroke();
@@ -1563,6 +1590,10 @@
     $("nv-path").addEventListener("change", loadPreview);
     for (const b of document.querySelectorAll("#steps [data-step]")) b.addEventListener("click", () => setStep(b.dataset.step));
     $("rn-save-vis").addEventListener("click", saveNotes);
+    for (const b of document.querySelectorAll("[data-note]")) b.addEventListener("click", () => {
+      const box = $("c-notes"), text = b.dataset.note;
+      if (!box.value.includes(text)) box.value = (box.value.trim() + " " + text).trim();
+    });
     makeCombo($("rn-sp-input"), $("rn-sp-list"), (sel) => {
       const box = $("rn-species"), have = box.value.split("\n").map((x) => x.trim()).filter(Boolean);
       if (sel.value && !have.includes(sel.value)) box.value = have.concat([sel.value]).join("\n");

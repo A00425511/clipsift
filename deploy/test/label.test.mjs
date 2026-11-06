@@ -248,6 +248,16 @@ t("calibration only: every other frame is held back, and finished people get not
   assert.notEqual(L.pickNext(fr, {}, { c: { state: "done" }, a: { state: "done" } }, "Sam", null, ["c", "a"], false), null);
   assert.equal(L.calibrationProgressText(["c", "a"], { c: { state: "done" }, b: { state: "done" } }), "You: 1 of 2 calibration frames done.");
 });
+t("no animals: both views must be seen first, unless the frame lacks one", () => {
+  assert.deepEqual(L.missingChecks(["frame"], true, true), ["the clip", "the Movement view"]);
+  assert.deepEqual(L.missingChecks(["frame", "clip"], true, true), ["the Movement view"]);
+  assert.deepEqual(L.missingChecks(["frame", "clip", "movement"], true, true), []);
+  assert.deepEqual(L.missingChecks(["frame"], false, false), []);
+});
+t("report: species counted at points join the species observed list", () => {
+  const r = D.buildReport({ subsamples: [{ subsample_id: "a", t_s: 1 }] }, { latest_primary: { a: { total_fish_count: 1, species_counts: { "Gadus morhua": 1 } } }, latest_recording_notes: { species_observed: ["Cancer irroratus", "Gadus morhua"] } });
+  assert.deepEqual(r.speciesObserved, ["Cancer irroratus", "Gadus morhua"]);
+});
 t("calibration: the on-screen label", () => {
   assert.equal(L.calibrationText(["a", "b", "c", "d", "e"], "b"), "Calibration frame 2 of 5");
   assert.equal(L.calibrationText(["a"], "zz"), "");

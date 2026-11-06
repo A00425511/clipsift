@@ -15,6 +15,14 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 0.8.0 (2026-11-06)
+- Review app: Unsure marks (never counted), and `F`, `I` and `U` keys.
+- Review app: Undo also brings back a removed mark.
+- Review app: quick note buttons, and visibility carries over from the last counted point (not in blind counts).
+- Review app: the QC badge is hidden while counting, so first counters can't tell which points will be checked.
+- Report: species counted at points join the species observed list.
+- Label page: No animals asks for the clip and Movement view first.
+
 ### 0.7.1 (2026-11-06)
 - Label page: hold every frame back except the five calibration frames, until the team debrief. Saved labels are kept. To reopen, set `calibration_only` to false in `label_sets/<set>/calibration.json` and rebuild the site.
 

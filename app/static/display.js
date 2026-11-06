@@ -114,7 +114,7 @@
       planned: points.length, counted: counted.length, meanCount: saved.mean_count_reviewed == null ? null : saved.mean_count_reviewed,
       totalFish: sum("fish"), totalInv: sum("inv"), totalUnknown: sum("unknown"), points,
       sd, se: sd == null ? null : sd / Math.sqrt(n), zeroPoints: counted.filter((p) => !p.fish).length,
-      interval: proto.interval_s, speciesObserved: notes.species_observed || [], juveniles: notes.juveniles == null ? null : notes.juveniles,
+      interval: proto.interval_s, speciesObserved: [...new Set([...(notes.species_observed || []), ...Object.keys(bySpecies)])], juveniles: notes.juveniles == null ? null : notes.juveniles,
       visibility: notes.visibility_by_observer || [],
       species: Object.values(bySpecies).map((s) => ({ ...s, meanCount: s.total / n })).sort((a, b) => b.total - a.total || (a.name < b.name ? -1 : 1)),
       qcPairs: qc.length, qcRecounts: qc.filter((q) => q.recount_needed).length, qcAgreement: saved.qc_agreement == null ? null : saved.qc_agreement };

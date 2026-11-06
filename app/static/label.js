@@ -89,6 +89,13 @@
     const i = Array.isArray(calibration) ? calibration.indexOf(frameId) : -1;
     return i < 0 ? "" : "Calibration frame " + (i + 1) + " of " + calibration.length;
   }
+  // What must be looked at before a frame can be called empty. Only views this frame actually has.
+  function missingChecks(views, hasClip, hasMovement) {
+    const seen = Array.isArray(views) ? views : [], out = [];
+    if (hasClip && !seen.includes("clip")) out.push("the clip");
+    if (hasMovement && !seen.includes("movement")) out.push("the Movement view");
+    return out;
+  }
   function calibrationProgressText(calibration, mine) {
     const done = calibration.filter((id) => mine[id] && mine[id].state === "done").length;
     return "You: " + done + " of " + calibration.length + " calibration frames done.";
@@ -176,7 +183,7 @@
   function noConfidentAnimals(points) { return !!points && points.length > 0 && points.every((p) => p.kind === "not_fish" || p.kind === "unsure"); }
   function orderedViews(list) { return VIEWS.filter((v) => Array.isArray(list) && list.includes(v)); }
 
-  const api = { calibrationProgressText, KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
+  const api = { missingChecks, calibrationProgressText, KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document === "undefined") return;
 
@@ -787,6 +794,10 @@
   async function commit(kind) {
     if (!S.cur || S.saving) return;
     if (kind === "done" && !S.points.length) { msg("No marks yet. Click each animal you are sure about. If the frame is empty press No animals (N); to leave it, press Skip (S).", "warn"); return; }
+    if (kind === "none") {
+      const missing = missingChecks(S.views, !!S.cur.clip_url, !!S.cur.diff_url && S.diffOk);
+      if (missing.length) { msg("Check " + missing.join(" and ") + " first. Animals are easy to miss in the still.", "warn"); return; }
+    }
     if (kind === "none" && noConfidentAnimals(S.points)) kind = "done";   // only Unsure and Not fish marks: the same as no counted animals, saved with the marks kept
     if (kind === "none" && S.points.length) { msg("You have marks on this frame. Clear them first if it really has no animals.", "warn"); return; }
     if (kind === "skip" && S.points.length && !confirm("Skipping throws away your marks on this frame. Skip anyway?")) return;

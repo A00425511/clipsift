@@ -99,6 +99,7 @@ progress { width: 140px; height: 10px; accent-color: var(--ok); }
 .det-box { fill: none; stroke: #ff9f43; stroke-width: 2; stroke-dasharray: 6 3; }
 .mark { fill: rgba(255,240,120,.35); stroke: #ffe94d; stroke-width: 2; }
 .mark.inv { fill: rgba(130,220,255,.35); stroke: #6fd3ff; }
+.mark.uns { fill: none; stroke: #ffb04d; stroke-dasharray: 4 3; }
 .mark.big { fill: none; } .mark.big.inv { stroke-dasharray: 8 4; } .mark.preview { stroke: #fff; stroke-dasharray: 4 3; }
 .grid { position: absolute; inset: 0; display: grid; }
 .grid.passive { pointer-events: none; }
@@ -263,5 +264,7 @@ dialog.report { width: min(1000px, 96vw); max-height: 92vh; padding: 14px 18px; 
 .rp-shots figure { margin: 0; break-inside: avoid; } .rp-shots img { width: 100%; display: block; }
 .rp-shots figcaption { font-size: 12px; margin-top: 2px; }
 @media (max-width: 900px) { .vis-grid, .watch-grid { grid-template-columns: 1fr; } }
+
+.note-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; } .note-chips button { font-size: 12px; padding: 2px 7px; }
 
 [hidden] { display: none !important; }

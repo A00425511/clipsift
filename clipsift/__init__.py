@@ -1,2 +1,2 @@
 """ClipSift: local review assistant for turbid-water underwater video (prototype skeleton)."""
-__version__ = "0.2.0"
+__version__ = "0.4.0"

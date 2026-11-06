@@ -1,0 +1,949 @@
+"""ClipSift review app: a small local Flask server.
+
+Run from the project root:  python -m app.server --runs runs --port 8765
+
+Reads the run folder contract in docs/SPEC.md directly (no pipeline import).
+All writes are append-only JSON lines. Original footage is never touched.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import io
+import json
+import math
+import re
+import uuid
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+
+from flask import Flask, Response, abort, jsonify, request, send_file, send_from_directory
+
+APP_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = APP_DIR.parent
+DEFAULT_SPECIES = PROJECT_ROOT / "species" / "species_list.json"
+DEFAULT_ALIASES = APP_DIR / "local_aliases.jsonl"
+DEFAULT_LABEL_SETS = PROJECT_ROOT / "label_sets"
+DEFAULT_LABELS = APP_DIR / "local_labels.jsonl"
+
+NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,127}$")  # run and segment ids
+SEGMENT_FILES = {"still": "still.jpg", "diff": "diff.jpg", "loop": "loop.mp4"}
+MIME = {"still": "image/jpeg", "diff": "image/jpeg", "loop": "video/mp4"}
+DECISIONS = {"confirm", "reject", "unknown", "needs_second_look"}
+SLIDERS = ("brightness", "contrast", "saturation")
+SUB_FILES = {"still": "still.jpg", "diff": "diff.jpg", "context": "context.mp4"}
+SUB_MIME = {"still": "image/jpeg", "diff": "image/jpeg", "context": "video/mp4"}
+PASSES = {"primary", "qc_blind", "recount"}
+CHARACTERISTICS = ("shape", "anatomical_features", "colouration_or_flashes", "swimming_behaviour")
+VISIBILITY = ("<0.5 m", "0.5-1.0 m", "1.0-1.5 m", ">1.5 m")
+# Defaults only. The run's own results.json "protocol" block wins. Draft protocol, so all configurable.
+QC_DEFAULTS = {"qc_max_percent_diff": 6, "qc_agreement": 95}
+# Blind label mode. Same rules as deploy/src/worker.js: keep the two in step.
+LABEL_SET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]{0,39}$")
+LABEL_FRAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
+LABEL_MAX_POINTS = 2000
+LABEL_MAX_BODY = 400000
+LABEL_NAME_MAX = 40
+LABEL_MAX_SECONDS = 86400
+LABEL_KINDS = ("fish", "invertebrate", "unsure", "not_fish")   # unsure: might be an animal, never counted; no species or category
+LABEL_NOT_FISH_CATEGORIES = ("algae", "debris", "equipment", "seabed", "bubbles", "other")   # keep in step with worker.js and label.js
+LABEL_VIEWS = ("frame", "movement", "clip")   # views used on a frame, kept for later analysis
+LABEL_SPECIES_MAX = 80
+LABEL_PRESET_NAMES = ("Jacob", "Ali", "Gina", "Wang", "Adrien")
+FEEDBACK_AREAS = ("Counting", "Video", "Timeline", "Help", "Layout", "Other")
+FEEDBACK_TYPES = ("Bug", "Confusing", "Idea", "Like")
+
+
+def active_point_labels(rows):
+    """Resolve the append-only point_labels.jsonl: adds minus later removes (undo)."""
+    live, order = {}, []
+    for r in rows:
+        lid = r.get("label_id")
+        if r.get("op") == "remove":
+            live.pop(lid, None)
+        elif isinstance(lid, str):
+            live[lid] = r
+            order.append(lid)
+    return [live[i] for i in order if i in live]
+
+
+def percent_difference(a, b):
+    """Percent difference between two counts of the same frame.
+
+    ASSUMPTION: the protocol PDF does not give its formula. This uses the difference
+    divided by the mean of the two counts, times 100 (0 when both are 0). Swap it here
+    once Coastal Action confirm the formula.
+    """
+    if a is None or b is None:
+        return None
+    if a == 0 and b == 0:
+        return 0.0
+    return abs(a - b) / ((a + b) / 2) * 100
+
+CSV_COLUMNS = [
+    ("recording_id", "Recording folder name."),
+    ("segment_id", "Segment id from results.json."),
+    ("start_s", "Segment start, seconds from the start of the recording."),
+    ("end_s", "Segment end, seconds."),
+    ("kind", "active, or set_aside (no activity found, time is kept)."),
+    ("audit_sample", "true if this set-aside segment was picked at random as a check."),
+    ("status", "Model status: known, fish_unknown, unclear, movement_unidentified, none."),
+    ("motion_score", "Motion score from the pipeline. Blank means not computed."),
+    ("visibility_score", "Visibility score from the pipeline. Blank means not computed."),
+    ("flag_shake", "true if camera shake was flagged."),
+    ("flag_low_visibility", "true if low visibility was flagged."),
+    ("review_priority", "Higher means it was shown earlier in the queue."),
+    ("model_maxn", "Model MaxN: the most fish seen in one frame. A relative index, not abundance. Blank means not computed."),
+    ("model_mean_count", "Model mean fish per sampled frame. A relative index, not abundance. Blank means not computed."),
+    ("model_unique_tracks", "Number of separate fish tracks. A relative index, not abundance. Blank means not computed."),
+    ("decision", "Reviewer decision: confirm, reject, unknown, needs_second_look."),
+    ("species", "Species the reviewer entered. Blank if none."),
+    ("species_free_text", "true if the species was typed and is not in the species list. Check these."),
+    ("count", "Fish count the reviewer entered. A relative index, not abundance."),
+    ("note", "Reviewer note."),
+    ("reviewer", "Reviewer name as typed."),
+    ("reviewed_at", "When the latest decision was saved (UTC)."),
+    ("n_decisions", "How many decisions were saved for this segment. Only the latest is shown here."),
+    ("n_grid_tags", "How many grid cell tags were saved for this segment."),
+]
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class BadInput(ValueError):
+    pass
+
+
+def clean_str(value, field, max_len, allow_empty=True):
+    if value is None:
+        if allow_empty:
+            return None
+        raise BadInput(f"{field} is required")
+    if not isinstance(value, str):
+        raise BadInput(f"{field} must be text")
+    value = value.strip()
+    if not value and not allow_empty:
+        raise BadInput(f"{field} is required")
+    if len(value) > max_len:
+        raise BadInput(f"{field} is too long (max {max_len})")
+    return value or None
+
+
+def clean_int(value, field, lo, hi, allow_none=True):
+    if value is None:
+        if allow_none:
+            return None
+        raise BadInput(f"{field} is required")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BadInput(f"{field} must be a whole number")
+    if not lo <= value <= hi:
+        raise BadInput(f"{field} must be between {lo} and {hi}")
+    return value
+
+
+def clean_pair(value, field, lo, hi):
+    if not isinstance(value, list) or len(value) != 2:
+        raise BadInput(f"{field} must be two numbers")
+    return [clean_int(v, field, lo, hi, allow_none=False) for v in value]
+
+
+def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets_dir=None, labels_path=None) -> Flask:
+    app = Flask(__name__, static_folder=str(APP_DIR / "static"), static_url_path="/static")
+    runs_root = Path(runs_dir).resolve()
+    species_file = Path(species_path) if species_path else DEFAULT_SPECIES
+    aliases_file = Path(aliases_path) if aliases_path else DEFAULT_ALIASES
+    label_sets_root = Path(label_sets_dir).resolve() if label_sets_dir else DEFAULT_LABEL_SETS.resolve()
+    labels_file = Path(labels_path) if labels_path else DEFAULT_LABELS
+    write_lock = threading.Lock()
+    app.config.update(RUNS_ROOT=runs_root, SPECIES_FILE=species_file, ALIASES_FILE=aliases_file, LABEL_SETS_ROOT=label_sets_root, LABELS_FILE=labels_file)
+
+    # ---- helpers -----------------------------------------------------------
+    def run_dir_for(run_id: str) -> Path:
+        if not NAME_RE.match(run_id):
+            abort(400, "Bad run name")
+        path = (runs_root / run_id).resolve()
+        if path.parent != runs_root or not path.is_dir():
+            abort(404, "Run not found")
+        return path
+
+    def load_results(run_dir: Path) -> dict:
+        path = run_dir / "results.json"
+        if not path.is_file():
+            abort(404, "This run has no results.json")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            abort(422, "results.json could not be read")
+        if not isinstance(data, dict) or not isinstance(data.get("segments"), list):
+            abort(422, "results.json is missing its segments list")
+        return data
+
+    def read_jsonl(path: Path) -> list:
+        rows = []
+        if not path.is_file():
+            return rows
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue  # skip a half-written line instead of failing
+                if isinstance(obj, dict):
+                    rows.append(obj)
+        return rows
+
+    def append_jsonl(path: Path, obj: dict) -> None:
+        line = json.dumps(obj, ensure_ascii=False) + "\n"
+        with write_lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
+
+    def json_body() -> dict:
+        if not request.is_json:
+            raise BadInput("Send JSON (Content-Type: application/json)")
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise BadInput("Body must be a JSON object")
+        return data
+
+    def known_segment(results: dict, segment_id) -> dict:
+        if not isinstance(segment_id, str) or not NAME_RE.match(segment_id):
+            raise BadInput("segment_id is missing or invalid")
+        for seg in results["segments"]:
+            if isinstance(seg, dict) and seg.get("segment_id") == segment_id:
+                return seg
+        raise BadInput("segment_id is not in this run")
+
+    def clean_settings_from(settings):
+        settings = settings or {}
+        if not isinstance(settings, dict):
+            raise BadInput("contrast_settings must be an object")
+        out = {}
+        for key in SLIDERS:
+            if key in settings:
+                v = settings[key]
+                if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 300:
+                    raise BadInput(f"{key} must be a number from 0 to 300")
+                out[key] = v
+        return out
+
+    def known_subsample(results, subsample_id):
+        if not isinstance(subsample_id, str) or not NAME_RE.match(subsample_id):
+            raise BadInput("subsample_id is missing or invalid")
+        for ss in results.get("subsamples") or []:
+            if isinstance(ss, dict) and ss.get("subsample_id") == subsample_id:
+                return ss
+        raise BadInput("subsample_id is not in this run")
+
+    @app.errorhandler(BadInput)
+    def on_bad_input(err):
+        return jsonify(error=str(err)), 400
+
+    @app.errorhandler(400)
+    @app.errorhandler(404)
+    @app.errorhandler(405)
+    @app.errorhandler(422)
+    def on_http_error(err):
+        return jsonify(error=getattr(err, "description", "Error")), err.code
+
+    @app.after_request
+    def headers(resp):
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; media-src 'self'; "
+            "style-src 'self'; script-src 'self'; frame-ancestors 'none'")
+        if request.path.startswith("/api/"):
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    # ---- pages -------------------------------------------------------------
+    @app.get("/")
+    def index():
+        return send_from_directory(app.static_folder, "index.html", max_age=0)
+
+    @app.get("/label.html")
+    def label_page():
+        return send_from_directory(app.static_folder, "label.html", max_age=0)
+
+    # ---- runs --------------------------------------------------------------
+    @app.get("/api/runs")
+    def list_runs():
+        out = []
+        if runs_root.is_dir():
+            for d in sorted(runs_root.iterdir(), key=lambda p: p.name):
+                if not d.is_dir() or not NAME_RE.match(d.name) or not (d / "results.json").is_file():
+                    continue
+                info = {"run_id": d.name, "fixture": (d / "FIXTURE.txt").is_file(),
+                        "n_segments": None, "created_at": None, "error": None}
+                try:
+                    data = json.loads((d / "results.json").read_text(encoding="utf-8"))
+                    info["n_segments"] = len(data.get("segments") or [])
+                    info["created_at"] = (data.get("run") or {}).get("created_at")
+                    info["fixture"] = info["fixture"] or bool(data.get("fixture"))
+                except (OSError, ValueError, AttributeError, TypeError):
+                    info["error"] = "results.json could not be read"
+                out.append(info)
+        return jsonify(runs=out)
+
+    @app.get("/api/runs/<run_id>/results")
+    def get_results(run_id):
+        return jsonify(load_results(run_dir_for(run_id)))
+
+    def serve_unit(run_id, folder, unit_id, kind, files, mimes):
+        run_dir = run_dir_for(run_id)
+        if not NAME_RE.match(unit_id) or kind not in files:
+            abort(404, "No such file")
+        path = (run_dir / folder / unit_id / files[kind]).resolve()
+        if run_dir not in path.parents or not path.is_file():  # also blocks symlinks out of the run
+            abort(404, "File not found")
+        # conditional=True gives HTTP Range (206) so video seeking works.
+        resp = send_file(path, mimetype=mimes[kind], conditional=True, max_age=0)
+        resp.headers["Accept-Ranges"] = "bytes"
+        return resp
+
+    @app.get("/api/runs/<run_id>/segments/<segment_id>/<kind>")
+    def segment_file(run_id, segment_id, kind):
+        return serve_unit(run_id, "segments", segment_id, kind, SEGMENT_FILES, MIME)
+
+    @app.get("/api/runs/<run_id>/subsamples/<subsample_id>/<kind>")
+    def subsample_file(run_id, subsample_id, kind):
+        return serve_unit(run_id, "subsamples", subsample_id, kind, SUB_FILES, SUB_MIME)
+
+    # ---- reviews and tags --------------------------------------------------
+    @app.post("/api/runs/<run_id>/reviews")
+    def post_review(run_id):
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        data = json_body()
+        known_segment(results, data.get("segment_id"))
+        decision = data.get("decision")
+        if decision not in DECISIONS:
+            raise BadInput("decision must be one of: " + ", ".join(sorted(DECISIONS)))
+        clean_settings = clean_settings_from(data.get("contrast_settings"))
+        free_text = data.get("species_free_text", False)
+        if not isinstance(free_text, bool):
+            raise BadInput("species_free_text must be true or false")
+        species = clean_str(data.get("species"), "species", 200)
+        record = {
+            "segment_id": data["segment_id"],
+            "decision": decision,
+            "species": species,
+            "species_free_text": bool(free_text and species),
+            "count": clean_int(data.get("count"), "count", 0, 100000),
+            "note": clean_str(data.get("note"), "note", 2000) or "",
+            "reviewer": clean_str(data.get("reviewer"), "reviewer", 100) or "",
+            "at": now_iso(),
+            "model_version": (results.get("run") or {}).get("model_version"),
+            "contrast_settings": clean_settings,
+        }
+        append_jsonl(run_dir / "reviews.jsonl", record)
+        return jsonify(record), 201
+
+    @app.post("/api/runs/<run_id>/grid_tags")
+    def post_grid_tag(run_id):
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        data = json_body()
+        if data.get("subsample_id") is not None:
+            sub = known_subsample(results, data.get("subsample_id"))
+            seg = {"still_time_s": sub.get("t_s")}
+            unit = {"subsample_id": data["subsample_id"]}
+        else:
+            seg = known_segment(results, data.get("segment_id"))
+            unit = {"segment_id": data["segment_id"]}
+        grid = clean_pair(data.get("grid"), "grid", 1, 50)
+        cell = clean_pair(data.get("cell"), "cell", 0, 49)
+        if cell[0] >= grid[0] or cell[1] >= grid[1]:
+            raise BadInput("cell is outside the grid")
+        t = data.get("time_s", seg.get("still_time_s"))
+        if t is not None and (isinstance(t, bool) or not isinstance(t, (int, float)) or t < 0):
+            raise BadInput("time_s must be a number of seconds, 0 or more")
+        record = {
+            **unit,
+            "time_s": t,
+            "grid": grid,
+            "cell": cell,
+            "species": clean_str(data.get("species"), "species", 200),
+            "count": clean_int(data.get("count", 1), "count", 1, 10000, allow_none=False),
+            "reviewer": clean_str(data.get("reviewer"), "reviewer", 100) or "",
+            "at": now_iso(),
+        }
+        append_jsonl(run_dir / "grid_tags.jsonl", record)
+        return jsonify(record), 201
+
+    @app.post("/api/runs/<run_id>/subsample_reviews")
+    def post_subsample_review(run_id):
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        data = json_body()
+        known_subsample(results, data.get("subsample_id"))
+        counter = clean_str(data.get("counter"), "counter", 100, allow_empty=False)
+        pass_ = data.get("pass", "primary")
+        if pass_ not in PASSES:
+            raise BadInput("pass must be one of: " + ", ".join(sorted(PASSES)))
+        species_counts = data.get("species_counts") or {}
+        if not isinstance(species_counts, dict) or len(species_counts) > 200:
+            raise BadInput("species_counts must be an object of name: count")
+        clean_species = {}
+        for name, n in species_counts.items():
+            key = clean_str(name, "species name", 200, allow_empty=False)
+            clean_species[key] = clean_int(n, "species count", 0, 100000, allow_none=False)
+        vis = data.get("visibility_category")
+        if vis is not None and vis not in VISIBILITY:
+            raise BadInput("visibility_category must be one of: " + ", ".join(VISIBILITY))
+        vchange = data.get("visibility_change")
+        if vchange is not None and not isinstance(vchange, bool):
+            raise BadInput("visibility_change must be true, false or empty")
+        chars = data.get("characteristics") or []
+        if not isinstance(chars, list) or any(c not in CHARACTERISTICS for c in chars):
+            raise BadInput("characteristics must be from: " + ", ".join(CHARACTERISTICS))
+        free = data.get("free_text_species") or []
+        if not isinstance(free, list) or len(free) > 200:
+            raise BadInput("free_text_species must be a list")
+        free = [clean_str(f, "free_text_species", 200, allow_empty=False) for f in free]
+        record = {
+            "subsample_id": data["subsample_id"],
+            "counter": counter,
+            "pass": pass_,
+            "total_fish_count": clean_int(data.get("total_fish_count"), "total_fish_count", 0, 100000, False),
+            "invertebrate_count": clean_int(data.get("invertebrate_count"), "invertebrate_count", 0, 100000, False),
+            "species_counts": clean_species,
+            "unknown_count": clean_int(data.get("unknown_count", 0), "unknown_count", 0, 100000, False),
+            "total_species": clean_int(data.get("total_species", len(clean_species)), "total_species", 0, 1000),
+            "visibility_category": vis,
+            "visibility_change": vchange,
+            "characteristics": sorted(set(chars)),
+            "free_text_species": free,
+            "notes": clean_str(data.get("notes"), "notes", 2000) or "",
+            "at": now_iso(),
+            "model_version": (results.get("run") or {}).get("model_version"),
+            "contrast_settings": clean_settings_from(data.get("contrast_settings")),
+        }
+        append_jsonl(run_dir / "subsample_reviews.jsonl", record)
+        return jsonify(record), 201
+
+    @app.post("/api/runs/<run_id>/recording_notes")
+    def post_recording_notes(run_id):
+        run_dir = run_dir_for(run_id)
+        load_results(run_dir)
+        data = json_body()
+
+        def secs(field):
+            v = data.get(field)
+            if v is None:
+                return None
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or v > 86400:
+                raise BadInput(f"{field} must be seconds, 0 or more")
+            return v
+
+        species = data.get("species_observed") or []
+        if not isinstance(species, list) or len(species) > 300:
+            raise BadInput("species_observed must be a list")
+        juv = data.get("juveniles")
+        if juv not in (None, 0, 1) or isinstance(juv, bool):
+            raise BadInput("juveniles must be 0, 1 or empty")
+        vis_rows = []
+        for row in data.get("visibility_by_observer") or []:
+            if not isinstance(row, dict) or row.get("category") not in VISIBILITY:
+                raise BadInput("each visibility entry needs an observer and a valid category")
+            vis_rows.append({"observer": clean_str(row.get("observer"), "observer", 100, allow_empty=False),
+                             "category": row["category"]})
+        record = {
+            "window_start_s": secs("window_start_s"),
+            "window_end_s": secs("window_end_s"),
+            "species_observed": [clean_str(x, "species", 200, allow_empty=False) for x in species],
+            "juveniles": juv,
+            "visibility_by_observer": vis_rows,
+            "notes": clean_str(data.get("notes"), "notes", 2000) or "",
+            "reviewer": clean_str(data.get("reviewer"), "reviewer", 100) or "",
+            "at": now_iso(),
+        }
+        if (record["window_start_s"] is not None and record["window_end_s"] is not None
+                and record["window_end_s"] <= record["window_start_s"]):
+            raise BadInput("window end must be after window start")
+        append_jsonl(run_dir / "recording_notes.jsonl", record)
+        return jsonify(record), 201
+
+    def finite(v, field, lo, hi):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+            raise BadInput(f"{field} must be a number from {lo} to {hi}")
+        return v
+
+    @app.post("/api/runs/<run_id>/point_labels")
+    def post_point_label(run_id):
+        """Append one dot, ellipse or box (op add), or an undo (op remove). Coordinates in original pixels."""
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        data = json_body()
+        ss = known_subsample(results, data.get("subsample_id"))
+        counter = clean_str(data.get("counter"), "counter", 100, allow_empty=False)
+        op = data.get("op", "add")
+        path = run_dir / "point_labels.jsonl"
+        if op == "remove":
+            lid = data.get("label_id")
+            mine = [r for r in active_point_labels(read_jsonl(path)) if r.get("subsample_id") == ss["subsample_id"]]
+            if not any(r.get("label_id") == lid for r in mine):
+                raise BadInput("label_id is not an active label for this point")
+            record = {"op": "remove", "label_id": lid, "subsample_id": ss["subsample_id"], "counter": counter, "at": now_iso()}
+        elif op == "add":
+            kind = data.get("kind")
+            if kind not in ("fish", "invertebrate"):
+                raise BadInput("kind must be fish or invertebrate")
+            shape = data.get("shape", "point")
+            if shape not in ("point", "ellipse", "box"):
+                raise BadInput("shape must be point, ellipse or box")
+            record = {"op": "add", "label_id": "pl_" + uuid.uuid4().hex[:12], "subsample_id": ss["subsample_id"],
+                      "time_s": data.get("time_s", ss.get("t_s")), "x": finite(data.get("x"), "x", 0, 100000),
+                      "y": finite(data.get("y"), "y", 0, 100000), "shape": shape, "kind": kind,
+                      "species": clean_str(data.get("species"), "species", 200), "counter": counter, "at": now_iso()}
+            if record["time_s"] is not None:
+                finite(record["time_s"], "time_s", 0, 86400)
+            if shape != "point":
+                record["w"] = finite(data.get("w"), "w", 0.5, 100000)
+                record["h"] = finite(data.get("h"), "h", 0.5, 100000)
+        else:
+            raise BadInput("op must be add or remove")
+        append_jsonl(path, record)
+        return jsonify(record), 201
+
+    def qc_and_means(results, sub_reviews):
+        """Latest primary count per subsample, QC differences, live MeanCount."""
+        proto = {**QC_DEFAULTS, **(results.get("protocol") or {})}
+        latest = {"primary": {}, "second": {}}
+        for r in sub_reviews:
+            sid = r.get("subsample_id")
+            if r.get("pass") == "primary":
+                latest["primary"][sid] = r
+            elif r.get("pass") in ("qc_blind", "recount"):
+                latest["second"][sid] = r
+        qc = {}
+        for sid, second in latest["second"].items():
+            first = latest["primary"].get(sid)
+            if not first:
+                continue
+            a = (first.get("total_fish_count") or 0) + (first.get("invertebrate_count") or 0)
+            b = (second.get("total_fish_count") or 0) + (second.get("invertebrate_count") or 0)
+            diff = percent_difference(a, b)
+            qc[sid] = {"first_total": a, "second_total": b, "percent_diff": diff,
+                       "first_counter": first.get("counter"), "second_counter": second.get("counter"),
+                       "recount_needed": diff is not None and diff > proto["qc_max_percent_diff"]}
+        diffs = [q["percent_diff"] for q in qc.values() if q["percent_diff"] is not None]
+        agreement = round(100 - sum(diffs) / len(diffs), 1) if diffs else None
+        fish = [r.get("total_fish_count") for r in latest["primary"].values() if r.get("total_fish_count") is not None]
+        n_total = len(results.get("subsamples") or [])
+        return {
+            "latest_primary": latest["primary"],
+            "qc": qc,
+            "qc_agreement": agreement,
+            "qc_agreement_target": proto["qc_agreement"],
+            "n_counted": len(latest["primary"]),
+            "n_subsamples": n_total,
+            "mean_count_reviewed": round(sum(fish) / len(fish), 3) if fish else None,
+        }
+
+    @app.get("/api/runs/<run_id>/saved")
+    def get_saved(run_id):
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        reviews = read_jsonl(run_dir / "reviews.jsonl")
+        tags = read_jsonl(run_dir / "grid_tags.jsonl")
+        sub_reviews = read_jsonl(run_dir / "subsample_reviews.jsonl")
+        notes = read_jsonl(run_dir / "recording_notes.jsonl")
+        latest = {}
+        for r in reviews:  # file order is time order, so the last one wins
+            if isinstance(r.get("segment_id"), str):
+                latest[r["segment_id"]] = r
+        return jsonify(reviews=reviews, latest_review=latest, grid_tags=tags,
+                       subsample_reviews=sub_reviews,
+                       point_labels=active_point_labels(read_jsonl(run_dir / "point_labels.jsonl")), recording_notes=notes,
+                       latest_recording_notes=notes[-1] if notes else None,
+                       **qc_and_means(results, sub_reviews))
+
+    # ---- species -----------------------------------------------------------
+    @app.get("/api/species")
+    def get_species():
+        species, note = [], None
+        if species_file.is_file():
+            try:
+                data = json.loads(species_file.read_text(encoding="utf-8"))
+                species = [s for s in data if isinstance(s, dict)] if isinstance(data, list) else []
+            except (OSError, ValueError):
+                note = "Species list could not be read. Free text still works."
+        return jsonify(species=species, local_aliases=read_jsonl(aliases_file), note=note)
+
+    @app.post("/api/species/aliases")
+    def add_alias():
+        data = json_body()
+        alias = clean_str(data.get("alias"), "alias", 100, allow_empty=False)
+        maps_to = clean_str(data.get("maps_to"), "maps_to", 200, allow_empty=False)
+        record = {"alias": alias, "maps_to": maps_to, "at": now_iso()}
+        append_jsonl(aliases_file, record)  # never touches species_list.json
+        return jsonify(record), 201
+
+    # ---- feedback ----------------------------------------------------------
+    @app.post("/api/feedback")
+    def post_feedback():
+        """Local feedback from the Feedback button. Appends to runs/feedback.jsonl (untrusted text)."""
+        data = json_body()
+        if data.get("website"):  # honeypot field: people leave it empty, bots fill it
+            return jsonify(ok=True), 201
+        message = clean_str(data.get("message"), "message", 2000, allow_empty=False)
+        area, kind = data.get("area"), data.get("type")
+        if area not in FEEDBACK_AREAS:
+            raise BadInput("area must be one of: " + ", ".join(FEEDBACK_AREAS))
+        if kind not in FEEDBACK_TYPES:
+            raise BadInput("type must be one of: " + ", ".join(FEEDBACK_TYPES))
+        ctx = data.get("page_context")
+        if ctx is not None and not isinstance(ctx, (dict, str)):
+            raise BadInput("page_context must be an object or text")
+        if len(json.dumps(ctx, ensure_ascii=False)) > 2000:
+            raise BadInput("page_context is too long")
+        record = {"id": uuid.uuid4().hex, "created_at": now_iso(),
+                  "name": clean_str(data.get("name"), "name", 60) or "", "area": area, "type": kind,
+                  "message": message, "page_context": ctx, "source": "flask"}
+        append_jsonl(runs_root / "feedback.jsonl", record)
+        return jsonify(ok=True, id=record["id"]), 201
+
+    # ---- blind label mode ---------------------------------------------------
+    # Local copy of the Worker routes (deploy/src/worker.js). Rows go to one append-only JSON lines file; the
+    # latest row for a set, frame and labeller wins. IDENTITY IS A CHOSEN NAME, NOT A LOGIN: this local server
+    # has no sign-in, so anyone who can reach it can type any name. No route returns another person's marks.
+    @app.get("/label_sets/index.json")
+    def label_set_index():
+        ids = []
+        if label_sets_root.is_dir():
+            ids = sorted(d.name for d in label_sets_root.iterdir() if d.is_dir() and LABEL_SET_RE.match(d.name) and (d / "manifest.json").is_file())
+        return jsonify(sets=ids)
+
+    def manifest_with_calibration(path):
+        """The manifest, with `calibration` taken from calibration.json next to it when that file exists (same rule as tools/build_demo.py)."""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            abort(422, "manifest.json could not be read")
+        cal_path = path.parent / "calibration.json"
+        if isinstance(data, dict) and cal_path.is_file() and not cal_path.is_symlink():
+            try:
+                cal = json.loads(cal_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                abort(422, "calibration.json could not be read")
+            cal = cal.get("calibration") if isinstance(cal, dict) else cal
+            known = {f.get("frame_id") for f in data.get("frames") or [] if isinstance(f, dict)}
+            if isinstance(cal, list):
+                data["calibration"] = list(dict.fromkeys(i for i in cal if isinstance(i, str) and i in known))
+        return data
+
+    @app.get("/label_sets/<set_id>/<path:rest>")
+    def label_set_file(set_id, rest):
+        """Frames, clips and the manifest. send_file answers Range requests, which the clips need."""
+        if not LABEL_SET_RE.match(set_id):
+            abort(400, "Bad set name")
+        parts = rest.split("/")
+        ok = (parts == ["manifest.json"]) or (len(parts) == 2 and parts[0] in ("frames", "clips", "diff") and LABEL_FRAME_RE.match(parts[1]))
+        if not ok:
+            abort(404, "Not found")
+        path = (label_sets_root / set_id / rest).resolve()
+        if label_sets_root not in path.parents or not path.is_file() or path.is_symlink():
+            abort(404, "Not found")
+        if parts == ["manifest.json"]:
+            return jsonify(manifest_with_calibration(path))
+        resp = send_file(path, conditional=True, max_age=0 if parts[0] == "manifest.json" else 3600)
+        return resp
+
+    def label_name(value):
+        if not isinstance(value, str):
+            raise BadInput("name is required")
+        name = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", value)).strip()
+        if not name:
+            raise BadInput("name is required")
+        if len(name) > LABEL_NAME_MAX:
+            raise BadInput(f"name is too long (max {LABEL_NAME_MAX} characters)")
+        for preset in LABEL_PRESET_NAMES:
+            if preset.lower() == name.lower():
+                return preset
+        return name
+
+    def label_ids(set_id, frame_id=None, need_frame=False):
+        if not isinstance(set_id, str) or not LABEL_SET_RE.match(set_id):
+            raise BadInput("set is missing or not a plain id")
+        if need_frame or frame_id is not None:
+            if not isinstance(frame_id, str) or not LABEL_FRAME_RE.match(frame_id):
+                raise BadInput("frame is missing or not a plain id")
+
+    def label_frames(set_id):
+        path = label_sets_root / set_id / "manifest.json"
+        if not path.is_file():
+            abort(404, "Unknown label set.")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            abort(422, "manifest.json could not be read")
+        frames = {}
+        for f in (data.get("frames") or []) if isinstance(data, dict) else []:
+            if isinstance(f, dict) and isinstance(f.get("frame_id"), str) and LABEL_FRAME_RE.match(f["frame_id"]) \
+                    and isinstance(f.get("width"), (int, float)) and isinstance(f.get("height"), (int, float)):
+                frames[f["frame_id"]] = (f["width"], f["height"])
+        return frames
+
+    def label_rows(set_id):
+        """Latest row per (frame, labeller). Names compare without case."""
+        latest = {}
+        for r in read_jsonl(labels_file):
+            if r.get("set") == set_id and isinstance(r.get("frame"), str) and isinstance(r.get("name"), str):
+                latest[(r["frame"], r["name"].lower())] = r
+        return latest
+
+    @app.get("/api/labels/status")
+    def labels_status():
+        set_id, name = request.args.get("set"), label_name(request.args.get("name"))
+        label_ids(set_id)
+        frames = label_frames(set_id)
+        counts, mine = {}, {}
+        for (frame, who), r in label_rows(set_id).items():
+            if frame not in frames:
+                continue
+            if not r.get("skipped"):
+                counts[frame] = counts.get(frame, 0) + 1
+            if who == name.lower():
+                mine[frame] = {"state": "skipped" if r.get("skipped") else "done", "no_animals": bool(r.get("no_animals")),
+                               "n_points": len(r.get("points") or []), "seconds": r.get("seconds"), "updated_at": r.get("updated_at")}
+        return jsonify(set=set_id, total=len(frames), counts=counts, mine=mine,
+                       team={"frames_with_any": len(counts), "frames_with_two": sum(1 for n in counts.values() if n >= 2)})
+
+    @app.get("/api/labels/mine")
+    def labels_mine():
+        set_id, frame_id, name = request.args.get("set"), request.args.get("frame"), label_name(request.args.get("name"))
+        label_ids(set_id, frame_id, need_frame=True)
+        frames = label_frames(set_id)
+        if frame_id not in frames:
+            abort(404, "That frame is not in this label set.")
+        r = label_rows(set_id).get((frame_id, name.lower()))
+        if not r:
+            return jsonify(exists=False)
+        return jsonify(exists=True, frame=frame_id, points=r.get("points") or [], views=r.get("views") or [], no_animals=bool(r.get("no_animals")),
+                       skipped=bool(r.get("skipped")), seconds=r.get("seconds"), updated_at=r.get("updated_at"))
+
+    @app.post("/api/labels")
+    def labels_save():
+        if (request.content_length or 0) > LABEL_MAX_BODY:
+            return jsonify(error="That save is too large."), 413
+        data = json_body()
+        label_ids(data.get("set"), data.get("frame"), need_frame=True)
+        name = label_name(data.get("name"))
+        frames = label_frames(data["set"])
+        if data["frame"] not in frames:
+            raise BadInput("That frame is not in this label set.")
+        width, height = frames[data["frame"]]
+        for key in ("skipped", "no_animals"):
+            if data.get(key) is not None and not isinstance(data.get(key), bool):
+                raise BadInput(f"{key} must be true or false")
+        skipped, no_animals = data.get("skipped") is True, data.get("no_animals") is True
+        raw = data.get("points")
+        raw = [] if raw is None else raw
+        if not isinstance(raw, list):
+            raise BadInput("points must be a list")
+        if len(raw) > LABEL_MAX_POINTS:
+            raise BadInput(f"Too many points (max {LABEL_MAX_POINTS})")
+        points = []
+        for pt in raw:
+            if not isinstance(pt, dict):
+                raise BadInput("Each point needs x, y and kind")
+            x, y = pt.get("x"), pt.get("y")
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (x, y)):
+                raise BadInput("Point coordinates must be numbers")
+            if x < 0 or y < 0 or x > width or y > height:
+                raise BadInput(f"A point is outside the image ({width} x {height})")
+            if pt.get("kind") not in LABEL_KINDS:
+                raise BadInput("kind must be fish, invertebrate, unsure or not_fish")
+            out = {"x": round(x, 1), "y": round(y, 1), "kind": pt["kind"]}
+            if pt["kind"] == "not_fish":
+                # A not-fish mark has a category (or none) and never a species.
+                cat = pt.get("category")
+                if cat is not None and cat != "":
+                    if not isinstance(cat, str) or cat not in LABEL_NOT_FISH_CATEGORIES:
+                        raise BadInput("category must be one of: " + ", ".join(LABEL_NOT_FISH_CATEGORIES) + " (or empty)")
+                    out["category"] = cat
+            elif pt["kind"] == "unsure":
+                pass    # an unsure mark carries no species and no category: anything sent is dropped
+            elif pt.get("species") is not None:
+                if not isinstance(pt["species"], str):
+                    raise BadInput("species must be text")
+                sp = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", pt["species"])).strip()
+                if len(sp) > LABEL_SPECIES_MAX:
+                    raise BadInput(f"species is too long (max {LABEL_SPECIES_MAX} characters)")
+                if sp:
+                    out["species"] = sp
+            points.append(out)
+        views = data.get("views")
+        if views is None:
+            views = []
+        if not isinstance(views, list) or len(views) > 10 or any(v not in LABEL_VIEWS for v in views):
+            raise BadInput("views must be a list made of: " + ", ".join(LABEL_VIEWS))
+        views = [v for v in LABEL_VIEWS if v in views]
+        if (no_animals or skipped) and points:
+            raise BadInput("A skipped frame or a No animals frame cannot have points")
+        if no_animals and skipped:
+            raise BadInput("A frame cannot be both skipped and No animals")
+        seconds = data.get("seconds", 0)
+        seconds = 0 if seconds is None else seconds
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds < 0:
+            raise BadInput("seconds must be a number, 0 or more")
+        record = {"set": data["set"], "frame": data["frame"], "name": name, "points": points, "views": views, "no_animals": no_animals,
+                  "seconds": min(round(seconds, 1), LABEL_MAX_SECONDS), "skipped": skipped, "updated_at": now_iso(), "source": "flask"}
+        append_jsonl(labels_file, record)
+        return jsonify(ok=True, updated_at=record["updated_at"], n_points=len(points))
+
+    # ---- export ------------------------------------------------------------
+    def csv_response(rows, header, name):
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(header)
+        for row in rows:
+            # Stop spreadsheet programs treating typed text as a formula.
+            w.writerow([("'" + c) if isinstance(c, str) and c[:1] in "=+-@\t\r" else c for c in row])
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.get("/api/runs/<run_id>/export_segments.csv")
+    def export_segments_csv(run_id):
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        reviews = read_jsonl(run_dir / "reviews.jsonl")
+        tags = read_jsonl(run_dir / "grid_tags.jsonl")
+        by_seg, n_dec, n_tags = {}, {}, {}
+        for r in reviews:
+            sid = r.get("segment_id")
+            by_seg[sid] = r
+            n_dec[sid] = n_dec.get(sid, 0) + 1
+        for t in tags:
+            n_tags[t.get("segment_id")] = n_tags.get(t.get("segment_id"), 0) + 1
+        include_all = request.args.get("all") == "1"
+        rec_id = (results.get("recording") or {}).get("recording_id") or run_id
+        rows = []
+        for seg in results["segments"]:
+            if not isinstance(seg, dict):
+                continue
+            sid = seg.get("segment_id")
+            rev = by_seg.get(sid)
+            if rev is None and not include_all:
+                continue
+            rev = rev or {}
+            flags, counts = seg.get("flags") or {}, seg.get("counts") or {}
+            rows.append([
+                rec_id, sid, seg.get("start_s"), seg.get("end_s"), seg.get("kind"),
+                seg.get("audit_sample"), seg.get("status"), seg.get("motion_score"),
+                seg.get("visibility_score"), flags.get("shake"), flags.get("low_visibility"),
+                seg.get("review_priority"), counts.get("maxn"), counts.get("mean_count"),
+                counts.get("unique_tracks"), rev.get("decision"), rev.get("species"),
+                rev.get("species_free_text"), rev.get("count"), rev.get("note"),
+                rev.get("reviewer"), rev.get("at"), n_dec.get(sid, 0), n_tags.get(sid, 0),
+            ])
+        rows = [["" if c is None else c for c in row] for row in rows]
+        return csv_response(rows, [c for c, _ in CSV_COLUMNS], f"{run_id}_segments_reviewed.csv")
+
+    SUB_COLUMNS = [
+        ("Video ID", "Video ID from results.json. Must match the Coastal Action spreadsheet."),
+        ("Subsample", "Subsample point id."),
+        ("Time (s)", "Seconds from the start of the recording."),
+        ("Counter", "Who counted."),
+        ("Pass", "primary, qc_blind (second blind count) or recount."),
+        ("Total fish count", "Fish counted in the designated second. A relative index, not abundance."),
+        ("Invertebrate count", "Invertebrates counted in the designated second. A relative index."),
+        ("Number of species", "Species in this subsample."),
+        ("Unknown/Unable to ID due to visibility", "Count that could not be identified because of visibility."),
+        ("Visibility category", "Water clarity category for this point."),
+        ("Visibility change >= 0.5 m", "yes if visibility changed by 0.5 m or more."),
+        ("Characteristics ticked", "Of shape, anatomical features, colour or flashes, swimming behaviour."),
+        ("Notes", "Reviewer notes. Movement noted as unidentified is a note, never counted."),
+        ("Saved at (UTC)", "When the count was saved."),
+        ("QC percent difference", "Primary vs second count difference. Formula is provisional (see percent_difference in server.py)."),
+        ("QC recount needed", "yes if the difference is over the configured limit."),
+    ]
+    SPECIES_PREFIX = "Count: "
+
+    @app.get("/api/runs/<run_id>/export.csv")
+    def export_subsamples_csv(run_id):
+        """One row per saved subsample count, Coastal Action style column names."""
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        revs = read_jsonl(run_dir / "subsample_reviews.jsonl")
+        info = qc_and_means(results, revs)
+        vid = (results.get("recording") or {}).get("video_id") or (results.get("recording") or {}).get("recording_id") or run_id
+        times = {s.get("subsample_id"): s.get("t_s") for s in results.get("subsamples") or [] if isinstance(s, dict)}
+        names = sorted({n for r in revs for n in (r.get("species_counts") or {})})
+        rows = []
+        for r in revs:
+            q = info["qc"].get(r.get("subsample_id")) if r.get("pass") != "primary" else None
+            sc = r.get("species_counts") or {}
+            vc = r.get("visibility_change")
+            rows.append([vid, r.get("subsample_id"), times.get(r.get("subsample_id")), r.get("counter"), r.get("pass"),
+                         r.get("total_fish_count"), r.get("invertebrate_count"), r.get("total_species"),
+                         r.get("unknown_count"), r.get("visibility_category"),
+                         "" if vc is None else ("yes" if vc else "no"),
+                         ";".join(r.get("characteristics") or []), r.get("notes"), r.get("at"),
+                         q["percent_diff"] if q and q["percent_diff"] is not None else "",
+                         ("yes" if q["recount_needed"] else "no") if q else ""] + [sc.get(n, "") for n in names])
+        rows = [["" if c is None else c for c in row] for row in rows]
+        header = [c for c, _ in SUB_COLUMNS] + [SPECIES_PREFIX + n for n in names]
+        return csv_response(rows, header, f"{run_id}_subsamples.csv")
+
+    @app.get("/api/runs/<run_id>/export_summary.csv")
+    def export_summary_csv(run_id):
+        """One row for the video: MeanCount, species list, window, juveniles, QC."""
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        revs = read_jsonl(run_dir / "subsample_reviews.jsonl")
+        notes = read_jsonl(run_dir / "recording_notes.jsonl")
+        n = notes[-1] if notes else {}
+        info = qc_and_means(results, revs)
+        rec = results.get("recording") or {}
+        proto = results.get("protocol") or {}
+        species = set(n.get("species_observed") or [])
+        for r in info["latest_primary"].values():
+            species.update((r.get("species_counts") or {}).keys())
+        vis = "; ".join(f"{v['observer']}: {v['category']}" for v in n.get("visibility_by_observer") or [])
+        header = ["Video ID", "Transect", "STAT", "Year", "Season", "Window start (s)", "Window end (s)",
+                  "Subsamples counted", "Subsamples planned", "MeanCount (fish per subsample, reviewed)",
+                  "Species observed", "Number of species", "Juveniles present (1/0)", "Visibility by observer",
+                  "QC pairs", "QC recounts needed", "QC agreement (%) (provisional)", "Note"]
+        qcs = info["qc"].values()
+        row = [rec.get("video_id") or rec.get("recording_id") or run_id, rec.get("transect"), rec.get("stat"),
+               rec.get("year"), rec.get("season"),
+               n.get("window_start_s", proto.get("window_start_s")), n.get("window_end_s", proto.get("window_end_s")),
+               info["n_counted"], info["n_subsamples"], info["mean_count_reviewed"],
+               "; ".join(sorted(species)), len(species), n.get("juveniles"), vis,
+               len(info["qc"]), sum(1 for q in qcs if q["recount_needed"]), info["qc_agreement"],
+               "Counts are a relative index, not abundance."]
+        return csv_response([["" if c is None else c for c in row]], header, f"{run_id}_video_summary.csv")
+
+    @app.get("/api/runs/<run_id>/export_columns.csv")
+    def export_columns(run_id):
+        run_dir_for(run_id)
+        return csv_response(SUB_COLUMNS + [("Video summary: MeanCount", "Mean of Total fish count over latest primary counts. A relative index, not abundance.")] + CSV_COLUMNS, ["column", "meaning"], f"{run_id}_column_dictionary.csv")
+
+    return app
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description="ClipSift review app (local only)")
+    p.add_argument("--runs", default="runs", help="folder holding run folders")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--species", default=None, help="species_list.json (default ../species/)")
+    p.add_argument("--aliases", default=None, help="local alias file (default app/local_aliases.jsonl)")
+    p.add_argument("--label-sets", default=None, help="folder of label sets (default label_sets/)")
+    p.add_argument("--labels", default=None, help="file the label page saves to (default app/local_labels.jsonl)")
+    args = p.parse_args(argv)
+    app = create_app(args.runs, args.species, args.aliases, args.label_sets, args.labels)
+    print(f"ClipSift: http://127.0.0.1:{args.port}  (runs folder: {app.config['RUNS_ROOT']})")
+    app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
+
+
+if __name__ == "__main__":
+    main()

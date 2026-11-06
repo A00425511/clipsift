@@ -1,0 +1,6 @@
+# Optional model extras for the Community Fish Detector backend (detector: cfd).
+# The base requirements.txt stays light and works without these (motion_blob, onnx, Layer 0).
+# Install into the same environment:  pip install -r requirements.txt -r requirements-model.txt
+# Pulls in torch and torchvision as dependencies of rfdetr. First install is large.
+rfdetr>=1.8.3
+# Install requirements.txt first for OpenCV, NumPy and the rest. (rfdetr brings Pillow.)

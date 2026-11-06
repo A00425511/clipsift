@@ -1,0 +1,15 @@
+{
+  // ClipSift team demo on Cloudflare Pages. tools/build_demo.py copies src/worker.js to public/_worker.js,
+  // so every request, assets included, passes through the team-code gate. Secret: TEAM_KEY
+  // (`npx wrangler pages secret put TEAM_KEY --project-name clipsift-demo`).
+  "name": "clipsift-demo",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2026-09-01",
+  "d1_databases": [
+    {
+      "binding": "FEEDBACK_DB",
+      "database_name": "clipsift-feedback",
+      "database_id": "6bab186a-0179-4e06-b5c8-44562e3f0014"
+    }
+  ]
+}

@@ -1,0 +1,1859 @@
+[
+  {
+    "aphia_id": 126436,
+    "gbif_key": 8084280,
+    "scientific_name": "Gadus morhua",
+    "common_names": [
+      "Atlantic cod",
+      "codfish",
+      "cod"
+    ],
+    "aliases": [
+      "Asellus major",
+      "Gadus arenosus",
+      "Gadus callarias",
+      "Gadus callarias hiemalis",
+      "Gadus callarias kildinensis",
+      "Gadus callarius",
+      "Gadus heteroglossus",
+      "Gadus morhua callarias",
+      "Gadus morhua kildinensis",
+      "Gadus morhua morhua",
+      "Gadus morrhua",
+      "Gadus nanus",
+      "Gadus rupestris",
+      "Gadus vertagus",
+      "Morhua punctatus",
+      "Morhua vulgaris",
+      "Morrhua americana",
+      "Morrhua vulgaris"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Confusable with pollock and haddock.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 126441,
+    "gbif_key": 2415861,
+    "scientific_name": "Pollachius virens",
+    "common_names": [
+      "Pollock",
+      "billet",
+      "coal fish",
+      "coalfish",
+      "coley",
+      "glassan",
+      "gloshan",
+      "saithe",
+      "sillock"
+    ],
+    "aliases": [
+      "Gadus carbonarius",
+      "Gadus colinus",
+      "Gadus purpureus",
+      "Gadus sey",
+      "Gadus virens",
+      "Merlangus carbonarius",
+      "Merlangus purpureus",
+      "Merlangus virens",
+      "Polachius virens",
+      "Pollachius carbonarius"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 126417,
+    "gbif_key": 8351946,
+    "scientific_name": "Clupea harengus",
+    "common_names": [
+      "Atlantic herring",
+      "hafsíld",
+      "herring"
+    ],
+    "aliases": [
+      "Clupea alba",
+      "Clupea atlanticus",
+      "Clupea borealis",
+      "Clupea britannicus",
+      "Clupea caledonicus",
+      "Clupea cimbricus",
+      "Clupea elongata",
+      "Clupea frisius",
+      "Clupea halec",
+      "Clupea harengula",
+      "Clupea harengus atlanticus",
+      "Clupea harengus borealis",
+      "Clupea harengus britannicus",
+      "Clupea harengus caledonicus",
+      "Clupea harengus cimbricus",
+      "Clupea harengus frisius",
+      "Clupea harengus harengus",
+      "Clupea harengus harengus natio murmanica",
+      "Clupea harengus islandicus",
+      "Clupea harengus ivernicus",
+      "Clupea harengus membras",
+      "Clupea harengus norvegicus",
+      "Clupea harengus scandicus",
+      "Clupea harengus schelderensis",
+      "Clupea harengus scoticus",
+      "Clupea harengus septemtrionalis",
+      "Clupea islandicus",
+      "Clupea ivernicus",
+      "Clupea leachii",
+      "Clupea membras",
+      "Clupea minima",
+      "Clupea norvegivus",
+      "Clupea palassi probatowi",
+      "Clupea scandicus",
+      "Clupea scoticus",
+      "Clupea septemtrionalis",
+      "Cyprinus esca",
+      "Rogenia alba"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158669,
+    "gbif_key": 2412740,
+    "scientific_name": "Alosa pseudoharengus",
+    "common_names": [
+      "Alewife",
+      "gaspereau",
+      "ale-wife",
+      "gaspareau",
+      "sawbellies"
+    ],
+    "aliases": [
+      "Clupea megalops",
+      "Clupea parvula",
+      "Clupea pseudoharengus",
+      "Clupea vernalis",
+      "Clupea virescens",
+      "Meletta venosa",
+      "Pomolobus pseudoharengus"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Gaspereau covers alewife and blueback herring; hard to separate on video.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158667,
+    "gbif_key": 2412708,
+    "scientific_name": "Alosa aestivalis",
+    "common_names": [
+      "Blueback herring",
+      "gaspereau"
+    ],
+    "aliases": [
+      "Alosa cyanonoton",
+      "Clupea aestivalis",
+      "Clupea fasciata",
+      "Pomolobus aestivalis",
+      "Pomolobus cyanonoton"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Gaspereau covers alewife and blueback herring; hard to separate on video.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159306,
+    "gbif_key": 5712056,
+    "scientific_name": "Fundulus heteroclitus",
+    "common_names": [
+      "Mummichog"
+    ],
+    "aliases": [
+      "Cobitis heteroclita",
+      "Cobitis macrolepidota",
+      "Esox pisciculus",
+      "Esox pisculentis",
+      "Esox pisculentus",
+      "Fundulus antillarum",
+      "Fundulus badius",
+      "Fundulus coenicolus",
+      "Fundulus fasciatus",
+      "Fundulus fonticola",
+      "Fundulus heteroclitus heteroclitus",
+      "Fundulus heteroclitus macrolepidotus",
+      "Fundulus heteroclitus var. badius",
+      "Fundulus lozanoi",
+      "Fundulus macrolepidota",
+      "Fundulus nigrofaciatus",
+      "Fundulus nisorius",
+      "Fundulus ornatus",
+      "Fundulus pisciculus",
+      "Fundulus pisculentis",
+      "Fundulus swampinus",
+      "Fundulus vinctus",
+      "Fundulus viridescens",
+      "Fundulus zebra",
+      "Hydargira nigrofaciata",
+      "Hydrargira ornata",
+      "Hydrargira swampina",
+      "Poecilia coenicola",
+      "Poecilia fasciata",
+      "Valencia lozanoi"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159228,
+    "gbif_key": 2412304,
+    "scientific_name": "Menidia menidia",
+    "common_names": [
+      "Atlantic silverside",
+      "green smeldt",
+      "silverside",
+      "sperling"
+    ],
+    "aliases": [
+      "Atherina boscii",
+      "Atherina menidia",
+      "Atherina notata",
+      "Atherina viridescens",
+      "Menida menida",
+      "Menidia dentex",
+      "Menidia notata",
+      "Phoxargyrea dayi"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 126505,
+    "gbif_key": 4286327,
+    "scientific_name": "Gasterosteus aculeatus",
+    "common_names": [
+      "Threespine stickleback",
+      "Burnstickle",
+      "Pinfish",
+      "Thornback",
+      "Thornfish",
+      "threespine stickletback",
+      "three-spined stickleback",
+      "Tiddler"
+    ],
+    "aliases": [
+      "Gasteracanthus cataphractus",
+      "Gasterosteus aculeatus aculeatus",
+      "Gasterosteus aculeatus algeriensis",
+      "Gasterosteus aculeatus gymnurus",
+      "Gasterosteus aculeatus leiurus",
+      "Gasterosteus aculeatus messinicus",
+      "Gasterosteus aculeatus santaeannae",
+      "Gasterosteus aculeatus trachurus",
+      "Gasterosteus aculeatus williamsoni",
+      "Gasterosteus algeriensis",
+      "Gasterosteus argentatissimus",
+      "Gasterosteus argyropomus",
+      "Gasterosteus atkinsi",
+      "Gasterosteus atkinsii",
+      "Gasterosteus bailloni",
+      "Gasterosteus biaculeatus",
+      "Gasterosteus biarmatus",
+      "Gasterosteus bispinosus",
+      "Gasterosteus brachycentrus",
+      "Gasterosteus cataphractus",
+      "Gasterosteus cuvieri",
+      "Gasterosteus Dekayi",
+      "Gasterosteus dimidiatus",
+      "Gasterosteus elegans",
+      "Gasterosteus gymnurus",
+      "Gasterosteus hologymnus",
+      "Gasterosteus inopinatus",
+      "Gasterosteus insculptus",
+      "Gasterosteus intermedius",
+      "Gasterosteus leiurus",
+      "Gasterosteus loricatus",
+      "Gasterosteus nemausensis",
+      "Gasterosteus neoboracensis",
+      "Gasterosteus neustrianus",
+      "Gasterosteus niger",
+      "Gasterosteus noveboracensis",
+      "Gasterosteus obolarius",
+      "Gasterosteus plebeius",
+      "Gasterosteus ponticus",
+      "Gasterosteus pugetti",
+      "Gasterosteus quadrispinosa",
+      "Gasterosteus quadrispinosus",
+      "Gasterosteus santaeannae",
+      "Gasterosteus semiarmatus",
+      "Gasterosteus semiloricatus",
+      "Gasterosteus serratus",
+      "Gasterosteus spinulosus",
+      "Gasterosteus suppositus",
+      "Gasterosteus teraculeatus",
+      "Gasterosteus tetracanthus"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 126507,
+    "gbif_key": 5739510,
+    "scientific_name": "Pungitius pungitius",
+    "common_names": [
+      "Ninespine stickleback",
+      "nine-spined stickleback",
+      "ten-spined stickleback"
+    ],
+    "aliases": [
+      "Gasteracanthus pungitius",
+      "Gasterosteus blanchardi",
+      "Gasterosteus concinnus",
+      "Gasterosteus dekayi",
+      "Gasterosteus globiceps",
+      "Gasterosteus mainensis",
+      "Gasterosteus nebulosus",
+      "Gasterosteus occidentalis",
+      "Gasterosteus pungitius",
+      "Gasterosteus pungitius brachypoda",
+      "Pungitius pungitius pungitius",
+      "Pygosteus pungitius",
+      "Pygosteus pungitius brachypoda",
+      "Pygosteus pungitius carinata",
+      "Pygosteus pungitius semiarmata",
+      "Pygosteus pungitius trachura"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 126737,
+    "gbif_key": 4283983,
+    "scientific_name": "Osmerus mordax",
+    "common_names": [
+      "Rainbow smelt"
+    ],
+    "aliases": [
+      "Atherina mordax",
+      "Osmerus eperlanus mordax",
+      "Osmerus mordax mordax",
+      "Osmerus spectrum"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158885,
+    "gbif_key": 2409062,
+    "scientific_name": "Pseudopleuronectes americanus",
+    "common_names": [
+      "Winter flounder",
+      "black backs",
+      "common flounder",
+      "lemon sole"
+    ],
+    "aliases": [
+      "Platessa pusilla",
+      "Pleuronectes americanus",
+      "Pleuronectes planus",
+      "Pseudopleuronectes dignabilis"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159785,
+    "gbif_key": 2382945,
+    "scientific_name": "Tautogolabrus adspersus",
+    "common_names": [
+      "Cunner",
+      "perch",
+      "bait-stealer",
+      "bergall",
+      "cachogset",
+      "chogset",
+      "nipper",
+      "sea perch",
+      "vieille"
+    ],
+    "aliases": [
+      "Ctenolabrus adspersus",
+      "Ctenolabrus brandaonis",
+      "Labrus adspersus",
+      "Tautogolabrus brandaonis"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 127203,
+    "gbif_key": 2333785,
+    "scientific_name": "Myoxocephalus scorpius",
+    "common_names": [
+      "Shorthorn sculpin",
+      "bull rout",
+      "father lasher",
+      "sculpin",
+      "sea scorpion",
+      "Short spined sea scorpion",
+      "short-spined sea scorpion"
+    ],
+    "aliases": [
+      "Acanthocottus scorpius",
+      "Cottus groenlandicus",
+      "Cottus scorpius",
+      "Cottus verrucosus",
+      "Myoxocephalus scorpius groenlandicus",
+      "Myoxocephalus scorpius scorpius",
+      "Myoxocephalus verrucosus",
+      "Myxocephalus scorpius"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159519,
+    "gbif_key": 2333799,
+    "scientific_name": "Myoxocephalus aenaeus",
+    "common_names": [
+      "Grubby",
+      "grubby sculpin",
+      "little sculpin"
+    ],
+    "aliases": [
+      "Cottus aenaeus",
+      "Myoxocephalus aenaeas"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158928,
+    "gbif_key": 2415893,
+    "scientific_name": "Microgadus tomcod",
+    "common_names": [
+      "Atlantic tomcod",
+      "frostfish"
+    ],
+    "aliases": [
+      "Gadus frost",
+      "Gadus polymorphus",
+      "Gadus pruinosus",
+      "Gadus tomcod",
+      "Gadus tomcod fuscus",
+      "Gadus tomcod luteus",
+      "Gadus tomcodus",
+      "Gadus tomcodus fuscus",
+      "Gadus tomcodus luteus",
+      "Gadus tomcodus mixtus",
+      "Gadus tomcodus polymorphus",
+      "Morrhua pruinosa",
+      "Morrhua tomcodus"
+    ],
+    "group": "Common resident",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 156134,
+    "gbif_key": 5972004,
+    "scientific_name": "Homarus americanus",
+    "common_names": [
+      "American lobster",
+      "American clawed lobster",
+      "lobster",
+      "maine lobster",
+      "northern lobster"
+    ],
+    "aliases": [
+      "Astacus marinus"
+    ],
+    "group": "Invertebrate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Non-fish; will appear in video.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (non-fish, will appear)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158057,
+    "gbif_key": 2222075,
+    "scientific_name": "Cancer irroratus",
+    "common_names": [
+      "Atlantic rock crab",
+      "rock crab"
+    ],
+    "aliases": [
+      "Cancer Sayi",
+      "Platycarcinus irroratus"
+    ],
+    "group": "Invertebrate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Non-fish; will appear in video.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (non-fish, will appear)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 127186,
+    "gbif_key": 7595433,
+    "scientific_name": "Salmo salar",
+    "common_names": [
+      "Atlantic salmon",
+      "black salmon",
+      "common Atlantic salmon",
+      "grilse",
+      "kelt",
+      "N. Atlantic salmon",
+      "parr",
+      "salmon",
+      "sea salmon",
+      "silver salmon"
+    ],
+    "aliases": [
+      "Salmo brevipes",
+      "Salmo caerulescens",
+      "Salmo gloverii",
+      "Salmo goedenii",
+      "Salmo gracilis",
+      "Salmo hamatus",
+      "Salmo hardinii",
+      "Salmo nobilis",
+      "Salmo ocla",
+      "Salmo renatus",
+      "Salmo rilla",
+      "Salmo salar biennis",
+      "Salmo salar brevipes",
+      "Salmo salar brevipes natio relictus",
+      "Salmo salar europaeus",
+      "Salmo salar lacustris",
+      "Salmo salar ouananiche",
+      "Salmo salar saimensis",
+      "Salmo salar sebago",
+      "Salmo salar tasmanicus",
+      "Salmo salar var. nobilis",
+      "Salmo salmo",
+      "Salmo salmulus",
+      "Salmo sebago",
+      "Salmo strom",
+      "Trutta relicta",
+      "Trutta salar",
+      "Trutta salar relicta"
+    ],
+    "group": "Species at risk",
+    "rank": "species",
+    "flags": {
+      "at_risk": true,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Southern Upland, Endangered per COSEWIC (as stated in research file). Research file says status may have changed; check the Species at Risk Public Registry.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158562,
+    "gbif_key": 5212956,
+    "scientific_name": "Anguilla rostrata",
+    "common_names": [
+      "American eel",
+      "freshwater eel"
+    ],
+    "aliases": [
+      "Anguilla aterrima",
+      "Anguilla blephura",
+      "Anguilla bostoniensis",
+      "Anguilla chrisypa",
+      "Anguilla cubana",
+      "Anguilla laticanda",
+      "Anguilla laticauda",
+      "Anguilla lutea",
+      "Anguilla macrops",
+      "Anguilla novaeorleanensis",
+      "Anguilla novaeterrae",
+      "Anguilla punctatissima",
+      "Anguilla tenuirostris",
+      "Anguilla texana",
+      "Anguilla tyrannus",
+      "Anguilla wabashensis",
+      "Anguilla xanthomelas",
+      "Leptocephalus grassii",
+      "Muraena argentea",
+      "Muraena bostoniensis",
+      "Muraena macrocephala",
+      "Muraena rostrata",
+      "Muraena serpentina"
+    ],
+    "group": "Species at risk",
+    "rank": "species",
+    "flags": {
+      "at_risk": true,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: COSEWIC Threatened 2012 (as stated in research file). SARA listing undecided in sources seen. Research file says status may have changed; check the Species at Risk Public Registry.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 151802,
+    "gbif_key": 4287132,
+    "scientific_name": "Acipenser oxyrinchus",
+    "common_names": [
+      "Atlantic sturgeon",
+      "paddlefishes"
+    ],
+    "aliases": [
+      "Acipenser (Acipenser) oxyrinchus",
+      "Acipenser bairdii",
+      "Acipenser girardi",
+      "Acipenser hallowellii",
+      "Acipenser holbrookii",
+      "Acipenser kennicottii",
+      "Acipenser lecontei",
+      "Acipenser lichtensteinii",
+      "Acipenser macrorhinus",
+      "Acipenser oxyrhynchus",
+      "Acipenser oxyrhynchus oxyrhynchus",
+      "Acipenser oxyrinchus de sotoi",
+      "Acipenser oxyrinchus oxyrinchus",
+      "Sturio accipenser"
+    ],
+    "group": "Species at risk",
+    "rank": "species",
+    "flags": {
+      "at_risk": true,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Maritimes, COSEWIC Threatened 2011 (as stated in research file). SARA listing undecided in sources seen. Research file says status may have changed; check the Species at Risk Public Registry.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 151179,
+    "gbif_key": 2394612,
+    "scientific_name": "Morone saxatilis",
+    "common_names": [
+      "Striped bass",
+      "green heads",
+      "rock (fish)",
+      "squid-hounds"
+    ],
+    "aliases": [
+      "Morone lineatus",
+      "Morone saxitilis",
+      "Perca mitchilli",
+      "Perca mitchilli alternata",
+      "Perca saxatilis",
+      "Roccus lineatus",
+      "Roccus saxatilis",
+      "Roccus striatus",
+      "Sciaena lineata"
+    ],
+    "group": "Species at risk",
+    "rank": "species",
+    "flags": {
+      "at_risk": true,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Bay of Fundy population, COSEWIC Endangered 2012; Shubenacadie spawning (as stated in research file). Research file says status may have changed; check the Species at Risk Public Registry.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158074,
+    "gbif_key": 2351209,
+    "scientific_name": "Coregonus huntsmani",
+    "common_names": [
+      "Atlantic whitefish"
+    ],
+    "aliases": [
+      "Coregonus canadensis"
+    ],
+    "group": "Species at risk",
+    "rank": "species",
+    "flags": {
+      "at_risk": true,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Lake-dwelling; unlikely in marine video. Status: Listed under species at risk in research file; no status text given. Needs checking.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 107381,
+    "gbif_key": 5178595,
+    "scientific_name": "Carcinus maenas",
+    "common_names": [
+      "European green crab",
+      "common shore crab",
+      "European shore-crab",
+      "green crab",
+      "green shore crab",
+      "harbour crab",
+      "North Atlantic shore crab",
+      "shore crab"
+    ],
+    "aliases": [
+      "Cancer granarius",
+      "Cancer granulatus",
+      "Cancer maenas",
+      "Cancer pygmeus",
+      "Cancer rhomboidalis",
+      "Cancer viridis",
+      "Carcinus granulatus",
+      "Carcinus moenas",
+      "Megalopa montagui",
+      "Megalops montaguii",
+      "Portunus carcinoides"
+    ],
+    "group": "Invasive",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": true,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Documented in NS per research file. Needs checking against current invasive lists.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 151296,
+    "gbif_key": 5211250,
+    "scientific_name": "Micropterus dolomieu",
+    "common_names": [
+      "Smallmouth bass"
+    ],
+    "aliases": [
+      "Bodianus achigan",
+      "Centrarchus fasciatus",
+      "Cichla fasciata",
+      "Cichla minima",
+      "Micropterus dolomieu dolomieu",
+      "Micropterus dolomieui",
+      "Micropterus dolomieui dolomieui"
+    ],
+    "group": "Invasive",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": true,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Freshwater, LaHave; documented in NS per research file. Needs checking.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 888530,
+    "gbif_key": 2346629,
+    "scientific_name": "Esox niger",
+    "common_names": [
+      "Chain pickerel"
+    ],
+    "aliases": [
+      "Esox (Kenozoa) niger",
+      "Esox reticulatus"
+    ],
+    "group": "Invasive",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": true,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Freshwater, LaHave; documented in NS per research file. Needs checking.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 148715,
+    "gbif_key": 4354941,
+    "scientific_name": "Botrylloides violaceus",
+    "common_names": [
+      "Golden star tunicate (and other fouling)",
+      "chain tunicate",
+      "colonial sea squirt",
+      "lined colonial tunicate",
+      "orange sheath tunicate",
+      "violet tunicate"
+    ],
+    "aliases": [
+      "Botrylloides aurantium",
+      "Botrylloides carnosum",
+      "Botrylloides lateritium",
+      "Botrylloides violaceum",
+      "Botryllus aurantius"
+    ],
+    "group": "Invasive",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": true,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Non-fish clutter. Status: Research file lists 'Botrylloides violaceus etc.' as invasive fouling; needs checking, including which tunicate species.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 127251,
+    "gbif_key": 4286361,
+    "scientific_name": "Helicolenus dactylopterus",
+    "common_names": [
+      "Blackbelly rosefish",
+      "bleumouth rockfish",
+      "blue-mouth"
+    ],
+    "aliases": [
+      "Helicolenus dactylopterus dactylopterus",
+      "Helicolenus imperialis",
+      "Helicolenus maculatus",
+      "Helicolenus maderensis",
+      "Helicolenus thelmae",
+      "Scorpaena dactyloptera",
+      "Sebastes dactyloptera",
+      "Sebastes dactylopterus",
+      "Sebastes imperialis",
+      "Sebastes maculatus"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Added to DFO summer survey 2020; rising but rare. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (DFO/CBC snippet)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 127426,
+    "gbif_key": 2415247,
+    "scientific_name": "Zenopsis conchifer",
+    "common_names": [
+      "John dory",
+      "silvery John dory"
+    ],
+    "aliases": [
+      "Parazenopsis argenteus",
+      "Zenopsis conchifera",
+      "Zenopsis couchifer",
+      "Zenopsis figueirai",
+      "Zenopsis ocellata",
+      "Zenopsis ocellatus",
+      "Zeus conchifer",
+      "Zeus ocellatus"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Added to DFO summer survey 2020; rising but rare. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (DFO/CBC snippet)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159445,
+    "gbif_key": 5201075,
+    "scientific_name": "Hippocampus erectus",
+    "common_names": [
+      "Lined seahorse"
+    ],
+    "aliases": [
+      "Hippocampus brunneus",
+      "Hippocampus fascicularis",
+      "Hippocampus hudsonius",
+      "Hippocampus kincaidi",
+      "Hippocampus laevicaudatus",
+      "Hippocampus marginalis",
+      "Hippocampus punctulatus",
+      "Hippocampus stylifer",
+      "Hippocampus tetragonous",
+      "Hippocampus villosus",
+      "Syngnathus caballus",
+      "Syngnathus tetragonous"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Diver sightings. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (diver sightings)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159662,
+    "gbif_key": 2385448,
+    "scientific_name": "Chaetodon ocellatus",
+    "common_names": [
+      "Spotfin butterflyfish"
+    ],
+    "aliases": [
+      "Chaetodon bimaculatus",
+      "Sarothrodus amplecticollis",
+      "Sarothrodus ataeniatus",
+      "Sarothrodus maculocinctus"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Diver sightings. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (diver sightings)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159440,
+    "gbif_key": 5200941,
+    "scientific_name": "Fistularia tabacaria",
+    "common_names": [
+      "Bluespotted cornetfish",
+      "bluespotted cometfish"
+    ],
+    "aliases": [
+      "Aulastoma margravii",
+      "Aulostoma margravii",
+      "Aulostomus margravii",
+      "Fistularia neoboracensis",
+      "Fistularia neoeboracensis",
+      "Fistularia ocellata",
+      "Flagellaria fistularis"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Diver sightings. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (diver sightings)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 158434,
+    "gbif_key": 2225609,
+    "scientific_name": "Ovalipes ocellatus",
+    "common_names": [
+      "Lady crab",
+      "ocellate lady crab"
+    ],
+    "aliases": [
+      "Cancer ocellatus",
+      "Platyonichus ocellatus",
+      "Portunus pictus"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Invertebrate; expanded into Gulf of Maine and Fundy after 2012 heat wave per research file. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159348,
+    "gbif_key": 2387483,
+    "scientific_name": "Centropristis striata",
+    "common_names": [
+      "Black sea bass"
+    ],
+    "aliases": [
+      "Centropristes melanus",
+      "Centropristes striatus",
+      "Centropristis melana",
+      "Labrus striatus"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Almost no NS evidence in test. Status: Plausible; not sourced in research file. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (plausible; not sourced)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159571,
+    "gbif_key": 5201557,
+    "scientific_name": "Prionotus carolinus",
+    "common_names": [
+      "Northern sea robin",
+      "northern searobin"
+    ],
+    "aliases": [
+      "Merulinus carolinus",
+      "Prionotus affinis",
+      "Prionotus palmipes",
+      "Prionotus pileatus",
+      "Trigla carolina",
+      "Trigla palmipes"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Plausible; not sourced in research file. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (plausible; not sourced)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 159811,
+    "gbif_key": 2392447,
+    "scientific_name": "Stenotomus chrysops",
+    "common_names": [
+      "Scup",
+      "northern porgy",
+      "porgy",
+      "scuppaug"
+    ],
+    "aliases": [
+      "Sparus chrysops"
+    ],
+    "group": "Range-expander candidate",
+    "rank": "species",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": true
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Status: Plausible; not sourced in research file. Candidate only; not confirmed. Needs a human source.",
+    "sources": [
+      {
+        "name": "Seed list: p2-partner-coastal-action.md section 3 starter species list (plausible; not sourced)",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 125579,
+    "gbif_key": 8611,
+    "scientific_name": "Pleuronectidae",
+    "common_names": [
+      "Flounder, unidentified",
+      "righteye flounders"
+    ],
+    "aliases": [],
+    "group": "Generic (lowest practicable level)",
+    "rank": "family",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Use when a flounder is seen but not separable; winter flounder is the listed local species and flounders are hard to spot.",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 10331,
+    "gbif_key": 588,
+    "scientific_name": "Pleuronectiformes",
+    "common_names": [
+      "Flatfish, unidentified"
+    ],
+    "aliases": [],
+    "group": "Generic (lowest practicable level)",
+    "rank": "order",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Use when a flatfish is seen but family is unclear.",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 106673,
+    "gbif_key": 11132538,
+    "scientific_name": "Brachyura",
+    "common_names": [
+      "Crab, unidentified",
+      "crabs"
+    ],
+    "aliases": [
+      "Archaeobrachyura",
+      "Podotremata"
+    ],
+    "group": "Generic (lowest practicable level)",
+    "rank": "infraorder",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Use when a crab is seen but species is unclear (green crab, rock crab, lady crab are listed).",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 106674,
+    "gbif_key": null,
+    "scientific_name": "Caridea",
+    "common_names": [
+      "Shrimp, unidentified",
+      "shrimps"
+    ],
+    "aliases": [
+      "Amphionidacea",
+      "Amphionidea",
+      "Eukyphida"
+    ],
+    "group": "Generic (lowest practicable level)",
+    "rank": "infraorder",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Caridean shrimp; no specific shrimp species in the research files.",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 883,
+    "gbif_key": 1,
+    "scientific_name": "Polychaeta",
+    "common_names": [
+      "Worm, unidentified",
+      "bristle worms",
+      "polychaetes",
+      "polychete worms",
+      "polychetes"
+    ],
+    "aliases": [],
+    "group": "Generic (lowest practicable level)",
+    "rank": "class",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Marine worms; no specific species in the research files.",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 101,
+    "gbif_key": 225,
+    "scientific_name": "Gastropoda",
+    "common_names": [
+      "Snail, unidentified",
+      "gastropods",
+      "snails",
+      "snails and slugs"
+    ],
+    "aliases": [
+      "Angiogastropoda",
+      "Orthogastropoda",
+      "Psilogastropoda"
+    ],
+    "group": "Generic (lowest practicable level)",
+    "rank": "class",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Marine snails; no specific species in the research files.",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "GBIF species match",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  },
+  {
+    "aphia_id": 10194,
+    "gbif_key": null,
+    "scientific_name": "Actinopterygii",
+    "common_names": [
+      "Unknown fish",
+      "ray-finned fishes"
+    ],
+    "aliases": [],
+    "group": "Generic (lowest practicable level)",
+    "rank": "class",
+    "flags": {
+      "at_risk": false,
+      "invasive": false,
+      "range_expander": false
+    },
+    "ns_status_tier": "unknown",
+    "id_notes": "Generic entry, not a single species. Use when it is a fish but nothing finer can be said.",
+    "sources": [
+      {
+        "name": "Seed list: Added on coordinator request (Coastal Action protocol: lowest practicable taxonomic level). Not from research files.",
+        "retrieved": "2026-11-05"
+      },
+      {
+        "name": "WoRMS",
+        "retrieved": "2026-11-05"
+      }
+    ]
+  }
+]

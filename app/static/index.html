@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipSift: review</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<a class="skip" href="#review">Skip to review panel</a>
+<div id="demo-banner" class="demo-banner" hidden>
+  <span>Team demo: short sections of Coastal Action footage, no automatic counts yet. Your counts stay in this browser.</span>
+  <button type="button" id="demo-reset" class="linkish">Clear my demo counts</button>
+</div>
+<header class="topbar">
+  <h1>ClipSift</h1>
+  <a class="btn" href="/label.html" title="Label fish in single frames, on your own. Blind: you never see anyone else's marks.">Label fish</a>
+  <label class="run-pick">Run
+    <select id="run-select"><option value="">Loading...</option></select>
+  </label>
+  <span id="fixture-badge" class="badge warn" hidden>Fixture: fake sample data</span>
+  <div class="progress" id="progress-wrap" hidden>
+    <span id="progress-text"></span>
+    <progress id="progress-bar" value="0" max="1"></progress>
+  </div>
+  <span class="spacer"></span>
+  <button type="button" id="more-tools" aria-pressed="false" title="Show or hide the extra tools: motion segments, recording notes, QC mode, exports, grid settings, contrast sliders, ellipse and box tools">More tools</button>
+  <label class="check qc-toggle adv"><input type="checkbox" id="qc-mode"> QC mode (blind second count)</label>
+  <label class="who">Your name <input id="reviewer" type="text" maxlength="100" autocomplete="off" placeholder="e.g. Sam" aria-describedby="name-hint"></label>
+  <a id="export-link" class="btn adv" href="#" data-export="export.csv" hidden>Export counts CSV</a>
+  <a id="export-summary-link" class="btn adv" href="#" data-export="export_summary.csv" hidden>Video summary CSV</a>
+  <a id="export-seg-link" class="btn quiet adv" href="#" data-export="export_segments.csv" hidden>Segments CSV</a>
+  <a id="export-dict-link" class="btn quiet adv" href="#" data-export="export_columns.csv" hidden>Column guide</a>
+  <button type="button" id="feedback-btn" title="Tell the team what worked and what did not">Feedback</button>
+  <button type="button" id="help-btn" class="help-btn" aria-label="Help" title="Help (press ?)">?</button>
+</header>
+<p id="name-hint" class="name-hint" hidden>Type your name first. It is saved with every count and mark you make.</p>
+
+<div id="message" class="message" role="status" aria-live="polite" hidden></div>
+
+<section id="summary" class="summary" aria-label="Run summary" hidden></section>
+
+<section id="timeline-wrap" class="timeline-wrap" aria-label="Timeline of the whole recording" hidden>
+  <div class="timeline-head">
+    <h2>Recording timeline</h2>
+    <ul class="legend">
+      <li><span class="key k-tick"></span>Point to count</li>
+      <li><span class="key k-tickdone"></span>Counted</li>
+      <li class="adv"><span class="key k-active"></span>Active</li>
+      <li class="adv"><span class="key k-set"></span>Set aside</li>
+      <li class="adv"><span class="key k-audit"></span>Random check (A)</li>
+      <li class="adv"><span class="key k-flag"></span>Flagged (!)</li>
+      <li class="adv"><span class="key k-done"></span>Reviewed (&#10003;)</li>
+    </ul>
+  </div>
+  <div id="timeline" class="timeline"></div>
+  <div id="timeline-axis" class="axis"></div>
+</section>
+
+<details id="rec-notes" class="rec-notes adv" hidden>
+  <summary>Recording notes: window times, species seen, juveniles, visibility</summary>
+  <div class="notes-grid">
+    <label>Window start (s) <input id="rn-start" type="number" min="0" step="1"></label>
+    <label>Window end (s) <input id="rn-end" type="number" min="0" step="1"></label>
+    <label>Juveniles present
+      <select id="rn-juv"><option value="">Not recorded</option><option value="1">1 (yes)</option><option value="0">0 (no)</option></select></label>
+    <label class="wide">Species observed in the whole window (one per line)
+      <textarea id="rn-species" rows="3" list="species-names"></textarea></label>
+    <div class="wide"><span class="lbl">Visibility, per observer (2 to 3)</span><div id="rn-vis"></div></div>
+    <label class="wide">Notes <textarea id="rn-notes" rows="2" maxlength="2000"></textarea></label>
+    <div class="wide"><button type="button" id="rn-save">Save recording notes</button> <span id="rn-status" class="hint"></span></div>
+  </div>
+</details>
+<datalist id="species-names"></datalist>
+
+<div id="empty" class="empty" hidden></div>
+
+<main id="workspace" class="workspace" data-mode="sub" hidden>
+  <aside class="queue" aria-label="Review queue">
+    <h2 class="queue-h">Points to count</h2>
+    <div class="tabs adv" role="tablist">
+      <button type="button" role="tab" id="tab-sub" aria-selected="true">Subsample points</button>
+      <button type="button" role="tab" id="tab-seg" aria-selected="false">Motion segments</button>
+    </div>
+    <p id="qc-note" class="hint" hidden></p>
+    <label class="check" id="setaside-wrap"><input type="checkbox" id="show-setaside"> Also list set-aside segments</label>
+    <ol id="queue-list" class="queue-list"></ol>
+  </aside>
+
+  <section id="review" class="review" aria-label="Review panel" tabindex="-1">
+    <ol id="path" class="path" aria-label="Your path for each point">
+      <li><span class="step-n">1</span> Watch the clip</li>
+      <li><span class="step-n">2</span> Mark what you see</li>
+      <li><span class="step-n">3</span> Check your count</li>
+      <li><span class="step-n">4</span> Save and go to the next</li>
+    </ol>
+    <div id="seg-head" class="seg-head"></div>
+    <div id="audit-banner" class="banner audit" hidden></div>
+    <div id="movement-banner" class="banner movement" hidden></div>
+
+    <div class="stage-wrap" id="stage-wrap">
+      <h3 class="step-h sub-only"><span class="step-n">2</span> Mark what you see</h3>
+      <p class="hint sub-only" id="mark-help">Choose Dot, then click each animal that is inside the count second. Not sure about one? Leave it out. The still picture is what gets counted. The clip below is only for context.</p>
+      <div id="stage" class="stage">
+        <div id="zoom" class="zoom">
+          <img id="still" alt="Still frame from this segment" draggable="false">
+          <svg id="boxes" class="boxes" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div id="grid" class="grid" hidden></div>
+          <svg id="labels" class="boxes labels" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="media-missing" class="media-missing" hidden></div>
+      </div>
+      <div class="stage-tools">
+        <button type="button" id="toggle-diff" aria-pressed="false" title="Shows what changed between frames. Bright areas moved. It is a hint for where to look, not a count.">Movement view <kbd>D</kbd></button>
+        <button type="button" id="toggle-grid" aria-pressed="false">Grid <kbd>G</kbd></button>
+        <label class="adv">Rows <input id="grid-rows" type="number" min="1" max="20" value="3"></label>
+        <label class="adv">Columns <input id="grid-cols" type="number" min="1" max="20" value="6"></label>
+        <label class="check" id="suggest-toggle"><input type="checkbox" id="show-suggest"> Show model suggestions</label>
+        <span id="suggest-caution" class="hint" hidden>Rough suggestions. The model flags seafloor and the pipe, and isn't trained on this water.</span>
+        <span id="grid-hint" class="hint"></span>
+        <span class="hint" id="movement-hint" hidden>Movement view: bright areas changed between frames, so it points at things that moved. Switch back to the still to count.</span>
+      </div>
+      <div class="point-tools" id="point-tools" hidden>
+        <span class="lbl">Tool</span>
+        <button type="button" data-tool="pan" aria-pressed="true">Move / zoom</button>
+        <button type="button" data-tool="dot" aria-pressed="false">Dot <kbd>P</kbd></button>
+        <button type="button" class="adv" data-tool="ellipse" aria-pressed="false">Ellipse <kbd>E</kbd></button>
+        <button type="button" class="adv" data-tool="box" aria-pressed="false">Box <kbd>B</kbd></button>
+        <span class="lbl">Marking</span>
+        <label class="check"><input type="radio" name="pkind" value="fish" checked> Fish</label>
+        <label class="check"><input type="radio" name="pkind" value="invertebrate"> Invertebrate</label>
+        <input id="p-species" type="text" list="species-names" maxlength="200" placeholder="Species (optional)" aria-label="Species for new marks">
+        <button type="button" id="p-undo">Undo <kbd>Z</kbd></button>
+        <button type="button" id="p-clear" title="Remove all of your dots on this picture (asks first)">Clear all marks</button>
+        <button type="button" id="z-in" aria-label="Zoom in">+</button>
+        <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
+        <button type="button" id="z-reset" title="Back to the whole picture">Reset zoom</button>
+        <span id="p-totals" class="p-totals" aria-live="polite"></span>
+        <span class="hint">Dot = one animal (circle for fish, square for invertebrate). Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove one dot, click it again in Dot mode.</span>
+      </div>
+      <div class="sliders adv">
+        <label>Brightness <input type="range" id="f-brightness" min="50" max="300" value="100"><output></output></label>
+        <label>Contrast <input type="range" id="f-contrast" min="50" max="300" value="100"><output></output></label>
+        <label>Saturation <input type="range" id="f-saturation" min="0" max="300" value="100"><output></output></label>
+        <button type="button" id="filter-reset" title="Set brightness, contrast and saturation back to 100%">Reset sliders</button>
+        <button type="button" id="filter-enhance" title="Stronger contrast and colour, like an image editor enhancement">Enhance preset</button>
+        <span class="hint">Display only. Files are not changed. Settings are saved with each decision.</span>
+      </div>
+    </div>
+
+    <div class="clip-wrap" id="clip-wrap">
+      <h3 class="step-h"><span class="step-n sub-only">1</span> Watch the clip</h3>
+      <p class="hint sub-only">Count only in the green COUNT NOW second. Slow it down with 0.25x if fish are fast.</p>
+      <video id="loop" controls loop muted playsinline preload="metadata"></video>
+      <div class="clip-tools" id="clip-tools">
+        <span class="lbl">Speed</span>
+        <button type="button" data-speed="0.25" aria-pressed="false">0.25x</button>
+        <button type="button" data-speed="0.5" aria-pressed="false">0.5x</button>
+        <button type="button" data-speed="1" aria-pressed="true">1x</button>
+        <span class="lbl">Frame</span>
+        <button type="button" id="step-back" title="Back one frame (,)">&larr; <kbd>,</kbd></button>
+        <button type="button" id="step-fwd" title="Forward one frame (.)"><kbd>.</kbd> &rarr;</button>
+        <button type="button" id="play-pause"><kbd>Space</kbd> Play/pause</button>
+        <button type="button" id="to-count" hidden>Jump to count second</button>
+        <span id="count-now" class="count-now" hidden>COUNT NOW (designated second)</span>
+        <span id="clip-time" class="hint"></span>
+      </div>
+      <p id="loop-missing" class="note-missing" hidden>No clip file for this segment.</p>
+    </div>
+  </section>
+
+  <aside class="side" id="side-sub" aria-label="Subsample count" hidden>
+    <section class="panel" id="suggest-panel" aria-labelledby="sug-h">
+      <h2 id="sug-h">Suggested counts</h2>
+      <p class="hint" id="sug-hint">A computer guess to compare against, never the answer. Nothing is filled in for you. Count what you see.</p>
+      <p class="hint" id="sug-off" hidden>Model suggestions are hidden so they do not sway your count. Turn them on under Mark what you see if you want to compare.</p>
+      <dl id="suggest" class="counts"></dl>
+    </section>
+    <section class="panel" aria-labelledby="cnt-h">
+      <h2 id="cnt-h"><span class="step-n">3</span> Check your count</h2>
+      <p class="hint">Count only the designated second. Counts are a relative index, not abundance. Enter 0 if none.</p>
+      <div class="count-grid">
+        <label>Fish <input id="c-fish" type="number" min="0" max="100000"></label>
+        <label>Invertebrates <input id="c-inv" type="number" min="0" max="100000"></label>
+        <label>Unknown / unable to ID <input id="c-unk" type="number" min="0" max="100000" placeholder="0"></label>
+      </div>
+      <h3>Per species</h3>
+      <div class="combo">
+        <input id="ss-species" type="text" role="combobox" aria-expanded="false" aria-controls="ss-species-list"
+               aria-autocomplete="list" autocomplete="off" placeholder="Add a species: common or scientific name">
+        <ul id="ss-species-list" role="listbox" hidden></ul>
+      </div>
+      <p class="hint">Press Enter to add. Names not in the list are allowed and marked for checking.</p>
+      <ul id="species-rows" class="species-rows"></ul>
+      <p id="species-sum" class="hint"></p>
+      <h3>Is it countable? Tick what you can see</h3>
+      <fieldset class="chars" id="chars">
+        <legend class="sr">Characteristics</legend>
+        <label><input type="checkbox" value="shape"> <kbd>1</kbd> Shape</label>
+        <label><input type="checkbox" value="anatomical_features"> <kbd>2</kbd> Anatomical features</label>
+        <label><input type="checkbox" value="colouration_or_flashes"> <kbd>3</kbd> Colour or flashes</label>
+        <label><input type="checkbox" value="swimming_behaviour"> <kbd>4</kbd> Swimming or movement</label>
+      </fieldset>
+      <p id="chars-warn" class="warn-text" hidden>Fewer than two ticked. The protocol says to leave out an organism unless two or more features tell it apart. When unsure, leave it out.</p>
+      <label class="check"><input type="checkbox" id="c-move"> Movement, unidentified (a note only, never counted)</label>
+      <div class="count-grid">
+        <label>Visibility
+          <select id="c-vis"><option value="">Not recorded</option><option>&lt;0.5 m</option><option>0.5-1.0 m</option><option>1.0-1.5 m</option><option>&gt;1.5 m</option></select></label>
+        <label class="check"><input type="checkbox" id="c-vchange"> Visibility changed by 0.5 m or more</label>
+      </div>
+      <label class="note-row">Notes <textarea id="c-notes" rows="2" maxlength="2000"></textarea></label>
+      <label class="count-row" id="pass-row" hidden>Pass
+        <select id="c-pass"><option value="qc_blind">QC blind count</option><option value="recount">Recount</option></select></label>
+      <div class="save-row">
+        <button type="button" id="save-sub" class="primary"><span class="step-n">4</span> Save and go to the next <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
+      </div>
+      <p id="sub-result" class="hint" role="status"></p>
+      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> tick features, <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step, <kbd>G</kbd> grid, <kbd>D</kbd> movement view. Keys pause while you type.</p>
+    </section>
+  </aside>
+
+  <aside class="side" id="side-seg" aria-label="Counts and decision" hidden>
+    <section class="panel" aria-labelledby="counts-h">
+      <h2 id="counts-h">Model counts</h2>
+      <p class="hint">Relative indices, not a measure of how many fish are present.</p>
+      <dl id="counts" class="counts"></dl>
+      <div id="tracks"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="species-h">
+      <h2 id="species-h">Species</h2>
+      <div class="combo">
+        <input id="species" type="text" role="combobox" aria-expanded="false" aria-controls="species-list"
+               aria-autocomplete="list" autocomplete="off" placeholder="Type a common or scientific name">
+        <ul id="species-list" role="listbox" hidden></ul>
+      </div>
+      <p id="species-status" class="hint"></p>
+      <div id="alias-row" class="alias-row" hidden>
+        <input id="alias-input" type="text" maxlength="100" placeholder="Another name for this species">
+        <button type="button" id="alias-add">Add local name</button>
+      </div>
+      <label class="count-row">Fish count <input id="count" type="number" min="0" max="100000" placeholder="blank"></label>
+      <label class="note-row">Note <textarea id="note" rows="2" maxlength="2000"></textarea></label>
+    </section>
+
+    <section class="panel" aria-labelledby="decide-h">
+      <h2 id="decide-h">Decision</h2>
+      <div class="decisions">
+        <button type="button" data-decision="confirm" class="d-confirm"><kbd>1</kbd> Confirm</button>
+        <button type="button" data-decision="reject" class="d-reject"><kbd>2</kbd> Reject</button>
+        <button type="button" data-decision="unknown" class="d-unknown"><kbd>3</kbd> Unknown</button>
+        <button type="button" data-decision="needs_second_look" class="d-second"><kbd>4</kbd> Needs second look</button>
+      </div>
+      <p id="last-decision" class="hint"></p>
+      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&darr;</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&uarr;</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> decide, <kbd>G</kbd> grid, <kbd>D</kbd> movement view, <kbd>/</kbd> species. Keys pause while you type in a box.</p>
+    </section>
+  </aside>
+</main>
+<dialog id="help-dlg" class="drawer" aria-labelledby="help-h">
+  <div class="drawer-head">
+    <h2 id="help-h">Help</h2>
+    <button type="button" id="help-tour" class="quiet">Take the tour again</button>
+    <button type="button" id="help-close" aria-label="Close help">Close</button>
+  </div>
+  <div class="drawer-body">
+    <nav class="help-toc" aria-label="Help sections">
+      <a href="#h-what">What this does</a> <a href="#h-steps">First count</a> <a href="#h-timeline">Timeline</a>
+      <a href="#h-keys">Shortcuts</a> <a href="#h-rules">Counting rules</a> <a href="#h-suggest">Suggested counts</a>
+    </nav>
+    <section id="h-what">
+      <h3>What this tool does</h3>
+      <p>ClipSift helps you count fish and other animals in underwater video, one short moment at a time. It picks the moments and cuts the clips; you decide what is really there.</p>
+    </section>
+    <section id="h-steps">
+      <h3>Your first count in 5 steps</h3>
+      <ol>
+        <li>Type your name in the box at the top. It is saved with your counts.</li>
+        <li>Pick a point on the timeline, or use the first one in the list on the left.</li>
+        <li>Watch the clip. Count only in the green COUNT NOW second. Use 0.25x to slow it down.</li>
+        <li>Click each animal on the still picture to mark it, then check the numbers in Your count.</li>
+        <li>Press Save and go to the next. Repeat until the list says everything is counted.</li>
+      </ol>
+    </section>
+    <section id="h-timeline">
+      <h3>What the timeline markers mean</h3>
+      <ul class="help-keys">
+        <li><span class="key k-tick"></span> Grey tick: a point to count. Click it to open it.</li>
+        <li><span class="key k-tickdone"></span> Green tick: you have counted this point.</li>
+        <li><span class="key k-window"></span> Shaded band: the analysis window, the part of the video that is used.</li>
+        <li><span class="key k-active"></span> Blue block (More tools): motion found here. A supporting check.</li>
+        <li><span class="key k-set"></span> Dark block (More tools): set aside, no activity found. The time is kept.</li>
+        <li><span class="key k-audit"></span> Dashed block marked A (More tools): a random check of set-aside time.</li>
+        <li><span class="key k-flag"></span> Hatched block marked ! (More tools): camera shake or low visibility.</li>
+        <li><span class="key k-done"></span> Green underline and a tick (More tools): reviewed.</li>
+      </ul>
+    </section>
+    <section id="h-keys">
+      <h3>Keyboard shortcuts</h3>
+      <p class="hint">Shortcuts pause while you type in a box.</p>
+      <table class="keys-table">
+        <tr><td><kbd>J</kbd> or <kbd>&rarr;</kbd></td><td>Next point</td></tr>
+        <tr><td><kbd>K</kbd> or <kbd>&larr;</kbd></td><td>Previous point</td></tr>
+        <tr><td><kbd>Space</kbd></td><td>Play or pause the clip</td></tr>
+        <tr><td><kbd>,</kbd> and <kbd>.</kbd></td><td>Step the clip back or forward one frame</td></tr>
+        <tr><td><kbd>P</kbd></td><td>Dot tool</td></tr>
+        <tr><td><kbd>Z</kbd></td><td>Undo your last mark</td></tr>
+        <tr><td><kbd>1</kbd> to <kbd>4</kbd></td><td>Tick shape, anatomy, colour, movement</td></tr>
+        <tr><td><kbd>D</kbd></td><td>Show or hide the movement view</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Show or hide the grid</td></tr>
+        <tr><td><kbd>/</kbd></td><td>Jump to the species box</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Save and go to the next</td></tr>
+        <tr><td><kbd>E</kbd> and <kbd>B</kbd></td><td>Ellipse and box tools (More tools)</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Open this help</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close help, feedback or the tour</td></tr>
+      </table>
+    </section>
+    <section id="h-rules">
+      <h3>The counting rules, in brief</h3>
+      <ul>
+        <li>Count only what is inside the one designated second. A fish that appears within half a second either side may count.</li>
+        <li>Count an animal only if two of these four tell it apart: shape, anatomical features, colour or flashes, swimming or movement.</li>
+        <li>When unsure, leave it out. Counting too few is better than counting too many.</li>
+        <li>Movement alone is not counted. Tick the movement note instead.</li>
+        <li>Counts are a relative index, not how many animals are really there.</li>
+      </ul>
+    </section>
+    <section id="h-suggest">
+      <h3>What suggested counts are</h3>
+      <p>Model suggestions are off each time you open a recording, so they do not sway your count. Tick Show model suggestions under Mark what you see to see the boxes and the numbers. They are rough: the model flags seafloor and the pipe, and is not trained on this water. The tool may show a count made by software. It is only a hint to compare with, and it is never filled in for you. In this prototype the software is a simple stand-in that reacts to any movement, so expect it to be wrong. Your count is the one that is saved.</p>
+    </section>
+  </div>
+</dialog>
+
+<dialog id="feedback-dlg" class="modal" aria-labelledby="fb-h">
+  <form id="feedback-form" method="dialog" novalidate>
+    <h2 id="fb-h">Send feedback</h2>
+    <p class="hint">Notes go to the team and may be used to plan changes.</p>
+    <label class="fb-row">Your name <input id="fb-name" type="text" maxlength="60" autocomplete="off"></label>
+    <div class="fb-two">
+      <label class="fb-row">Which area
+        <select id="fb-area"><option>Counting</option><option>Video</option><option>Timeline</option><option>Help</option><option>Layout</option><option selected>Other</option></select></label>
+      <label class="fb-row">What kind
+        <select id="fb-type"><option>Bug</option><option selected>Confusing</option><option>Idea</option><option>Like</option></select></label>
+    </div>
+    <label class="fb-row">What happened, or what would help? <textarea id="fb-message" rows="5" maxlength="2000"></textarea></label>
+    <div class="fb-trap" aria-hidden="true"><label>Leave this empty <input id="fb-website" type="text" tabindex="-1" autocomplete="off"></label></div>
+    <p class="hint" id="fb-context"></p>
+    <p id="fb-status" class="fb-status" role="status" aria-live="polite"></p>
+    <div class="fb-actions">
+      <button type="button" id="fb-cancel" class="quiet">Close</button>
+      <button type="submit" id="fb-send" class="primary">Send</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="tour" class="tour" hidden>
+  <div id="tour-hole" class="tour-hole"></div>
+  <div id="tour-card" class="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-body" tabindex="-1">
+    <p id="tour-step" class="hint"></p>
+    <h2 id="tour-title"></h2>
+    <p id="tour-body"></p>
+    <div class="tour-actions">
+      <button type="button" id="tour-skip" class="quiet">Skip tour</button>
+      <span class="spacer"></span>
+      <button type="button" id="tour-back">Back</button>
+      <button type="button" id="tour-next" class="primary">Next</button>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

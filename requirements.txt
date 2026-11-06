@@ -1,0 +1,6 @@
+opencv-python
+numpy
+PyYAML
+Flask
+onnxruntime
+pytest

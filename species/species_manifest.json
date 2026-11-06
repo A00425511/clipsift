@@ -1,0 +1,23 @@
+{
+  "retrieved": "2026-11-05",
+  "versioned_file": "species_list_v2026.11.05.json",
+  "sha256": "0a7c6c3db33daab18d71163712baa72143accb3accd41286c57890d9d5001515",
+  "seed_file": "seed_species.csv",
+  "total": 42,
+  "worms_resolved": 42,
+  "gbif_resolved": 40,
+  "fully_resolved": 40,
+  "unresolved": [
+    {
+      "scientific_name": "Caridea",
+      "worms": null,
+      "gbif": "no GBIF match"
+    },
+    {
+      "scientific_name": "Actinopterygii",
+      "worms": null,
+      "gbif": "no GBIF match"
+    }
+  ],
+  "notes": []
+}

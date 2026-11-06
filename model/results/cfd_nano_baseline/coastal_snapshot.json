@@ -1,0 +1,227 @@
+{
+ "ckpt": "<workspace>/Model Training/../clipsift/models/cfd-rf-detr-nano-640-2026.02.02.cp-011.20260706-release.pth",
+ "threshold_from_puget_val": 0.29,
+ "tile": 512,
+ "overlap": 0.25,
+ "seconds": 32.36956891702721,
+ "team_csv": "label_snapshot_20261106/points.csv",
+ "verified_frame": {
+  "puget_val_threshold": {
+   "threshold": 0.29,
+   "boxes": 7,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.038834951456310676,
+   "precision": 0.5714285714285714,
+   "strict_recall": 0.038834951456310676,
+   "strict_precision": 0.5714285714285714,
+   "chance_recall": 0.02233009708737864,
+   "chance_precision": 0.32857142857142857,
+   "chance_strict_recall": 0.014563106796116505,
+   "chance_strict_precision": 0.21428571428571427,
+   "count_error": -96,
+   "count_error_pct": -93.20388349514563,
+   "mean_abs_count_error": 96.0
+  },
+  "top25": {
+   "threshold": 0.0,
+   "boxes": 19,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.14563106796116504,
+   "precision": 0.7894736842105263,
+   "strict_recall": 0.13592233009708737,
+   "strict_precision": 0.7368421052631579,
+   "chance_recall": 0.05566343042071197,
+   "chance_precision": 0.3017543859649123,
+   "chance_strict_recall": 0.030744336569579287,
+   "chance_strict_precision": 0.16666666666666666,
+   "count_error": -84,
+   "count_error_pct": -81.55339805825243,
+   "mean_abs_count_error": 84.0,
+   "budget": 25,
+   "boxes_available": 25
+  },
+  "top50": {
+   "threshold": 0.0,
+   "boxes": 34,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.24271844660194175,
+   "precision": 0.7352941176470589,
+   "strict_recall": 0.23300970873786409,
+   "strict_precision": 0.7058823529411765,
+   "chance_recall": 0.09449838187702264,
+   "chance_precision": 0.28627450980392155,
+   "chance_strict_recall": 0.04563106796116505,
+   "chance_strict_precision": 0.13823529411764707,
+   "count_error": -69,
+   "count_error_pct": -66.99029126213593,
+   "mean_abs_count_error": 69.0,
+   "budget": 50,
+   "boxes_available": 50
+  },
+  "top100": {
+   "threshold": 0.0,
+   "boxes": 58,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.36893203883495146,
+   "precision": 0.6551724137931034,
+   "strict_recall": 0.34951456310679613,
+   "strict_precision": 0.6206896551724138,
+   "chance_recall": 0.14692556634304207,
+   "chance_precision": 0.26091954022988506,
+   "chance_strict_recall": 0.07184466019417476,
+   "chance_strict_precision": 0.12758620689655173,
+   "count_error": -45,
+   "count_error_pct": -43.689320388349515,
+   "mean_abs_count_error": 45.0,
+   "budget": 100,
+   "boxes_available": 100
+  },
+  "top200": {
+   "threshold": 0.0,
+   "boxes": 114,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.5922330097087378,
+   "precision": 0.5350877192982456,
+   "strict_recall": 0.5339805825242718,
+   "strict_precision": 0.4824561403508772,
+   "chance_recall": 0.2715210355987055,
+   "chance_precision": 0.24532163742690058,
+   "chance_strict_recall": 0.11877022653721682,
+   "chance_strict_precision": 0.10730994152046783,
+   "count_error": 11,
+   "count_error_pct": 10.679611650485436,
+   "mean_abs_count_error": 11.0,
+   "budget": 200,
+   "boxes_available": 200
+  }
+ },
+ "false_alarm_team_frames": {
+  "top_k_per_frame": 50,
+  "frames": 17,
+  "not_fish_marks": 201,
+  "not_fish_in_box": 85,
+  "not_fish_share_in_box": 0.4228855721393035,
+  "by_category": {
+   "algae": {
+    "marks": 24,
+    "in_box": 6,
+    "share": 0.25
+   },
+   "bubbles": {
+    "marks": 19,
+    "in_box": 11,
+    "share": 0.5789473684210527
+   },
+   "equipment": {
+    "marks": 70,
+    "in_box": 12,
+    "share": 0.17142857142857143
+   },
+   "other": {
+    "marks": 19,
+    "in_box": 14,
+    "share": 0.7368421052631579
+   },
+   "seabed": {
+    "marks": 69,
+    "in_box": 42,
+    "share": 0.6086956521739131
+   }
+  },
+  "invertebrate_marks": 9,
+  "invertebrate_in_box": 7,
+  "per_frame": {
+   "t1s2_v1_t00060": {
+    "boxes": 50,
+    "not_fish_marks": 29,
+    "not_fish_in_box": 13
+   },
+   "t1s2_v1_t00140": {
+    "boxes": 50,
+    "not_fish_marks": 41,
+    "not_fish_in_box": 18
+   },
+   "t1s2_v1_t00160": {
+    "boxes": 50,
+    "not_fish_marks": 37,
+    "not_fish_in_box": 16
+   },
+   "t1s2_v1_t00940": {
+    "boxes": 50,
+    "not_fish_marks": 1,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01000": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01220": {
+    "boxes": 50,
+    "not_fish_marks": 2,
+    "not_fish_in_box": 1
+   },
+   "t1s2_v1_t01240": {
+    "boxes": 50,
+    "not_fish_marks": 26,
+    "not_fish_in_box": 10
+   },
+   "t1s2_v1_t01248": {
+    "boxes": 50,
+    "not_fish_marks": 3,
+    "not_fish_in_box": 1
+   },
+   "t1s2_v1_t01300": {
+    "boxes": 50,
+    "not_fish_marks": 3,
+    "not_fish_in_box": 3
+   },
+   "t1s2_v1_t01332": {
+    "boxes": 50,
+    "not_fish_marks": 1,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01340": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01344": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01460": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01500": {
+    "boxes": 50,
+    "not_fish_marks": 38,
+    "not_fish_in_box": 15
+   },
+   "t1s2_v1_t01560": {
+    "boxes": 50,
+    "not_fish_marks": 20,
+    "not_fish_in_box": 8
+   },
+   "t1s2_v1_t01660": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01760": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   }
+  }
+ },
+ "note": "Dev check on one dense school (verified frame) plus 9 team frames, not accuracy."
+}

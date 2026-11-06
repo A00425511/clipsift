@@ -1,0 +1,32 @@
+{
+ "ckpt": "<workspace>/Model Training/../clipsift/models/cfd-rf-detr-nano-640-2026.02.02.cp-011.20260706-release.pth",
+ "split": "valid",
+ "tiles": 6243,
+ "class_names": [
+  "fish"
+ ],
+ "tile_level": true,
+ "classes": {
+  "fish": {
+   "n_gt": 4224,
+   "AP@0.3": 0.4575338379725627,
+   "IoU0.3": {
+    "thr": 0.29,
+    "dets": 2836,
+    "tp": 1782,
+    "precision": 0.6283497884344147,
+    "recall": 0.421875
+   },
+   "AP@0.5": 0.42191364132912534,
+   "IoU0.5": {
+    "thr": 0.29,
+    "dets": 2836,
+    "tp": 1700,
+    "precision": 0.5994358251057827,
+    "recall": 0.4024621212121212
+   }
+  },
+  "crab": "n/a (one-class model)"
+ },
+ "threshold_chosen_on": "valid"
+}

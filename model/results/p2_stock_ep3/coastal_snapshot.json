@@ -1,0 +1,227 @@
+{
+ "ckpt": "runs/p2_stock/ema_epoch3.pth",
+ "threshold_from_puget_val": 0.35,
+ "tile": 512,
+ "overlap": 0.25,
+ "seconds": 31.908124416018836,
+ "team_csv": "label_snapshot_20261106/points.csv",
+ "verified_frame": {
+  "puget_val_threshold": {
+   "threshold": 0.35,
+   "boxes": 12,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.06796116504854369,
+   "precision": 0.5833333333333334,
+   "strict_recall": 0.05825242718446602,
+   "strict_precision": 0.5,
+   "chance_recall": 0.03203883495145631,
+   "chance_precision": 0.27499999999999997,
+   "chance_strict_recall": 0.011650485436893204,
+   "chance_strict_precision": 0.09999999999999999,
+   "count_error": -91,
+   "count_error_pct": -88.3495145631068,
+   "mean_abs_count_error": 91.0
+  },
+  "top25": {
+   "threshold": 0.0,
+   "boxes": 21,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.11650485436893204,
+   "precision": 0.5714285714285714,
+   "strict_recall": 0.10679611650485436,
+   "strict_precision": 0.5238095238095238,
+   "chance_recall": 0.05372168284789644,
+   "chance_precision": 0.2634920634920635,
+   "chance_strict_recall": 0.02168284789644013,
+   "chance_strict_precision": 0.10634920634920635,
+   "count_error": -82,
+   "count_error_pct": -79.6116504854369,
+   "mean_abs_count_error": 82.0,
+   "budget": 25,
+   "boxes_available": 25
+  },
+  "top50": {
+   "threshold": 0.0,
+   "boxes": 38,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.20388349514563106,
+   "precision": 0.5526315789473685,
+   "strict_recall": 0.1941747572815534,
+   "strict_precision": 0.5263157894736842,
+   "chance_recall": 0.0964401294498382,
+   "chance_precision": 0.2614035087719298,
+   "chance_strict_recall": 0.0343042071197411,
+   "chance_strict_precision": 0.09298245614035087,
+   "count_error": -65,
+   "count_error_pct": -63.10679611650486,
+   "mean_abs_count_error": 65.0,
+   "budget": 50,
+   "boxes_available": 50
+  },
+  "top100": {
+   "threshold": 0.0,
+   "boxes": 74,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.36893203883495146,
+   "precision": 0.5135135135135135,
+   "strict_recall": 0.34951456310679613,
+   "strict_precision": 0.4864864864864865,
+   "chance_recall": 0.1815533980582524,
+   "chance_precision": 0.2527027027027027,
+   "chance_strict_recall": 0.07313915857605179,
+   "chance_strict_precision": 0.1018018018018018,
+   "count_error": -29,
+   "count_error_pct": -28.155339805825243,
+   "mean_abs_count_error": 29.0,
+   "budget": 100,
+   "boxes_available": 100
+  },
+  "top200": {
+   "threshold": 0.0,
+   "boxes": 141,
+   "dots": 103,
+   "frames": 1,
+   "recall": 0.5728155339805825,
+   "precision": 0.41843971631205673,
+   "strict_recall": 0.5436893203883495,
+   "strict_precision": 0.3971631205673759,
+   "chance_recall": 0.30906148867313915,
+   "chance_precision": 0.22576832151300236,
+   "chance_strict_recall": 0.13042071197411004,
+   "chance_strict_precision": 0.09527186761229314,
+   "count_error": 38,
+   "count_error_pct": 36.89320388349515,
+   "mean_abs_count_error": 38.0,
+   "budget": 200,
+   "boxes_available": 200
+  }
+ },
+ "false_alarm_team_frames": {
+  "top_k_per_frame": 50,
+  "frames": 17,
+  "not_fish_marks": 201,
+  "not_fish_in_box": 73,
+  "not_fish_share_in_box": 0.36318407960199006,
+  "by_category": {
+   "algae": {
+    "marks": 24,
+    "in_box": 11,
+    "share": 0.4583333333333333
+   },
+   "bubbles": {
+    "marks": 19,
+    "in_box": 8,
+    "share": 0.42105263157894735
+   },
+   "equipment": {
+    "marks": 70,
+    "in_box": 10,
+    "share": 0.14285714285714285
+   },
+   "other": {
+    "marks": 19,
+    "in_box": 9,
+    "share": 0.47368421052631576
+   },
+   "seabed": {
+    "marks": 69,
+    "in_box": 35,
+    "share": 0.5072463768115942
+   }
+  },
+  "invertebrate_marks": 9,
+  "invertebrate_in_box": 1,
+  "per_frame": {
+   "t1s2_v1_t00060": {
+    "boxes": 50,
+    "not_fish_marks": 29,
+    "not_fish_in_box": 8
+   },
+   "t1s2_v1_t00140": {
+    "boxes": 50,
+    "not_fish_marks": 41,
+    "not_fish_in_box": 12
+   },
+   "t1s2_v1_t00160": {
+    "boxes": 50,
+    "not_fish_marks": 37,
+    "not_fish_in_box": 14
+   },
+   "t1s2_v1_t00940": {
+    "boxes": 50,
+    "not_fish_marks": 1,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01000": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01220": {
+    "boxes": 50,
+    "not_fish_marks": 2,
+    "not_fish_in_box": 1
+   },
+   "t1s2_v1_t01240": {
+    "boxes": 50,
+    "not_fish_marks": 26,
+    "not_fish_in_box": 9
+   },
+   "t1s2_v1_t01248": {
+    "boxes": 50,
+    "not_fish_marks": 3,
+    "not_fish_in_box": 2
+   },
+   "t1s2_v1_t01300": {
+    "boxes": 50,
+    "not_fish_marks": 3,
+    "not_fish_in_box": 3
+   },
+   "t1s2_v1_t01332": {
+    "boxes": 50,
+    "not_fish_marks": 1,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01340": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01344": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01460": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01500": {
+    "boxes": 50,
+    "not_fish_marks": 38,
+    "not_fish_in_box": 17
+   },
+   "t1s2_v1_t01560": {
+    "boxes": 50,
+    "not_fish_marks": 20,
+    "not_fish_in_box": 7
+   },
+   "t1s2_v1_t01660": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   },
+   "t1s2_v1_t01760": {
+    "boxes": 50,
+    "not_fish_marks": 0,
+    "not_fish_in_box": 0
+   }
+  }
+ },
+ "note": "Dev check on one dense school (verified frame) plus 9 team frames, not accuracy."
+}

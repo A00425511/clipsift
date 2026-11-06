@@ -3,6 +3,7 @@
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  const D = window.ClipSiftDisplay;
   const DEFAULT_PROTOCOL = { count_window_s: 1, count_tolerance_s: 0.5, qc_share: 0.10, qc_min: 6, qc_max: 12 };
   const STATUS = {
     known: "Species identified by model", fish_unknown: "Fish, species unknown", unclear: "Unclear",
@@ -18,7 +19,8 @@
     diff: false, grid: false, boxes: false,   // boxes = "Show model suggestions"; always off at run load, never stored
    
     seg: { species: null }, ss: { rows: [] },
-    filters: { brightness: 100, contrast: 100, saturation: 100 },
+    filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
+    motion: false, restart: true, spaceDown: false, loopWasPlaying: false, hudRaf: 0, names: "common",
     zoom: { k: 1, x: 0, y: 0 }, tool: "pan", drag: null,
     more: localStorage.getItem("clipsift.moretools") === "1",   // "More tools" toggle, remembered
   };
@@ -249,8 +251,12 @@
       if (f) for (const k of Object.keys(S.filters)) if (typeof f[k] === "number") S.filters[k] = f[k];
       const g = JSON.parse(localStorage.getItem("clipsift.grid") || "null");
       if (g) { $("grid-rows").value = g.rows; $("grid-cols").value = g.cols; }
+      S.enhance = D.cleanEnhance(localStorage.getItem("clipsift.enhance"));
+      S.restart = localStorage.getItem("clipsift.restart") !== "0";
+      S.names = D.cleanNameMode(localStorage.getItem("clipsift.species_names"));
     } catch (e) { /* ignore bad saved settings */ }
     wireStatic();
+    paintRestart(); paintNames();
     $("demo-banner").hidden = !DEMO;
     applyView(); nameHint();
     await loadSpecies();
@@ -291,10 +297,9 @@
       const commons = Array.isArray(sp.common_names) ? sp.common_names.filter((x) => typeof x === "string") : [];
       const alias = Array.isArray(sp.aliases) ? sp.aliases.filter((x) => typeof x === "string") : [];
       for (const a of S.aliases) if (a.maps_to && a.maps_to.toLowerCase() === sci.toLowerCase()) alias.push(a.alias);
-      idx.push({ rec: sp, sci, common: commons[0] || "", terms: [sci, ...commons, ...alias].filter(Boolean), aliasTerms: alias });
+      idx.push({ rec: sp, sci, common: commons[0] || "", kind: sp.kind || null, terms: [sci, ...commons, ...alias].filter(Boolean), aliasTerms: alias });
       seen.add(sci.toLowerCase());
     }
-    $("species-names").replaceChildren(...idx.map((i) => el("option", { value: i.sci })), ...idx.filter((i) => i.common).map((i) => el("option", { value: i.common })));
     S.index = idx;
   }
 
@@ -509,6 +514,7 @@
     renderQueue(); renderTimeline();
     const cur = $("queue-list").querySelector(".current"); if (cur) cur.scrollIntoView({ block: "nearest" });
     S.diff = false; setPressed("toggle-diff", false); $("movement-hint").hidden = true;
+    setMotion(false);
     loadMedia(u);
     S.zoom = { k: 1, x: 0, y: 0 }; applyZoom();
     $("point-tools").hidden = S.mode !== "sub";
@@ -532,6 +538,9 @@
     v.load();
     v.playbackRate = currentSpeed();
     v.play().catch(() => { /* autoplay may be blocked; the controls still work */ });
+    const sc = $("stage-clip");
+    sc.dataset.ok = "1"; sc.onerror = () => { sc.dataset.ok = ""; setMotion(false); };
+    sc.src = v.src; sc.load();
     applyFilters();
   }
   function showStill() {
@@ -572,17 +581,77 @@
   }
   function setPressed(id, on) { $(id).setAttribute("aria-pressed", on ? "true" : "false"); }
   function applyFilters() {
-    const f = S.filters, v = "brightness(" + f.brightness + "%) contrast(" + f.contrast + "%) saturate(" + f.saturation + "%)";
-    $("still").style.filter = v; $("loop").style.filter = v;
+    const f = S.filters, extra = D.enhanceFilter(S.enhance);
+    const v = "brightness(" + f.brightness + "%) contrast(" + f.contrast + "%) saturate(" + f.saturation + "%)" + (extra ? " " + extra : "");
+    $("still").style.filter = v; $("loop").style.filter = v; $("stage-clip").style.filter = v;
+    for (const b of $("enhance-group").children) b.setAttribute("aria-pressed", b.dataset.enhance === S.enhance ? "true" : "false");
     for (const k of Object.keys(f)) { $("f-" + k).value = f[k]; $("f-" + k).nextElementSibling.textContent = f[k] + "%"; }
-    try { localStorage.setItem("clipsift.filters", JSON.stringify(f)); } catch (e) { /* private mode: keep going */ }
+    try { localStorage.setItem("clipsift.filters", JSON.stringify(f)); localStorage.setItem("clipsift.enhance", S.enhance); } catch (e) { /* private mode: keep going */ }
   }
   function resetFilters() {
     S.filters.brightness = 100; S.filters.contrast = 100; S.filters.saturation = 100;  // same object the sliders write to
+    S.enhance = "off";
     applyFilters();
     try { localStorage.removeItem("clipsift.filters"); } catch (e) { /* storage may be blocked */ }
   }
-  const settingsPayload = () => Object.assign({}, S.filters);
+  const settingsPayload = () => Object.assign({}, S.filters, { enhance: S.enhance });
+
+  // ---------- motion: hold Space and the clip plays in the picture, same zoom, marks on top ----------
+  const countHalf = () => proto().count_window_s / 2;   // the count second is centred on the point, as in the protocol
+  function clipLen() { const v = $("stage-clip"); return v.duration && isFinite(v.duration) ? v.duration : 10; }
+  function paintHud() {
+    const v = $("stage-clip"), t = v.currentTime || 0, len = clipLen(), off = S.mode === "sub" ? countOffset() : null, half = countHalf();
+    const w = $("hud-window"); w.hidden = off == null;
+    if (off != null) { const a = Math.max(0, off - half), b = Math.min(len, off + half); w.style.left = (a / len) * 100 + "%"; w.style.width = ((b - a) / len) * 100 + "%"; }
+    $("hud-time").textContent = off != null ? D.relTime(t, off) : t.toFixed(1) + " s";
+    $("hud-speed").textContent = currentSpeed() + "x";
+    $("hud-head").style.left = Math.min(100, (t / len) * 100) + "%";
+    const inWin = off != null && Math.abs(t - off) <= half;
+    $("hud-count").hidden = !inWin; $("stage").classList.toggle("counting", inWin);
+  }
+  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
+  function setMotion(on) {
+    const v = $("stage-clip"), loop = $("loop");
+    on = !!on && !!S.selId && v.dataset.ok === "1";
+    if (on === S.motion) return;
+    S.motion = on;
+    $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on);
+    if (on) {
+      S.loopWasPlaying = !loop.paused; loop.pause();
+      v.playbackRate = currentSpeed();
+      if (S.restart && v.currentTime > 0.1) v.currentTime = 0;   // already rewound on release, so usually nothing to do
+      v.play().catch(() => {});
+      if (!S.hudRaf) S.hudRaf = requestAnimationFrame(hudLoop);
+    } else {
+      v.pause();     // back to the exact still, nothing moved
+      if (S.restart) v.currentTime = 0;   // rewind now, so the next press starts at once
+      $("stage").classList.remove("counting"); $("hud-count").hidden = true;
+      if (S.loopWasPlaying) loop.play().catch(() => {});
+    }
+  }
+  function paintRestart() { setPressed("hold-restart", S.restart); }
+  function setRestart(on) {
+    S.restart = !!on; paintRestart();
+    try { localStorage.setItem("clipsift.restart", S.restart ? "1" : "0"); } catch (e) { /* storage may be blocked */ }
+  }
+  function spaceUp() { if (S.spaceDown) { S.spaceDown = false; setMotion(false); } }
+
+  // ---------- species names: shown as common or scientific, always saved as scientific ----------
+  const shownName = (sci) => { const it = S.index.find((x) => x.sci === sci); return it ? D.speciesName(it, S.names) : sci; };
+  const markKind = () => document.querySelector("input[name=pkind]:checked").value;
+  function paintNames() { for (const b of document.querySelectorAll("[data-names]")) b.setAttribute("aria-pressed", b.dataset.names === S.names ? "true" : "false"); }
+  function setNames(mode) {
+    S.names = D.cleanNameMode(mode); paintNames();
+    try { localStorage.setItem("clipsift.species_names", S.names); } catch (e) { /* storage may be blocked */ }
+    for (const id of ["p-species", "species"]) { const r = resolve($(id).value); if (r) $(id).value = D.speciesName(r, S.names); }
+    if (S.results && S.selId) { if (S.mode === "sub") paintSpeciesRows(); else paintSpeciesStatus(); }
+  }
+  // A species from the other list must not ride along on the next mark.
+  function kindChanged() {
+    const k = markKind(), r = resolve($("p-species").value);
+    if (r && r.kind && r.kind !== k) $("p-species").value = "";
+    $("p-species").placeholder = (k === "invertebrate" ? "Invertebrate" : "Fish") + " species (optional)";
+  }
 
   // ---------- grid (optional tool) ----------
   function gridSize() {
@@ -705,7 +774,7 @@
   function setTool(t) {
     S.tool = t;
     document.querySelectorAll("[data-tool]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.tool === t ? "true" : "false"));
-    $("stage").className = "stage tool-" + t;
+    $("stage").classList.remove("tool-pan", "tool-dot", "tool-ellipse", "tool-box"); $("stage").classList.add("tool-" + t);
   }
   function toImage(e) {
     const r = $("zoom").getBoundingClientRect(), [W, H] = dims();
@@ -714,8 +783,8 @@
   async function addLabel(shape, x, y, w, h) {
     if (!reviewer()) { message("Type your name in the Reviewer box first. Marks are saved under your name.", "error"); $("reviewer").focus(); return; }
     if (qcBlocked()) { message("Use a different name for the blind second count.", "error"); return; }
-    const sp = $("p-species").value.trim();
-    const payload = { subsample_id: S.selId, counter: reviewer(), op: "add", shape, kind: document.querySelector("input[name=pkind]:checked").value, species: sp || null, x, y };
+    const typed = $("p-species").value.trim(), known = resolve(typed);
+    const payload = { subsample_id: S.selId, counter: reviewer(), op: "add", shape, kind: markKind(), species: (known ? known.sci : typed) || null, x, y };
     if (shape !== "point") { payload.w = w; payload.h = h; }
     try {
       const rec = await Data.save(S.runId, "point_labels", payload);
@@ -742,6 +811,7 @@
       await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: l.label_id });
       S.saved.point_labels = (S.saved.point_labels || []).filter((x) => x.label_id !== l.label_id);
       renderLabels(true);
+      if (!myLabels().length) $("p-totals").textContent += " Count fields were not changed; edit them by hand.";
     } catch (err) { message("Could not remove that mark: " + err.message, "error"); }
   }
   async function clearAllLabels() {
@@ -771,8 +841,9 @@
   function wireTools() {
     const st = $("stage");
     st.addEventListener("pointerdown", (e) => {
-      if (S.mode !== "sub" || e.button > 1 || !$("still").complete) return;
+      if (S.mode !== "sub" || e.button > 1 || (e.button === 0 && e.ctrlKey) || !$("still").complete) return;   // Ctrl+click is a right-click on a Mac
       const middle = e.button === 1;
+      if (S.motion && S.tool !== "pan" && !middle) { message("Let go of Space to add or remove marks.", "warn"); return; }
       if (S.tool === "pan" || middle) { S.drag = { type: "pan", x: e.clientX, y: e.clientY }; st.setPointerCapture(e.pointerId); e.preventDefault(); return; }
       const [x, y] = toImage(e);
       S.drag = { type: S.tool, x, y, x2: x, y2: y };
@@ -805,6 +876,13 @@
       addLabel(d.type, Math.round(Math.min(d.x, d.x2)), Math.round(Math.min(d.y, d.y2)), Math.round(w), Math.round(h));
     };
     st.addEventListener("pointerup", end); st.addEventListener("pointercancel", () => { S.drag = null; });
+    st.addEventListener("contextmenu", (e) => {   // right-click removes the mark under the pointer, whichever tool is on
+      if (S.mode !== "sub") return;
+      e.preventDefault();
+      if (S.motion || qcBlocked() || !$("still").complete) return;
+      const [x, y] = toImage(e), hit = labelAt(x, y);
+      if (hit) removeLabel(hit);
+    });
     st.addEventListener("wheel", (e) => {
       if (S.mode !== "sub") return;
       e.preventDefault();
@@ -818,15 +896,14 @@
     $("z-reset").addEventListener("click", () => { S.zoom = { k: 1, x: 0, y: 0 }; applyZoom(); renderLabels(false); });
     $("reviewer").addEventListener("change", () => { if (S.mode === "sub" && S.selId) renderLabels(true); });
     window.addEventListener("resize", () => { applyZoom(); if (S.mode === "sub") renderLabels(false); });
-    $("filter-enhance").addEventListener("click", () => { S.filters = { brightness: 105, contrast: 170, saturation: 140 }; applyFilters(); });
   }
 
   // ---------- species combo ----------
-  function matches(text) {
-    const q = text.trim().toLowerCase();
-    if (!q) return [];
+  function matches(text, opts) {
+    const q = text.trim().toLowerCase(), base = opts.kind ? D.forKind(S.index, opts.kind()) : S.index;
+    if (!q) return opts.showAll ? base.map((it) => ({ it, via: null })) : [];
     const out = [];
-    for (const it of S.index) {
+    for (const it of base) {
       let best = -1, via = null;
       for (const t of it.terms) {
         const l = t.toLowerCase(), pos = l.indexOf(q);
@@ -850,19 +927,21 @@
     if (f.range_expander) out.push(badge("Range expander", "info"));
     return out;
   }
-  function makeCombo(input, list, onChoose) {
+  function makeCombo(input, list, onChoose, opts) {
+    opts = opts || {};
     let items = [], active = -1;
     const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
     function paint() {
       clear(list);
       const text = input.value.trim();
-      items = matches(text).map((m) => ({ kind: "list", it: m.it, via: m.via }));
-      if (text && !items.some((x) => x.it.sci.toLowerCase() === text.toLowerCase())) items.push({ kind: "free", text });
+      items = matches(text, opts).map((m) => ({ kind: "list", it: m.it, via: m.via }));
+      if (text && !resolve(text)) items.push({ kind: "free", text });
       if (!items.length) { close(); return; }
       items.forEach((x, i) => {
         const li = el("li", { role: "option", id: list.id + "-" + i, "aria-selected": i === active ? "true" : "false", class: i === active ? "active" : "", on: { mousedown: (e) => { e.preventDefault(); choose(i); } } });
         if (x.kind === "list") {
-          li.append(el("span", { class: "opt-main", text: (x.it.common || x.it.sci) }), el("span", { class: "opt-sci", text: x.it.common ? " " + x.it.sci : "" }));
+          const main = D.speciesName(x.it, S.names), other = main === x.it.sci ? x.it.common : x.it.sci;
+          li.append(el("span", { class: "opt-main", text: main }), el("span", { class: "opt-sci", text: other ? " " + other : "" }));
           if (x.via && x.via !== x.it.sci && x.via !== x.it.common) li.append(el("span", { class: "opt-via", text: " (also called " + x.via + ")" }));
           li.append(...flagBadges(x.it.rec));
         } else li.append(el("span", { class: "opt-main", text: "Use \"" + x.text + "\" as free text" }), badge("Not in the list, flagged", "warn"));
@@ -879,6 +958,7 @@
     }
     input.addEventListener("input", () => { active = -1; paint(); onChoose && combo.onType && combo.onType(input.value); });
     input.addEventListener("blur", close);
+    if (opts.showAll) for (const ev of ["focus", "click"]) input.addEventListener(ev, () => { if (list.hidden) paint(); });
     input.addEventListener("keydown", (e) => {
       if (e.key === "ArrowDown" && !list.hidden) { e.preventDefault(); active = Math.min(items.length - 1, active + 1); paint(); }
       else if (e.key === "ArrowUp" && !list.hidden) { e.preventDefault(); active = Math.max(0, active - 1); paint(); }
@@ -912,7 +992,7 @@
     // previous decision
     const prev = (S.saved.latest_review || {})[u.segment_id];
     $("last-decision").textContent = prev ? "Last saved: " + (DECISION_TEXT[prev.decision] || prev.decision) + (prev.reviewer ? " by " + prev.reviewer : "") + " at " + prev.at + ". A new decision adds a new line. Earlier ones are kept." : "Not reviewed yet.";
-    S.seg.species = null; $("species").value = prev && prev.species ? prev.species : ""; $("count").value = ""; $("note").value = "";
+    S.seg.species = null; $("species").value = prev && prev.species ? shownName(prev.species) : ""; $("count").value = ""; $("note").value = "";
     if (prev && prev.species) { const r = resolve(prev.species); S.seg.species = { value: prev.species, free: !r }; }
     paintSpeciesStatus();
   }
@@ -947,7 +1027,7 @@
     if (!sp) { st.textContent = S.index.length ? "No species chosen." : "No species list found. Free text is fine."; return; }
     if (sp.free) { st.append(badge("Free text, not in the list: flagged for checking", "warn")); return; }
     const it = S.index.find((x) => x.sci === sp.value);
-    st.append(el("span", { text: sp.value + (it && it.common ? " (" + it.common + ") " : " ") }), ...(it ? flagBadges(it.rec) : []));
+    st.append(el("span", { text: (it ? D.speciesLabel(it, S.names) : sp.value) + " " }), ...(it ? flagBadges(it.rec) : []));
   }
   async function saveDecision(decision) {
     if (S.mode !== "seg" || !S.selId) return;
@@ -1013,7 +1093,7 @@
     const ul = $("species-rows"); clear(ul);
     S.ss.rows.forEach((row, i) => {
       const it = S.index.find((x) => x.sci === row.name);
-      const li = el("li", {}, el("span", { class: "sp-name", text: row.name + (it && it.common ? " (" + it.common + ")" : "") }),
+      const li = el("li", {}, el("span", { class: "sp-name", text: it ? D.speciesLabel(it, S.names) : row.name }),
         ...(row.free ? [badge("Free text, flagged", "warn")] : []), ...(it ? flagBadges(it.rec) : []),
         el("input", { type: "number", min: "0", max: "100000", value: String(row.n), "aria-label": "Count for " + row.name, on: { input: (e) => { row.n = parseInt(e.target.value, 10) || 0; paintSpeciesSum(); } } }),
         el("button", { type: "button", class: "quiet", text: "Remove", "aria-label": "Remove " + row.name, on: { click: () => { S.ss.rows.splice(i, 1); paintSpeciesRows(); } } }));
@@ -1087,8 +1167,8 @@
   function onTime() {
     const v = $("loop"), off = S.mode === "sub" ? countOffset() : null;
     $("to-count").hidden = off == null;
-    $("clip-time").textContent = v.hidden ? "" : "Clip " + v.currentTime.toFixed(2) + " s" + (off != null ? ". Count second starts at " + off.toFixed(2) + " s. A fish within " + proto().count_tolerance_s + " s either side at 0.25x may count." : "");
-    $("count-now").hidden = !(off != null && v.currentTime >= off && v.currentTime <= off + proto().count_window_s);
+    $("clip-time").textContent = v.hidden ? "" : "Clip " + v.currentTime.toFixed(2) + " s" + (off != null ? ". Count point at " + off.toFixed(2) + " s. A fish within " + proto().count_tolerance_s + " s either side at 0.25x may count." : "");
+    $("count-now").hidden = !(off != null && Math.abs(v.currentTime - off) <= countHalf());
   }
   function toggle(which) {
     if (which === "grid") { S.grid = !S.grid; renderGrid(); }
@@ -1116,7 +1196,12 @@
     else if (S.mode === "sub" && k in CHAR_KEYS) { const cb = $("chars").querySelectorAll("input")[CHAR_KEYS[k]]; cb.checked = !cb.checked; paintCharsWarn(); }
     else if (k === "," ) frameStep(-1);
     else if (k === ".") frameStep(1);
-    else if (k === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); const v = $("loop"); v.paused ? v.play() : v.pause(); }
+    else if (k === "r") setRestart(!S.restart);
+    else if (k === "c") { S.enhance = D.nextEnhance(S.enhance); applyFilters(); }
+    else if (k === " " && !e.target.closest("button, a, input[type=checkbox], input[type=radio]")) {   // a control reached with Tab keeps its own Space
+      e.preventDefault();
+      if (!e.repeat && !S.spaceDown) { S.spaceDown = true; setMotion(true); }
+    }
   }
 
   // ---------- recording notes ----------
@@ -1322,7 +1407,7 @@
     }
     for (const b of document.querySelectorAll("[data-speed]")) b.addEventListener("click", () => {
       document.querySelectorAll("[data-speed]").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
-      $("loop").playbackRate = parseFloat(b.dataset.speed);
+      $("loop").playbackRate = parseFloat(b.dataset.speed); $("stage-clip").playbackRate = parseFloat(b.dataset.speed);
     });
     $("step-back").addEventListener("click", () => frameStep(-1)); $("step-fwd").addEventListener("click", () => frameStep(1));
     $("play-pause").addEventListener("click", () => { const v = $("loop"); v.paused ? v.play() : v.pause(); });
@@ -1330,7 +1415,7 @@
     $("loop").addEventListener("timeupdate", onTime); $("loop").addEventListener("loadedmetadata", () => { $("loop").playbackRate = currentSpeed(); onTime(); });
     for (const b of document.querySelectorAll("[data-decision]")) b.addEventListener("click", () => saveDecision(b.dataset.decision));
     // segment species combo
-    const segCombo = makeCombo($("species"), $("species-list"), (sel) => { $("species").value = sel.value; S.seg.species = sel.value ? sel : null; paintSpeciesStatus(); });
+    const segCombo = makeCombo($("species"), $("species-list"), (sel) => { $("species").value = shownName(sel.value); S.seg.species = sel.value ? sel : null; paintSpeciesStatus(); });
     segCombo.onType = (text) => { const t = text.trim(); S.seg.species = t ? (resolve(t) ? { value: resolve(t).sci, free: false } : { value: t, free: true }) : null; paintSpeciesStatus(); };
     $("alias-add").addEventListener("click", async () => {
       const a = $("alias-input").value.trim(), sp = S.seg.species;
@@ -1339,6 +1424,18 @@
       catch (e) { message("Not saved: " + e.message, "error"); }
     });
     makeCombo($("ss-species"), $("ss-species-list"), addSpecies);
+    makeCombo($("p-species"), $("p-species-list"), (sel) => { $("p-species").value = shownName(sel.value); }, { kind: markKind, showAll: true });
+    for (const r of document.querySelectorAll("input[name=pkind]")) r.addEventListener("change", kindChanged);
+    for (const b of document.querySelectorAll("[data-names]")) b.addEventListener("click", () => setNames(b.dataset.names));
+    for (const p of D.ENHANCE_PRESETS) $("enhance-group").append(el("button", { type: "button", "data-enhance": p.id, title: p.title, text: p.label, on: { click: () => { S.enhance = p.id; applyFilters(); } } }));
+    $("hold-restart").addEventListener("click", () => setRestart(!S.restart));
+    document.addEventListener("keyup", (e) => { if (e.key === " " && S.spaceDown) { e.preventDefault(); spaceUp(); } });
+    window.addEventListener("blur", spaceUp);
+    // After a mouse click, hand the keyboard back to the page, so Space plays the clip instead of pressing that control again.
+    document.addEventListener("click", (e) => {
+      if (!e.detail) return;
+      setTimeout(() => { const a = document.activeElement; if (a && a.matches("button, input[type=checkbox], input[type=radio]") && !a.closest("dialog, .tour")) a.blur(); });
+    });
     for (const id of ["c-fish", "c-inv"]) $(id).addEventListener("input", () => { paintCharsWarn(); paintSpeciesSum(); });
     $("chars").addEventListener("change", paintCharsWarn);
     $("save-sub").addEventListener("click", saveSubsample);

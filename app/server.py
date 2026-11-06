@@ -32,6 +32,7 @@ SEGMENT_FILES = {"still": "still.jpg", "diff": "diff.jpg", "loop": "loop.mp4"}
 MIME = {"still": "image/jpeg", "diff": "image/jpeg", "loop": "video/mp4"}
 DECISIONS = {"confirm", "reject", "unknown", "needs_second_look"}
 SLIDERS = ("brightness", "contrast", "saturation")
+ENHANCE_PRESETS = ("off", "light", "strong", "silhouette")   # keep in step with app/static/display.js
 SUB_FILES = {"still": "still.jpg", "diff": "diff.jpg", "context": "context.mp4"}
 SUB_MIME = {"still": "image/jpeg", "diff": "image/jpeg", "context": "video/mp4"}
 PASSES = {"primary", "qc_blind", "recount"}
@@ -232,6 +233,10 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                 if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 300:
                     raise BadInput(f"{key} must be a number from 0 to 300")
                 out[key] = v
+        if "enhance" in settings:
+            if settings["enhance"] not in ENHANCE_PRESETS:
+                raise BadInput("enhance is not a known preset")
+            out["enhance"] = settings["enhance"]
         return out
 
     def known_subsample(results, subsample_id):

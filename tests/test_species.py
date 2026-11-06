@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LIST = ROOT / "species" / "species_list.json"
 TIERS = {"recorded", "nearby", "unexpected", "unknown"}
 REQUIRED = {"aphia_id", "gbif_key", "scientific_name", "common_names", "aliases",
-            "group", "flags", "ns_status_tier", "id_notes", "sources"}
+            "group", "kind", "flags", "ns_status_tier", "id_notes", "sources"}
 OPTIONAL = {"rank"}
 
 
@@ -30,6 +30,7 @@ class SpeciesContract(unittest.TestCase):
                 self.assertIsInstance(r[k], list, n)
                 self.assertTrue(all(isinstance(x, str) for x in r[k]), n)
             self.assertIsInstance(r["group"], str); self.assertTrue(r["group"])
+            self.assertIn(r["kind"], ("fish", "invertebrate"), n)
             self.assertEqual(set(r["flags"]), {"at_risk", "invasive", "range_expander"}, n)
             self.assertTrue(all(isinstance(v, bool) for v in r["flags"].values()), n)
             self.assertIn(r["ns_status_tier"], TIERS, n)

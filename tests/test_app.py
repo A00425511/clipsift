@@ -107,17 +107,19 @@ def test_range_support(env):
 def test_review_append_only_and_validation(env):
     c, run, *_ = env
     body = {"segment_id": "seg_0001", "decision": "confirm", "species": "Salmo salar", "count": 2,
-            "reviewer": "T", "contrast_settings": {"brightness": 120, "contrast": 150, "saturation": 80}}
+            "reviewer": "T", "contrast_settings": {"brightness": 120, "contrast": 150, "saturation": 80, "enhance": "silhouette"}}
     assert c.post(R + "/reviews", json=body).status_code == 201
     first = (run / "reviews.jsonl").read_text()
     assert c.post(R + "/reviews", json={**body, "decision": "reject"}).status_code == 201
     text = (run / "reviews.jsonl").read_text()
     assert text.startswith(first) and len(lines(run / "reviews.jsonl")) == 2  # earlier line untouched
     assert lines(run / "reviews.jsonl")[0]["contrast_settings"]["contrast"] == 150
+    assert lines(run / "reviews.jsonl")[0]["contrast_settings"]["enhance"] == "silhouette"
     bad = [{"segment_id": "seg_0001", "decision": "maybe"}, {"segment_id": "nope", "decision": "confirm"},
            {"segment_id": "../x", "decision": "confirm"}, {"segment_id": "seg_0001", "decision": "confirm", "count": -1},
            {"segment_id": "seg_0001", "decision": "confirm", "count": "3"},
            {"segment_id": "seg_0001", "decision": "confirm", "contrast_settings": {"brightness": 9999}},
+           {"segment_id": "seg_0001", "decision": "confirm", "contrast_settings": {"enhance": "sparkle"}},
            {"segment_id": "seg_0001", "decision": "confirm", "note": "x" * 5000}]
     for b in bad:
         assert c.post(R + "/reviews", json=b).status_code == 400, b

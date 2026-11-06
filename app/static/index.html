@@ -65,13 +65,12 @@
     <label>Juveniles present
       <select id="rn-juv"><option value="">Not recorded</option><option value="1">1 (yes)</option><option value="0">0 (no)</option></select></label>
     <label class="wide">Species observed in the whole window (one per line)
-      <textarea id="rn-species" rows="3" list="species-names"></textarea></label>
+      <textarea id="rn-species" rows="3"></textarea></label>
     <div class="wide"><span class="lbl">Visibility, per observer (2 to 3)</span><div id="rn-vis"></div></div>
     <label class="wide">Notes <textarea id="rn-notes" rows="2" maxlength="2000"></textarea></label>
     <div class="wide"><button type="button" id="rn-save">Save recording notes</button> <span id="rn-status" class="hint"></span></div>
   </div>
 </details>
-<datalist id="species-names"></datalist>
 
 <div id="empty" class="empty" hidden></div>
 
@@ -104,13 +103,26 @@
       <div id="stage" class="stage">
         <div id="zoom" class="zoom">
           <img id="still" alt="Still frame from this segment" draggable="false">
+          <video id="stage-clip" muted loop playsinline preload="auto"></video>
           <svg id="boxes" class="boxes" preserveAspectRatio="none" aria-hidden="true"></svg>
           <div id="grid" class="grid" hidden></div>
           <svg id="labels" class="boxes labels" preserveAspectRatio="none"></svg>
         </div>
         <div id="media-missing" class="media-missing" hidden></div>
+        <div id="clip-hud" class="lb-hud" hidden>
+          <div id="hud-count" class="lb-countmark" hidden>Count second</div>
+          <div class="lb-hud-bottom">
+            <span id="hud-time" class="lb-hud-time"></span>
+            <span class="lb-track" aria-hidden="true"><span id="hud-window" class="lb-track-win"></span><span id="hud-head" class="lb-track-head"></span></span>
+            <span id="hud-speed" class="lb-hud-time"></span>
+          </div>
+        </div>
       </div>
       <div class="stage-tools">
+        <span class="hint">Hold <kbd>Space</kbd> to play the clip in the picture</span>
+        <button type="button" id="hold-restart" aria-pressed="true" title="On: the clip starts from the beginning each time you hold Space. Off: it carries on from where it stopped. (R)">Restart each time <kbd>R</kbd></button>
+        <span class="lbl">Enhance <kbd>C</kbd></span>
+        <span id="enhance-group" class="enhance-group" role="group" aria-label="Enhance preset"></span>
         <button type="button" id="toggle-diff" aria-pressed="false" title="Shows what changed between frames. Bright areas moved. It is a hint for where to look, not a count.">Movement view <kbd>D</kbd></button>
         <button type="button" id="toggle-grid" aria-pressed="false">Grid <kbd>G</kbd></button>
         <label class="adv">Rows <input id="grid-rows" type="number" min="1" max="20" value="3"></label>
@@ -129,21 +141,24 @@
         <span class="lbl">Marking</span>
         <label class="check"><input type="radio" name="pkind" value="fish" checked> Fish</label>
         <label class="check"><input type="radio" name="pkind" value="invertebrate"> Invertebrate</label>
-        <input id="p-species" type="text" list="species-names" maxlength="200" placeholder="Species (optional)" aria-label="Species for new marks">
+        <div class="combo" id="p-species-wrap">
+          <input id="p-species" type="text" role="combobox" aria-expanded="false" aria-controls="p-species-list" aria-autocomplete="list" autocomplete="off" maxlength="200" placeholder="Fish species (optional)" aria-label="Species for new marks">
+          <ul id="p-species-list" role="listbox" hidden></ul>
+        </div>
+        <span class="names-toggle" role="group" aria-label="Species names"><button type="button" data-names="common" aria-pressed="true">Common</button><button type="button" data-names="scientific" aria-pressed="false">Scientific</button></span>
         <button type="button" id="p-undo">Undo <kbd>Z</kbd></button>
         <button type="button" id="p-clear" title="Remove all of your dots on this picture (asks first)">Clear all marks</button>
         <button type="button" id="z-in" aria-label="Zoom in">+</button>
         <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
         <button type="button" id="z-reset" title="Back to the whole picture">Reset zoom</button>
         <span id="p-totals" class="p-totals" aria-live="polite"></span>
-        <span class="hint">Dot = one animal (circle for fish, square for invertebrate). Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove one dot, click it again in Dot mode.</span>
+        <span class="hint">Dot = one animal (circle for fish, square for invertebrate). Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove a dot, ellipse or box, right-click it.</span>
       </div>
       <div class="sliders adv">
         <label>Brightness <input type="range" id="f-brightness" min="50" max="300" value="100"><output></output></label>
         <label>Contrast <input type="range" id="f-contrast" min="50" max="300" value="100"><output></output></label>
         <label>Saturation <input type="range" id="f-saturation" min="0" max="300" value="100"><output></output></label>
-        <button type="button" id="filter-reset" title="Set brightness, contrast and saturation back to 100%">Reset sliders</button>
-        <button type="button" id="filter-enhance" title="Stronger contrast and colour, like an image editor enhancement">Enhance preset</button>
+        <button type="button" id="filter-reset" title="Set brightness, contrast and saturation back to 100% and turn Enhance off">Reset sliders</button>
         <span class="hint">Display only. Files are not changed. Settings are saved with each decision.</span>
       </div>
     </div>
@@ -160,7 +175,7 @@
         <span class="lbl">Frame</span>
         <button type="button" id="step-back" title="Back one frame (,)">&larr; <kbd>,</kbd></button>
         <button type="button" id="step-fwd" title="Forward one frame (.)"><kbd>.</kbd> &rarr;</button>
-        <button type="button" id="play-pause"><kbd>Space</kbd> Play/pause</button>
+        <button type="button" id="play-pause">Play/pause</button>
         <button type="button" id="to-count" hidden>Jump to count second</button>
         <span id="count-now" class="count-now" hidden>COUNT NOW (designated second)</span>
         <span id="clip-time" class="hint"></span>
@@ -215,7 +230,7 @@
         <button type="button" id="save-sub" class="primary"><span class="step-n">4</span> Save and go to the next <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
       </div>
       <p id="sub-result" class="hint" role="status"></p>
-      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> tick features, <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step, <kbd>G</kbd> grid, <kbd>D</kbd> movement view. Keys pause while you type.</p>
+      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> tick features, hold <kbd>Space</kbd> to play in the picture, <kbd>R</kbd> restart on or off, <kbd>C</kbd> enhance, <kbd>,</kbd> <kbd>.</kbd> step, <kbd>G</kbd> grid, <kbd>D</kbd> movement view. Keys pause while you type.</p>
     </section>
   </aside>
 
@@ -229,6 +244,7 @@
 
     <section class="panel" aria-labelledby="species-h">
       <h2 id="species-h">Species</h2>
+      <span class="names-toggle" role="group" aria-label="Species names"><button type="button" data-names="common" aria-pressed="true">Common</button><button type="button" data-names="scientific" aria-pressed="false">Scientific</button></span>
       <div class="combo">
         <input id="species" type="text" role="combobox" aria-expanded="false" aria-controls="species-list"
                aria-autocomplete="list" autocomplete="off" placeholder="Type a common or scientific name">
@@ -300,7 +316,10 @@
       <table class="keys-table">
         <tr><td><kbd>J</kbd> or <kbd>&rarr;</kbd></td><td>Next point</td></tr>
         <tr><td><kbd>K</kbd> or <kbd>&larr;</kbd></td><td>Previous point</td></tr>
-        <tr><td><kbd>Space</kbd></td><td>Play or pause the clip</td></tr>
+        <tr><td>Hold <kbd>Space</kbd></td><td>Play the clip in the picture, with the count second highlighted</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Restart the clip each time, or carry on from where it stopped</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Change the enhance setting</td></tr>
+        <tr><td>Right-click</td><td>Remove a dot, ellipse or box</td></tr>
         <tr><td><kbd>,</kbd> and <kbd>.</kbd></td><td>Step the clip back or forward one frame</td></tr>
         <tr><td><kbd>P</kbd></td><td>Dot tool</td></tr>
         <tr><td><kbd>Z</kbd></td><td>Undo your last mark</td></tr>
@@ -367,6 +386,7 @@
     </div>
   </div>
 </div>
+<script src="/static/display.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

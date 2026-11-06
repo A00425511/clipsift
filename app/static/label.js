@@ -9,6 +9,9 @@
 (function () {
   "use strict";
 
+  const D = typeof module !== "undefined" && module.exports ? require("./display.js") : window.ClipSiftDisplay;
+  const relTime = D.relTime;
+
   // ---------- pure helpers (no DOM) ----------
   const PRESET_NAMES = ["Jacob", "Ali", "Gina", "Wang", "Adrien"];
   const NEEDED = 2;            // labels wanted per frame
@@ -75,7 +78,8 @@
     return { k, x: px - ix * s1, y: py - iy * s1 };
   }
   function filterString(bright, contrast, enhance) {
-    return "brightness(" + bright + "%) contrast(" + contrast + "%)" + (enhance ? " contrast(135%) saturate(125%) brightness(105%)" : "");
+    const extra = D.enhanceFilter(enhance);
+    return "brightness(" + bright + "%) contrast(" + contrast + "%)" + (extra ? " " + extra : "");
   }
   function fmtTime(s) { s = Math.round(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
   // "Calibration frame 2 of 5" for a calibration frame, "" for any other frame.
@@ -97,7 +101,7 @@
       if (!sp || typeof sp.scientific_name !== "string" || !sp.scientific_name) continue;
       const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === "string" && x) : []);
       const commons = strs(sp.common_names), alias = strs(sp.aliases);
-      out.push({ sci: sp.scientific_name, common: commons[0] || "", label: commons[0] ? commons[0] + " (" + sp.scientific_name + ")" : sp.scientific_name,
+      out.push({ sci: sp.scientific_name, common: commons[0] || "", kind: sp.kind || null, label: commons[0] ? commons[0] + " (" + sp.scientific_name + ")" : sp.scientific_name,
         terms: [sp.scientific_name, ...commons, ...alias].map((t) => t.toLowerCase()) });
     }
     return out;
@@ -131,11 +135,7 @@
     const m = margin == null ? 6 : margin;
     return { x: Math.max(m, Math.min(x, vw - w - m)), y: Math.max(m, Math.min(y, vh - h - m)) };
   }
-  // Seconds from the frame's moment (negative = before), as text, and whether it is inside the count second.
-  function relTime(t, countS) {
-    const r = Math.round((t - countS) * 10) / 10;
-    return (r > 0 ? "+" : "") + r.toFixed(1) + " s";
-  }
+  // Whether a moment in the clip is inside the count second.
   function inCountWindow(t, countS) { return Math.abs(t - countS) <= COUNT_HALF_S; }
   function categoryLabel(id) { const c = NOT_FISH_CATEGORIES.find((x) => x.id === id); return c ? c.label : ""; }
   // A saved or drafted point made safe: known kind (fish if unknown), species only on animals, category only on not_fish.
@@ -186,7 +186,7 @@
     cur: null, points: [], noAnimals: false, seconds: 0, kind: "fish", category: "", undo: [],
     view: { k: 1, x: 0, y: 0 }, fit: 1, motion: false, loadToken: 0,
     saving: false, retryTimer: null, retries: 0, lastInput: Date.now(), draftTimer: null, raf: 0,
-    bright: 100, contrast: 100, enhance: false,
+    bright: 100, contrast: 100, enhance: "off", restart: true, names: "common",
     movement: false, diffOk: false, views: [], speed: 1, spaceStarted: false, hudRaf: 0, playMsg: false,
     speciesIndex: null, menuPoint: null, spChoices: [], spActive: -1, lastPos: [0, 0],
   };
@@ -300,7 +300,7 @@
       img.src = frame.frame_url;
     });
     if (token !== S.loadToken) return;
-    const clip = $("clip"); clip.hidden = true; clip.src = frame.clip_url || "";
+    const clip = $("clip"); clip.src = frame.clip_url || "";
     // Movement view: always starts on the plain frame. A missing or broken file just turns the button off.
     S.movement = false; S.diffOk = false;
     const dimg = $("diff"); dimg.hidden = true;
@@ -511,10 +511,17 @@
     const f = filterString(S.bright, S.contrast, S.enhance);
     $("frame").style.filter = f; $("clip").style.filter = f; $("diff").style.filter = f;
     $("s-bright").value = S.bright; $("s-contrast").value = S.contrast;
-    $("b-enhance").setAttribute("aria-pressed", S.enhance);
+    for (const b of $("enhance-group").children) b.setAttribute("aria-pressed", String(b.dataset.enhance === S.enhance));
     LS.set("clipsift.label.filters", JSON.stringify({ b: S.bright, c: S.contrast, e: S.enhance }));
   }
-  function resetFilters() { S.bright = 100; S.contrast = 100; S.enhance = false; applyFilters(); }
+  function resetFilters() { S.bright = 100; S.contrast = 100; S.enhance = "off"; applyFilters(); }
+  function buildEnhance() {
+    for (const p of D.ENHANCE_PRESETS) {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.enhance = p.id; b.textContent = p.label; b.title = p.title;
+      b.addEventListener("click", () => { S.enhance = p.id; applyFilters(); });
+      $("enhance-group").append(b);
+    }
+  }
 
   // ---------- views: frame, movement view, clip. Every view sits in the same zoomed and panned plane, so dots line up ----------
   function markView(v) {
@@ -560,14 +567,16 @@
     S.motion = on;
     const v = $("clip");
     $("b-motion").setAttribute("aria-pressed", on);
-    $("clip-hud").hidden = !on;
+    $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on);
     if (on) {
       closeMenu(false);
-      v.hidden = false; v.playbackRate = S.speed; markView("clip"); paintHudStatic();
+      v.playbackRate = S.speed; markView("clip"); paintHudStatic();
+      if (S.restart && v.currentTime > 0.1) v.currentTime = 0;   // already rewound on release, so usually nothing to do
       v.play().catch(() => {});
       if (!S.hudRaf) S.hudRaf = requestAnimationFrame(hudLoop);
     } else {
-      v.pause(); v.hidden = true;     // back to the exact frame (or the movement view), nothing moved
+      v.pause();     // back to the exact frame (or the movement view), nothing moved
+      if (S.restart) v.currentTime = 0;   // rewind now, so the next press starts at once
       $("stage").classList.remove("counting"); $("hud-count").hidden = true;
       if (S.playMsg) { S.playMsg = false; msg(""); }
     }
@@ -578,6 +587,10 @@
     S.speed = r; $("clip").playbackRate = r; $("hud-speed").textContent = r + "x";
     for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(+b.dataset.speed === r));
     LS.set("clipsift.label.speed", String(r));
+  }
+  function setRestart(on) {
+    S.restart = !!on; $("b-restart").setAttribute("aria-pressed", S.restart);
+    LS.set("clipsift.label.restart", S.restart ? "1" : "0");
   }
   function jumpToCount() {
     if (!S.cur) return;
@@ -601,8 +614,7 @@
     const m = menuEl();
     S.menuPoint = point;
     const nf = point.kind === "not_fish", uns = point.kind === "unsure";
-    $("cm-title").textContent = nf ? "Not fish: " + (categoryLabel(point.category) || "no category") : uns ? "Unsure" :
-      (point.kind === "invertebrate" ? "Invertebrate" : "Fish") + (point.species ? ": " + point.species : ", no species");
+    paintMenuTitle();
     $("cm-to-fish").hidden = point.kind === "fish"; $("cm-to-inv").hidden = point.kind === "invertebrate"; $("cm-to-nf").hidden = nf; $("cm-to-uns").hidden = uns;
     $("cm-category").hidden = !nf; $("cm-species").hidden = nf || uns;
     $("cm-clear").hidden = nf || uns || !point.species;
@@ -611,6 +623,21 @@
     placeMenu(cx, cy);
     menuItems()[0].focus();
     loadSpecies();
+  }
+  function speciesItem(sci) { return (S.speciesIndex || []).find((it) => it.sci === sci) || null; }
+  function speciesShown(sci) { const it = speciesItem(sci); return it ? D.speciesName(it, S.names) : sci; }
+  function paintMenuTitle() {
+    const p = S.menuPoint; if (!p) return;
+    $("cm-title").textContent = p.kind === "not_fish" ? "Not fish: " + (categoryLabel(p.category) || "no category") : p.kind === "unsure" ? "Unsure" :
+      (p.kind === "invertebrate" ? "Invertebrate" : "Fish") + (p.species ? ": " + speciesShown(p.species) : ", no species");
+  }
+  function setNames(mode) {
+    const inp = $("cm-sp-input"), typed = resolveSpecies(S.speciesIndex || [], inp.value);
+    S.names = D.cleanNameMode(mode); LS.set("clipsift.species_names", S.names);
+    for (const b of document.querySelectorAll("[data-names]")) b.setAttribute("aria-pressed", String(b.dataset.names === S.names));
+    if (speciesItem(typed)) inp.value = speciesShown(typed);
+    paintMenuTitle();
+    if (menuOpen() && !$("cm-sp").hidden) { paintSpChoices(); inp.focus(); }
   }
   function closeMenu(refocus) {
     if (!menuOpen()) { S.menuPoint = null; return; }
@@ -635,16 +662,17 @@
   }
   function showSpeciesBox() {
     $("cm-main").hidden = true; $("cm-sp").hidden = false;
-    const inp = $("cm-sp-input"); inp.value = S.menuPoint && S.menuPoint.species || "";
+    const inp = $("cm-sp-input"); inp.value = S.menuPoint && S.menuPoint.species ? speciesShown(S.menuPoint.species) : "";
     paintSpChoices(); placeMenu(...menuEl()._at); inp.focus(); inp.select();
   }
   function paintSpChoices() {
     const ul = $("cm-sp-list"), inp = $("cm-sp-input");
-    S.spChoices = S.speciesIndex ? speciesMatches(S.speciesIndex, inp.value, 8) : [];
+    const list = S.speciesIndex && S.menuPoint ? D.forKind(S.speciesIndex, S.menuPoint.kind) : [];
+    S.spChoices = speciesMatches(list, inp.value, 50);
     if (!inp.value.trim() && !S.speciesIndex) S.spChoices = [];
     S.spActive = -1; ul.textContent = "";
     S.spChoices.forEach((it, i) => {
-      const li = document.createElement("li"); li.id = "cm-sp-" + i; li.setAttribute("role", "option"); li.setAttribute("aria-selected", "false"); li.textContent = it.label;
+      const li = document.createElement("li"); li.id = "cm-sp-" + i; li.setAttribute("role", "option"); li.setAttribute("aria-selected", "false"); li.textContent = D.speciesLabel(it, S.names);
       li.addEventListener("mousedown", (e) => e.preventDefault());
       li.addEventListener("click", () => commitSpecies(it.sci));
       ul.append(li);
@@ -674,6 +702,7 @@
         if (S.speciesIndex.length) break;
       } catch (e) { /* try the next place */ }
     }
+    paintMenuTitle();
     if (menuOpen() && !$("cm-sp").hidden) paintSpChoices();
   }
   function onContextMenu(e) {
@@ -698,7 +727,12 @@
     }, true);
     window.addEventListener("blur", () => closeMenu(false)); window.addEventListener("resize", () => closeMenu(false));
     st.addEventListener("wheel", () => closeMenu(false), { passive: true });
-    const toKind = (k) => editPoint((p) => { p.kind = k; if (k !== "fish" && k !== "invertebrate") delete p.species; if (k !== "not_fish") delete p.category; });
+    const toKind = (k) => editPoint((p) => {
+      const it = speciesItem(p.species);
+      p.kind = k;
+      if ((k !== "fish" && k !== "invertebrate") || (it && it.kind && it.kind !== k)) delete p.species;   // a crab name cannot stay on a fish mark
+      if (k !== "not_fish") delete p.category;
+    });
     $("cm-to-fish").addEventListener("click", () => toKind("fish"));
     $("cm-to-inv").addEventListener("click", () => toKind("invertebrate"));
     $("cm-to-nf").addEventListener("click", () => toKind("not_fish"));
@@ -711,6 +745,7 @@
     $("cm-sp-back").addEventListener("click", () => { $("cm-sp").hidden = true; $("cm-main").hidden = false; placeMenu(...m._at); menuItems()[0].focus(); });
     $("cm-sp-ok").addEventListener("click", () => commitSpecies($("cm-sp-input").value));
     $("cm-sp-input").addEventListener("input", paintSpChoices);
+    for (const b of document.querySelectorAll("[data-names]")) b.addEventListener("click", () => setNames(b.dataset.names));
     m.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
       if (e.key === "Tab") { closeMenu(false); return; }
@@ -807,6 +842,8 @@
     else if (S.kind === "not_fish" && /^[1-9]$/.test(e.key) && NOT_FISH_CATEGORIES[+e.key - 1]) setCategory(NOT_FISH_CATEGORIES[+e.key - 1].id);
     else if (k === "z") undo();
     else if (k === "m") setMovement(!S.movement);
+    else if (k === "r") setRestart(!S.restart);
+    else if (k === "c") { S.enhance = D.nextEnhance(S.enhance); applyFilters(); }
     else if (k === "n") commit("none");
     else if (k === "s") commit("skip");
     else if (e.key === "Escape") { $("help-panel").hidden = true; $("btn-help").setAttribute("aria-expanded", "false"); $("mine-panel").hidden = true; }
@@ -866,7 +903,10 @@
     $("b-save").addEventListener("click", () => commit("done")); $("b-none").addEventListener("click", () => commit("none")); $("b-skip").addEventListener("click", () => commit("skip"));
     $("s-bright").addEventListener("input", (e) => { S.bright = +e.target.value; applyFilters(); });
     $("s-contrast").addEventListener("input", (e) => { S.contrast = +e.target.value; applyFilters(); });
-    $("b-enhance").addEventListener("click", () => { S.enhance = !S.enhance; applyFilters(); });
+    buildEnhance();
+    $("b-restart").addEventListener("click", () => setRestart(!S.restart));
+    setRestart(LS.get("clipsift.label.restart") !== "0");
+    setNames(LS.get("clipsift.species_names"));
     $("b-reset").addEventListener("click", resetFilters);
     $("btn-help").addEventListener("click", () => { const p = $("help-panel"); p.hidden = !p.hidden; $("btn-help").setAttribute("aria-expanded", String(!p.hidden)); });
     $("help-close").addEventListener("click", () => { $("help-panel").hidden = true; $("btn-help").setAttribute("aria-expanded", "false"); LS.set("clipsift.label.help_seen", "1"); });
@@ -874,7 +914,7 @@
     $("mine-close").addEventListener("click", () => { $("mine-panel").hidden = true; });
     $("btn-who").addEventListener("click", askName);
     $("who-other").addEventListener("submit", (e) => { e.preventDefault(); chooseName($("who-text").value); });
-    try { const f = JSON.parse(LS.get("clipsift.label.filters") || "null"); if (f) { S.bright = +f.b || 100; S.contrast = +f.c || 100; S.enhance = !!f.e; } } catch (e) { /* ignore */ }
+    try { const f = JSON.parse(LS.get("clipsift.label.filters") || "null"); if (f) { S.bright = +f.b || 100; S.contrast = +f.c || 100; S.enhance = f.e === true ? "light" : D.cleanEnhance(f.e); } } catch (e) { /* ignore */ }
     applyFilters(); paintButtons();
   }
 

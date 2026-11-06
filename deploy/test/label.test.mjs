@@ -8,6 +8,24 @@ let n = 0;
 const t = (name, fn) => { fn(); n++; console.log("ok - " + name); };
 const frames = Array.from({ length: 100 }, (_, i) => ({ frame_id: "f" + i, time_s: 60 + i * 20 }));
 
+const D = createRequire(import.meta.url)("../../app/static/display.js");
+t("enhance: presets cycle back to off, and unknown ids are off", () => {
+  let id = "off"; const seen = [];
+  for (let i = 0; i < D.ENHANCE_PRESETS.length; i++) { id = D.nextEnhance(id); seen.push(id); }
+  assert.deepEqual(seen, ["light", "strong", "silhouette", "off"]);
+  assert.equal(D.cleanEnhance("nope"), "off");
+});
+t("species: the list follows the mark kind, and names switch without changing what is saved", () => {
+  const idx = L.buildSpeciesIndex([{ scientific_name: "Gadus morhua", common_names: ["Atlantic cod"], kind: "fish" }, { scientific_name: "Carcinus maenas", common_names: ["European green crab"], kind: "invertebrate" }, { scientific_name: "Mystery", common_names: [] }]);
+  assert.deepEqual(D.forKind(idx, "fish").map((i) => i.sci), ["Gadus morhua", "Mystery"]);
+  assert.deepEqual(D.forKind(idx, "invertebrate").map((i) => i.sci), ["Carcinus maenas", "Mystery"]);
+  assert.equal(D.speciesName(idx[0], "common"), "Atlantic cod");
+  assert.equal(D.speciesName(idx[0], "scientific"), "Gadus morhua");
+  assert.equal(D.speciesName(idx[2], "common"), "Mystery");
+  assert.equal(D.speciesLabel(idx[0], "scientific"), "Gadus morhua (Atlantic cod)");
+  assert.equal(L.resolveSpecies(idx, "atlantic cod"), "Gadus morhua");
+});
+
 t("names: presets keep their spelling, others are trimmed and capped", () => {
   assert.equal(L.cleanName("  jacob "), "Jacob");
   assert.equal(L.cleanName("ADRIEN"), "Adrien");
@@ -64,8 +82,10 @@ t("zoom keeps the point under the cursor fixed and stops at the limits", () => {
   assert.equal(L.zoomAt(v0, 1e6, 0, 0, fit).k, 24);
 });
 t("filters and progress text", () => {
-  assert.equal(L.filterString(100, 100, false), "brightness(100%) contrast(100%)");
-  assert.match(L.filterString(120, 150, true), /saturate/);
+  assert.equal(L.filterString(100, 100, "off"), "brightness(100%) contrast(100%)");
+  assert.match(L.filterString(120, 150, "light"), /saturate/);
+  assert.match(L.filterString(120, 150, "silhouette"), /grayscale/);
+  assert.equal(L.filterString(100, 100, "nonsense"), "brightness(100%) contrast(100%)");
   assert.equal(L.progressText(12, 34, 100), "You: 12 frames. Team: 34 of 100 frames have two labels.");
   assert.equal(L.progressText(1, 0, 100), "You: 1 frame. Team: 0 of 100 frames have two labels.");
   assert.equal(L.fmtTime(125), "2:05");

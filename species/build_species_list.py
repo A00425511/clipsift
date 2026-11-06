@@ -110,7 +110,7 @@ def main():
             notes.append(f"{name}: WoRMS lookup failed ({w_note})")
         out.append({
             "aphia_id": aid, "gbif_key": gkey, "scientific_name": name,
-            "common_names": common, "aliases": aliases, "group": row["group"], "rank": row.get("rank") or "species",
+            "common_names": common, "aliases": aliases, "group": row["group"], "kind": row["kind"], "rank": row.get("rank") or "species",
             "flags": {"at_risk": row["at_risk"] == "1", "invasive": row["invasive"] == "1",
                       "range_expander": row["range_expander"] == "1"},
             "ns_status_tier": "unknown",

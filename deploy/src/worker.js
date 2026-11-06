@@ -1,6 +1,6 @@
 // ClipSift team demo Worker.
 // Every request passes through here first (assets.run_worker_first), so the team-key gate covers
-// the page, the sample files and the API. Secrets: TEAM_KEY. Bindings: ASSETS, FEEDBACK_DB (D1).
+// the page, the sample files and the API. Secrets: TEAM_KEY. Bindings: ASSETS, FEEDBACK_DB (D1: feedback and labels tables).
 
 const COOKIE = "clipsift_team";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
@@ -131,6 +131,207 @@ async function handleFeedback(request, env) {
   return json({ ok: true }, 201);
 }
 
+// ---- blind labelling ------------------------------------------------------
+// Shared, label-only mode (label.html). Two people label each frame on their own. Blind means no route
+// here ever returns another person's marks: status gives counts only, and /mine reads the caller's own row.
+// IDENTITY IS A CHOSEN NAME, NOT A LOGIN. Anyone who has the team code can type any name, including a
+// teammate's, and read or overwrite that name's marks. The team code is the only gate. That is fine for
+// five people in a weekend and not fine for anything with real stakes.
+const LABEL_MAX_POINTS = 2000;
+const LABEL_MAX_BODY = 400000;          // 2000 points with species names is about 250 KB as JSON
+const LABEL_NAME_MAX = 40;
+const LABEL_MAX_SECONDS = 86400;
+const LABEL_RATE_BURST = 120;           // saves in a quick run
+const LABEL_RATE_PER_SEC = 10;          // then 600 a minute; a fast labeller saves about once every 3 seconds
+const SET_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,39}$/;
+const FRAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$/;
+const KINDS = ["fish", "invertebrate", "not_fish"];
+const NOT_FISH_CATEGORIES = ["algae", "debris", "equipment", "seabed", "bubbles", "other"];   // keep in step with label.js and app/server.py
+const VIEWS = ["frame", "movement", "clip"];   // which views the labeller used on this frame, in this order
+const SPECIES_MAX = 80;
+const PRESET_NAMES = ["Jacob", "Ali", "Gina", "Wang", "Adrien"];
+const MANIFEST_TTL_MS = 10 * 60 * 1000;
+const manifestCache = new Map();        // set id -> { at, frames: Map(frame_id -> {width, height}) }
+const rateBuckets = new Map();          // best effort, per isolate: the team code is the real gate
+
+function cleanLabeller(v) {
+  if (typeof v !== "string") return { error: "name is required." };
+  const name = v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (name.length < 1) return { error: "name is required." };
+  if (name.length > LABEL_NAME_MAX) return { error: `name is too long (max ${LABEL_NAME_MAX} characters).` };
+  const preset = PRESET_NAMES.find((n) => n.toLowerCase() === name.toLowerCase());
+  return { value: preset || name };
+}
+// Species typed or picked by a person: control characters removed, spaces tidied, at most SPECIES_MAX characters.
+function cleanSpecies(v) {
+  return String(v).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+function checkIds(setId, frameId) {
+  if (typeof setId !== "string" || !SET_RE.test(setId)) return "set is missing or not a plain id.";
+  if (frameId !== undefined && (typeof frameId !== "string" || !FRAME_RE.test(frameId))) return "frame is missing or not a plain id.";
+  return null;
+}
+async function loadManifest(env, origin, setId) {
+  const hit = manifestCache.get(setId);
+  if (hit && Date.now() - hit.at < MANIFEST_TTL_MS) return hit.frames;
+  let data;
+  try {
+    const r = await env.ASSETS.fetch(new Request(`${origin}/label_sets/${setId}/manifest.json`));
+    if (!r.ok) return null;
+    data = JSON.parse(await r.text());
+  } catch (e) { return null; }
+  if (!data || !Array.isArray(data.frames)) return null;
+  const frames = new Map();
+  for (const f of data.frames) {
+    if (f && typeof f.frame_id === "string" && FRAME_RE.test(f.frame_id) && Number.isFinite(f.width) && Number.isFinite(f.height)) {
+      frames.set(f.frame_id, { width: f.width, height: f.height });
+    }
+  }
+  manifestCache.set(setId, { at: Date.now(), frames });
+  return frames;
+}
+// Token bucket per sender: a burst of 120, then 10 a second. Marks are saved once per frame, so a human never gets near it.
+function rateAllowed(key) {
+  const now = Date.now();
+  let b = rateBuckets.get(key);
+  if (!b) {
+    if (rateBuckets.size > 2000) rateBuckets.clear();
+    b = { tokens: LABEL_RATE_BURST, at: now };
+    rateBuckets.set(key, b);
+  }
+  b.tokens = Math.min(LABEL_RATE_BURST, b.tokens + ((now - b.at) / 1000) * LABEL_RATE_PER_SEC);
+  b.at = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+function validateLabel(body, frames) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Send a JSON object." };
+  const bad = checkIds(body.set, body.frame);
+  if (bad) return { error: bad };
+  const who = cleanLabeller(body.name);
+  if (who.error) return who;
+  const frame = frames.get(body.frame);
+  if (!frame) return { error: "That frame is not in this label set." };
+  if (body.skipped != null && typeof body.skipped !== "boolean") return { error: "skipped must be true or false." };
+  if (body.no_animals != null && typeof body.no_animals !== "boolean") return { error: "no_animals must be true or false." };
+  const skipped = body.skipped === true, noAnimals = body.no_animals === true;
+  const pts = body.points == null ? [] : body.points;
+  if (!Array.isArray(pts)) return { error: "points must be a list." };
+  if (pts.length > LABEL_MAX_POINTS) return { error: `Too many points (max ${LABEL_MAX_POINTS}).` };
+  const points = [];
+  for (const p of pts) {
+    if (!p || typeof p !== "object" || Array.isArray(p)) return { error: "Each point needs x, y and kind." };
+    if (typeof p.x !== "number" || typeof p.y !== "number" || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return { error: "Point coordinates must be numbers." };
+    if (p.x < 0 || p.y < 0 || p.x > frame.width || p.y > frame.height) return { error: `A point is outside the image (${frame.width} x ${frame.height}).` };
+    if (!KINDS.includes(p.kind)) return { error: "kind must be fish, invertebrate or not_fish." };
+    const out = { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, kind: p.kind };
+    if (p.kind === "not_fish") {
+      // A not-fish mark has a category (or none) and never a species.
+      if (p.category != null && p.category !== "") {
+        if (typeof p.category !== "string" || !NOT_FISH_CATEGORIES.includes(p.category)) return { error: "category must be one of: " + NOT_FISH_CATEGORIES.join(", ") + " (or empty)." };
+        out.category = p.category;
+      }
+    } else if (p.species != null) {
+      if (typeof p.species !== "string") return { error: "species must be text." };
+      const sp = cleanSpecies(p.species);
+      if (sp.length > SPECIES_MAX) return { error: `species is too long (max ${SPECIES_MAX} characters).` };
+      if (sp) out.species = sp;
+    }
+    points.push(out);
+  }
+  let views = [];
+  if (body.views != null) {
+    if (!Array.isArray(body.views) || body.views.length > 10 || body.views.some((v) => !VIEWS.includes(v))) return { error: "views must be a list made of: " + VIEWS.join(", ") + "." };
+    views = VIEWS.filter((v) => body.views.includes(v));
+  }
+  if ((noAnimals || skipped) && points.length) return { error: "A skipped frame or a No animals frame cannot have points." };
+  if (noAnimals && skipped) return { error: "A frame cannot be both skipped and No animals." };
+  let seconds = 0;
+  if (body.seconds != null) {
+    if (typeof body.seconds !== "number" || !Number.isFinite(body.seconds) || body.seconds < 0) return { error: "seconds must be a number, 0 or more." };
+    seconds = Math.min(Math.round(body.seconds * 10) / 10, LABEL_MAX_SECONDS);
+  }
+  return { value: { set: body.set, frame: body.frame, name: who.value, points, noAnimals, skipped, seconds, views } };
+}
+
+async function handleLabels(request, env, url) {
+  if (!env.FEEDBACK_DB) return json({ error: "The label database is not set up." }, 500);
+  const path = url.pathname;
+  const q = url.searchParams;
+  try {
+    if (path === "/api/labels/status" || path === "/api/labels/mine") {
+      if (request.method !== "GET") return json({ error: "Use GET." }, 405, { Allow: "GET" });
+      const setId = q.get("set"), frameId = path.endsWith("/mine") ? q.get("frame") : undefined;
+      const bad = checkIds(setId, frameId === null ? "" : frameId);
+      if (bad) return json({ error: bad }, 400);
+      const who = cleanLabeller(q.get("name"));
+      if (who.error) return json({ error: who.error }, 400);
+      const frames = await loadManifest(env, url.origin, setId);
+      if (!frames) return json({ error: "Unknown label set." }, 404);
+      if (path.endsWith("/mine")) {
+        if (!frames.has(frameId)) return json({ error: "That frame is not in this label set." }, 404);
+        const row = await env.FEEDBACK_DB.prepare("SELECT points_json, views_json, no_animals, seconds, skipped, updated_at FROM labels WHERE set_id = ?1 AND frame_id = ?2 AND labeller = ?3").bind(setId, frameId, who.value).first();
+        if (!row) return json({ exists: false });
+        let points = [];
+        try { points = JSON.parse(row.points_json); } catch (e) { /* damaged row: show it as empty */ }
+        let views = [];
+        try { views = JSON.parse(row.views_json || "[]").filter((v) => VIEWS.includes(v)); } catch (e) { /* damaged row: no views */ }
+        return json({ exists: true, frame: frameId, points, views, no_animals: !!row.no_animals, skipped: !!row.skipped, seconds: row.seconds, updated_at: row.updated_at });
+      }
+      // Counts of finished labels per frame (no names, no marks), and this person's own state.
+      const [all, mine] = await Promise.all([
+        env.FEEDBACK_DB.prepare("SELECT frame_id, COUNT(*) AS n FROM labels WHERE set_id = ?1 AND skipped = 0 GROUP BY frame_id").bind(setId).all(),
+        env.FEEDBACK_DB.prepare("SELECT frame_id, skipped, no_animals, json_array_length(points_json) AS n_points, seconds, updated_at FROM labels WHERE set_id = ?1 AND labeller = ?2").bind(setId, who.value).all(),
+      ]);
+      const counts = {};
+      let two = 0, any = 0;
+      for (const r of all.results || []) {
+        if (!frames.has(r.frame_id)) continue;
+        counts[r.frame_id] = r.n;
+        any++;
+        if (r.n >= 2) two++;
+      }
+      const mineOut = {};
+      for (const r of mine.results || []) {
+        if (frames.has(r.frame_id)) mineOut[r.frame_id] = { state: r.skipped ? "skipped" : "done", no_animals: !!r.no_animals, n_points: r.n_points || 0, seconds: r.seconds, updated_at: r.updated_at };
+      }
+      return json({ set: setId, total: frames.size, counts, mine: mineOut, team: { frames_with_any: any, frames_with_two: two } });
+    }
+
+    if (path === "/api/labels") {
+      if (request.method !== "POST") return json({ error: "Use POST." }, 405, { Allow: "POST" });
+      const origin = request.headers.get("Origin");
+      if (origin && origin !== url.origin) return json({ error: "Cross-site requests are not allowed." }, 403);
+      if (!(request.headers.get("Content-Type") || "").toLowerCase().startsWith("application/json")) return json({ error: "Send JSON (Content-Type: application/json)." }, 415);
+      const raw = await request.text();
+      if (raw.length > LABEL_MAX_BODY) return json({ error: "That save is too large." }, 413);
+      let body;
+      try { body = JSON.parse(raw); } catch (e) { return json({ error: "Body is not valid JSON." }, 400); }
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      const who = typeof (body && body.name) === "string" ? body.name.toLowerCase().slice(0, 80) : "";
+      if (!rateAllowed(`${ip}|${who}`)) return json({ error: "Saving too fast. Wait a moment and it will retry." }, 429, { "Retry-After": "5" });
+      const setId = body && typeof body === "object" ? body.set : undefined;
+      const badSet = checkIds(setId);
+      if (badSet) return json({ error: badSet }, 400);
+      const frames = await loadManifest(env, url.origin, setId);
+      if (!frames) return json({ error: "Unknown label set." }, 404);
+      const v = validateLabel(body, frames);
+      if (v.error) return json({ error: v.error }, 400);
+      const x = v.value;
+      const updatedAt = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+      await env.FEEDBACK_DB.prepare(
+        "INSERT INTO labels (set_id, frame_id, labeller, points_json, views_json, no_animals, seconds, skipped, updated_at) VALUES (?1, ?2, ?3, ?4, ?9, ?5, ?6, ?7, ?8) " +
+        "ON CONFLICT (set_id, frame_id, labeller) DO UPDATE SET points_json = excluded.points_json, views_json = excluded.views_json, no_animals = excluded.no_animals, seconds = excluded.seconds, skipped = excluded.skipped, updated_at = excluded.updated_at"
+      ).bind(x.set, x.frame, x.name, JSON.stringify(x.points), x.noAnimals ? 1 : 0, x.seconds, x.skipped ? 1 : 0, updatedAt, JSON.stringify(x.views)).run();
+      return json({ ok: true, updated_at: updatedAt, n_points: x.points.length });
+    }
+  } catch (e) {
+    return json({ error: "The labels could not be read or saved. Please try again in a moment." }, 500);
+  }
+  return json({ error: "Not found." }, 404);
+}
+
 // ---- main -----------------------------------------------------------------
 export default {
   async fetch(request, env) {
@@ -159,6 +360,7 @@ export default {
     }
 
     if (url.pathname === "/api/feedback") return handleFeedback(request, env);
+    if (url.pathname === "/api/labels" || url.pathname.startsWith("/api/labels/")) return handleLabels(request, env, url);
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found." }, 404);
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method not allowed", { status: 405, headers: secure(new Headers({ Allow: "GET, HEAD" })) });
@@ -166,7 +368,9 @@ export default {
 
     const resp = await env.ASSETS.fetch(request);   // static files; the platform handles Range for video
     const headers = secure(new Headers(resp.headers));
-    headers.set("Cache-Control", "private, max-age=0, must-revalidate");
+    // Label frames and clips never change once a set id is published (new data gets a new id), so let the browser keep them.
+    const stable = /^\/label_sets\/[^/]+\/(frames|clips|diff)\//.test(url.pathname);
+    headers.set("Cache-Control", stable ? "private, max-age=86400" : "private, max-age=0, must-revalidate");
     if ((headers.get("Content-Type") || "").includes("text/html")) headers.set("Content-Security-Policy", APP_CSP);
     // The assets binding answers Range requests with the whole file, and Safari needs 206 to play video.
     // Demo clips are small, so slice in the Worker.

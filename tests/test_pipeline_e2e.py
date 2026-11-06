@@ -24,7 +24,8 @@ def clip(tmp_path_factory):
 
 
 def _run(clip, tmp_path, layer):
-    cfg = load_config(overrides={**SMALL, "layer": layer})
+    # motion_blob is explicit here: the default Layer 1 detector is now the CFD model backend
+    cfg = load_config(overrides={**SMALL, "layer": layer, "stages": {"detector": "motion_blob"}})
     d = run([clip[0]], cfg, tmp_path, log=lambda *a: None)
     return d, json.loads((d / "results.json").read_text())
 

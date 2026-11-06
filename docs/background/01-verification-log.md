@@ -156,3 +156,13 @@ Now at https://clipsift-demo.pages.dev, on classic Cloudflare Pages via --force,
 
 ## Demo with real footage (5 Nov)
 Live at https://clipsift-demo.pages.dev: two 2.5 minute 1080p sections of T1-STAT2 411 (20:30 to 23:00; 13:00 to 15:30), points every 15 s for demo only, Layer 0 so no automatic counts. Jacob confirmed this footage may go in the team demo. Gate, range requests, video playback and stills checked live. Team brief republished; PDFs with the coded link are in this folder and aren't published.
+
+## Community Fish Detector test (5 Nov)
+See detector-test/RESULTS.md. Includes a correction: the simple background baseline was about chance level. Brackish licence: LILA lists CC BY-SA 4.0. Feedback: 2 notes in the database as of this check (Ali, gina).
+
+## Label mode and detector integration (6 Nov, early)
+- Live at https://clipsift-demo.pages.dev/label: 100 frames from T1-STAT2 411, every 20 s from 1:00 to 34:00, blind double labelling, shared in D1. Checked live through the API and the real page; test rows removed.
+- Community Fish Detector is the default Layer 1 backend (Nano, 512 tiles, candidates at 0.05). Reproduced 73 boxes, recall 0.45, precision 0.63 through the integrated code.
+- Candidates at 0.05 give about 50 boxes on a frame that looks empty (pole, seabed, noise), so the suggested count uses 0.1. An empty-looking frame still gets about 10. A movement check is logged for testing.
+- Timings on the M4 Pro: 711 s for a 15 minute window with segment detection. Mac CPU only: Nano about 6.4 s per frame, Medium with CLAHE about 17.8 s. Not Coastal's PC.
+- Demo run coastal_school_model shows suggested counts of 24 to 114 per point; these are untrained suggestions, not validated.

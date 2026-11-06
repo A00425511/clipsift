@@ -24,6 +24,8 @@ APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
 DEFAULT_SPECIES = PROJECT_ROOT / "species" / "species_list.json"
 DEFAULT_ALIASES = APP_DIR / "local_aliases.jsonl"
+DEFAULT_LABEL_SETS = PROJECT_ROOT / "label_sets"
+DEFAULT_LABELS = APP_DIR / "local_labels.jsonl"
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,127}$")  # run and segment ids
 SEGMENT_FILES = {"still": "still.jpg", "diff": "diff.jpg", "loop": "loop.mp4"}
@@ -37,6 +39,18 @@ CHARACTERISTICS = ("shape", "anatomical_features", "colouration_or_flashes", "sw
 VISIBILITY = ("<0.5 m", "0.5-1.0 m", "1.0-1.5 m", ">1.5 m")
 # Defaults only. The run's own results.json "protocol" block wins. Draft protocol, so all configurable.
 QC_DEFAULTS = {"qc_max_percent_diff": 6, "qc_agreement": 95}
+# Blind label mode. Same rules as deploy/src/worker.js: keep the two in step.
+LABEL_SET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]{0,39}$")
+LABEL_FRAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
+LABEL_MAX_POINTS = 2000
+LABEL_MAX_BODY = 400000
+LABEL_NAME_MAX = 40
+LABEL_MAX_SECONDS = 86400
+LABEL_KINDS = ("fish", "invertebrate", "not_fish")
+LABEL_NOT_FISH_CATEGORIES = ("algae", "debris", "equipment", "seabed", "bubbles", "other")   # keep in step with worker.js and label.js
+LABEL_VIEWS = ("frame", "movement", "clip")   # views used on a frame, kept for later analysis
+LABEL_SPECIES_MAX = 80
+LABEL_PRESET_NAMES = ("Jacob", "Ali", "Gina", "Wang", "Adrien")
 FEEDBACK_AREAS = ("Counting", "Video", "Timeline", "Help", "Layout", "Other")
 FEEDBACK_TYPES = ("Bug", "Confusing", "Idea", "Like")
 
@@ -136,13 +150,15 @@ def clean_pair(value, field, lo, hi):
     return [clean_int(v, field, lo, hi, allow_none=False) for v in value]
 
 
-def create_app(runs_dir="runs", species_path=None, aliases_path=None) -> Flask:
+def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets_dir=None, labels_path=None) -> Flask:
     app = Flask(__name__, static_folder=str(APP_DIR / "static"), static_url_path="/static")
     runs_root = Path(runs_dir).resolve()
     species_file = Path(species_path) if species_path else DEFAULT_SPECIES
     aliases_file = Path(aliases_path) if aliases_path else DEFAULT_ALIASES
+    label_sets_root = Path(label_sets_dir).resolve() if label_sets_dir else DEFAULT_LABEL_SETS.resolve()
+    labels_file = Path(labels_path) if labels_path else DEFAULT_LABELS
     write_lock = threading.Lock()
-    app.config.update(RUNS_ROOT=runs_root, SPECIES_FILE=species_file, ALIASES_FILE=aliases_file)
+    app.config.update(RUNS_ROOT=runs_root, SPECIES_FILE=species_file, ALIASES_FILE=aliases_file, LABEL_SETS_ROOT=label_sets_root, LABELS_FILE=labels_file)
 
     # ---- helpers -----------------------------------------------------------
     def run_dir_for(run_id: str) -> Path:
@@ -251,6 +267,10 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None) -> Flask:
     @app.get("/")
     def index():
         return send_from_directory(app.static_folder, "index.html", max_age=0)
+
+    @app.get("/label.html")
+    def label_page():
+        return send_from_directory(app.static_folder, "label.html", max_age=0)
 
     # ---- runs --------------------------------------------------------------
     @app.get("/api/runs")
@@ -591,6 +611,173 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None) -> Flask:
         append_jsonl(runs_root / "feedback.jsonl", record)
         return jsonify(ok=True, id=record["id"]), 201
 
+    # ---- blind label mode ---------------------------------------------------
+    # Local copy of the Worker routes (deploy/src/worker.js). Rows go to one append-only JSON lines file; the
+    # latest row for a set, frame and labeller wins. IDENTITY IS A CHOSEN NAME, NOT A LOGIN: this local server
+    # has no sign-in, so anyone who can reach it can type any name. No route returns another person's marks.
+    @app.get("/label_sets/index.json")
+    def label_set_index():
+        ids = []
+        if label_sets_root.is_dir():
+            ids = sorted(d.name for d in label_sets_root.iterdir() if d.is_dir() and LABEL_SET_RE.match(d.name) and (d / "manifest.json").is_file())
+        return jsonify(sets=ids)
+
+    @app.get("/label_sets/<set_id>/<path:rest>")
+    def label_set_file(set_id, rest):
+        """Frames, clips and the manifest. send_file answers Range requests, which the clips need."""
+        if not LABEL_SET_RE.match(set_id):
+            abort(400, "Bad set name")
+        parts = rest.split("/")
+        ok = (parts == ["manifest.json"]) or (len(parts) == 2 and parts[0] in ("frames", "clips", "diff") and LABEL_FRAME_RE.match(parts[1]))
+        if not ok:
+            abort(404, "Not found")
+        path = (label_sets_root / set_id / rest).resolve()
+        if label_sets_root not in path.parents or not path.is_file() or path.is_symlink():
+            abort(404, "Not found")
+        resp = send_file(path, conditional=True, max_age=0 if parts[0] == "manifest.json" else 3600)
+        return resp
+
+    def label_name(value):
+        if not isinstance(value, str):
+            raise BadInput("name is required")
+        name = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", value)).strip()
+        if not name:
+            raise BadInput("name is required")
+        if len(name) > LABEL_NAME_MAX:
+            raise BadInput(f"name is too long (max {LABEL_NAME_MAX} characters)")
+        for preset in LABEL_PRESET_NAMES:
+            if preset.lower() == name.lower():
+                return preset
+        return name
+
+    def label_ids(set_id, frame_id=None, need_frame=False):
+        if not isinstance(set_id, str) or not LABEL_SET_RE.match(set_id):
+            raise BadInput("set is missing or not a plain id")
+        if need_frame or frame_id is not None:
+            if not isinstance(frame_id, str) or not LABEL_FRAME_RE.match(frame_id):
+                raise BadInput("frame is missing or not a plain id")
+
+    def label_frames(set_id):
+        path = label_sets_root / set_id / "manifest.json"
+        if not path.is_file():
+            abort(404, "Unknown label set.")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            abort(422, "manifest.json could not be read")
+        frames = {}
+        for f in (data.get("frames") or []) if isinstance(data, dict) else []:
+            if isinstance(f, dict) and isinstance(f.get("frame_id"), str) and LABEL_FRAME_RE.match(f["frame_id"]) \
+                    and isinstance(f.get("width"), (int, float)) and isinstance(f.get("height"), (int, float)):
+                frames[f["frame_id"]] = (f["width"], f["height"])
+        return frames
+
+    def label_rows(set_id):
+        """Latest row per (frame, labeller). Names compare without case."""
+        latest = {}
+        for r in read_jsonl(labels_file):
+            if r.get("set") == set_id and isinstance(r.get("frame"), str) and isinstance(r.get("name"), str):
+                latest[(r["frame"], r["name"].lower())] = r
+        return latest
+
+    @app.get("/api/labels/status")
+    def labels_status():
+        set_id, name = request.args.get("set"), label_name(request.args.get("name"))
+        label_ids(set_id)
+        frames = label_frames(set_id)
+        counts, mine = {}, {}
+        for (frame, who), r in label_rows(set_id).items():
+            if frame not in frames:
+                continue
+            if not r.get("skipped"):
+                counts[frame] = counts.get(frame, 0) + 1
+            if who == name.lower():
+                mine[frame] = {"state": "skipped" if r.get("skipped") else "done", "no_animals": bool(r.get("no_animals")),
+                               "n_points": len(r.get("points") or []), "seconds": r.get("seconds"), "updated_at": r.get("updated_at")}
+        return jsonify(set=set_id, total=len(frames), counts=counts, mine=mine,
+                       team={"frames_with_any": len(counts), "frames_with_two": sum(1 for n in counts.values() if n >= 2)})
+
+    @app.get("/api/labels/mine")
+    def labels_mine():
+        set_id, frame_id, name = request.args.get("set"), request.args.get("frame"), label_name(request.args.get("name"))
+        label_ids(set_id, frame_id, need_frame=True)
+        frames = label_frames(set_id)
+        if frame_id not in frames:
+            abort(404, "That frame is not in this label set.")
+        r = label_rows(set_id).get((frame_id, name.lower()))
+        if not r:
+            return jsonify(exists=False)
+        return jsonify(exists=True, frame=frame_id, points=r.get("points") or [], views=r.get("views") or [], no_animals=bool(r.get("no_animals")),
+                       skipped=bool(r.get("skipped")), seconds=r.get("seconds"), updated_at=r.get("updated_at"))
+
+    @app.post("/api/labels")
+    def labels_save():
+        if (request.content_length or 0) > LABEL_MAX_BODY:
+            return jsonify(error="That save is too large."), 413
+        data = json_body()
+        label_ids(data.get("set"), data.get("frame"), need_frame=True)
+        name = label_name(data.get("name"))
+        frames = label_frames(data["set"])
+        if data["frame"] not in frames:
+            raise BadInput("That frame is not in this label set.")
+        width, height = frames[data["frame"]]
+        for key in ("skipped", "no_animals"):
+            if data.get(key) is not None and not isinstance(data.get(key), bool):
+                raise BadInput(f"{key} must be true or false")
+        skipped, no_animals = data.get("skipped") is True, data.get("no_animals") is True
+        raw = data.get("points")
+        raw = [] if raw is None else raw
+        if not isinstance(raw, list):
+            raise BadInput("points must be a list")
+        if len(raw) > LABEL_MAX_POINTS:
+            raise BadInput(f"Too many points (max {LABEL_MAX_POINTS})")
+        points = []
+        for pt in raw:
+            if not isinstance(pt, dict):
+                raise BadInput("Each point needs x, y and kind")
+            x, y = pt.get("x"), pt.get("y")
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in (x, y)):
+                raise BadInput("Point coordinates must be numbers")
+            if x < 0 or y < 0 or x > width or y > height:
+                raise BadInput(f"A point is outside the image ({width} x {height})")
+            if pt.get("kind") not in LABEL_KINDS:
+                raise BadInput("kind must be fish, invertebrate or not_fish")
+            out = {"x": round(x, 1), "y": round(y, 1), "kind": pt["kind"]}
+            if pt["kind"] == "not_fish":
+                # A not-fish mark has a category (or none) and never a species.
+                cat = pt.get("category")
+                if cat is not None and cat != "":
+                    if not isinstance(cat, str) or cat not in LABEL_NOT_FISH_CATEGORIES:
+                        raise BadInput("category must be one of: " + ", ".join(LABEL_NOT_FISH_CATEGORIES) + " (or empty)")
+                    out["category"] = cat
+            elif pt.get("species") is not None:
+                if not isinstance(pt["species"], str):
+                    raise BadInput("species must be text")
+                sp = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", pt["species"])).strip()
+                if len(sp) > LABEL_SPECIES_MAX:
+                    raise BadInput(f"species is too long (max {LABEL_SPECIES_MAX} characters)")
+                if sp:
+                    out["species"] = sp
+            points.append(out)
+        views = data.get("views")
+        if views is None:
+            views = []
+        if not isinstance(views, list) or len(views) > 10 or any(v not in LABEL_VIEWS for v in views):
+            raise BadInput("views must be a list made of: " + ", ".join(LABEL_VIEWS))
+        views = [v for v in LABEL_VIEWS if v in views]
+        if (no_animals or skipped) and points:
+            raise BadInput("A skipped frame or a No animals frame cannot have points")
+        if no_animals and skipped:
+            raise BadInput("A frame cannot be both skipped and No animals")
+        seconds = data.get("seconds", 0)
+        seconds = 0 if seconds is None else seconds
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds < 0:
+            raise BadInput("seconds must be a number, 0 or more")
+        record = {"set": data["set"], "frame": data["frame"], "name": name, "points": points, "views": views, "no_animals": no_animals,
+                  "seconds": min(round(seconds, 1), LABEL_MAX_SECONDS), "skipped": skipped, "updated_at": now_iso(), "source": "flask"}
+        append_jsonl(labels_file, record)
+        return jsonify(ok=True, updated_at=record["updated_at"], n_points=len(points))
+
     # ---- export ------------------------------------------------------------
     def csv_response(rows, header, name):
         buf = io.StringIO()
@@ -728,8 +915,10 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--species", default=None, help="species_list.json (default ../species/)")
     p.add_argument("--aliases", default=None, help="local alias file (default app/local_aliases.jsonl)")
+    p.add_argument("--label-sets", default=None, help="folder of label sets (default label_sets/)")
+    p.add_argument("--labels", default=None, help="file the label page saves to (default app/local_labels.jsonl)")
     args = p.parse_args(argv)
-    app = create_app(args.runs, args.species, args.aliases)
+    app = create_app(args.runs, args.species, args.aliases, args.label_sets, args.labels)
     print(f"ClipSift: http://127.0.0.1:{args.port}  (runs folder: {app.config['RUNS_ROOT']})")
     app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
 

@@ -13,6 +13,7 @@ import argparse
 import html
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -26,12 +27,32 @@ QUERY = "SELECT id, created_at, name, area, type, message, page_context FROM fee
 FIELDS = ("id", "created_at", "name", "area", "type", "message", "page_context")
 
 
-def fetch_rows(cwd: Path) -> str:
-    cmd = ["npx", "wrangler", "d1", "execute", DB_NAME, "--remote", "--json", "--command", QUERY]
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, shell=(sys.platform == "win32"))
+def run_wrangler(query: str, cwd: Path, timeout: int = 180) -> str:
+    """Run one read-only query on the remote D1 database and return wrangler's stdout (JSON).
+
+    Hardened after a failed pull on 5 Nov, where the same query worked when typed by hand:
+    - stdin is closed, so npx or wrangler can never wait for a yes/no answer that nobody can give;
+    - `npx --yes` skips npx's own "install wrangler?" prompt;
+    - on failure the error shows both stdout and stderr (with --json, wrangler prints its error as JSON on
+      stdout, and the old message only showed stderr, which hid the real reason);
+    - the npx path is looked up first, so Windows needs no shell.
+    """
+    npx = shutil.which("npx") or shutil.which("npx.cmd")
+    if not npx:
+        raise RuntimeError("npx was not found. Install Node.js, then run `npx wrangler login` once.")
+    cmd = [npx, "--yes", "wrangler", "d1", "execute", DB_NAME, "--remote", "--json", "--command", query]
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"wrangler did not answer within {timeout} s. Check your connection and `npx wrangler whoami`.")
     if proc.returncode != 0:
-        raise RuntimeError("wrangler failed (exit %d). Are you logged in (npx wrangler login) and is the database created?\n%s" % (proc.returncode, proc.stderr.strip()[-800:]))
+        detail = (proc.stderr.strip()[-600:] + "\n" + proc.stdout.strip()[-600:]).strip()
+        raise RuntimeError("wrangler failed (exit %d). Are you logged in (npx wrangler login), is the database created, and are you running from the project (deploy/wrangler.jsonc must be found)?\n%s" % (proc.returncode, detail))
     return proc.stdout
+
+
+def fetch_rows(cwd: Path) -> str:
+    return run_wrangler(QUERY, cwd)
 
 
 def parse_rows(text: str) -> list:

@@ -1,0 +1,76 @@
+/* Label page only. Colours and base controls come from style.css. No inline styles anywhere (CSP). */
+.label-page { min-height: 100vh; }
+.topnav { display: flex; gap: 6px; }
+.topnav a[aria-current=page] { background: #25465a; border-color: var(--accent); }
+.lb-progress { color: var(--text); font-weight: 600; }
+.lb-help { margin: 8px 12px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 5px; max-width: 900px; }
+.lb-help ul { margin: 4px 0 8px; padding-left: 20px; } .lb-help li { margin: 3px 0; }
+.lb-main { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 20px; }
+.lb-stage { position: relative; width: 100%; height: calc(100vh - 255px); min-height: 260px; background: #07090a; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.lb-stage.panning { cursor: grabbing; }
+.lb-stage:focus { outline: none; }
+.lb-plane { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.lb-plane img, .lb-plane video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; max-width: none; pointer-events: none; }
+.lb-plane [hidden] { display: none !important; }
+.lb-plane video { object-fit: fill; background: #000; max-height: none; }   /* style.css gives video a max height for the review app */
+.lb-plane.zoomed img, .lb-plane.zoomed video { image-rendering: pixelated; }
+.lb-dots { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.lb-stage.counting { box-shadow: inset 0 0 0 4px #ffe94d; }
+.lb-hud { position: absolute; inset: 0; pointer-events: none; }
+.lb-hud[hidden], .lb-countmark[hidden] { display: none; }
+.lb-countmark { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: #ffe94d; color: #111; font-weight: 700; font-size: 20px; padding: 4px 18px; border-radius: 4px; box-shadow: 0 0 0 2px #000; }
+.lb-hud-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 6px 10px; background: rgba(0,0,0,.6); }
+.lb-hud-time { font: 600 14px ui-monospace, Menlo, Consolas, monospace; color: #fff; min-width: 64px; }
+.lb-track { position: relative; flex: 1; height: 8px; background: #3a424a; border-radius: 4px; }
+.lb-track-win { position: absolute; top: -3px; bottom: -3px; background: #ffe94d; opacity: .85; border-radius: 2px; min-width: 3px; }
+.lb-track-head { position: absolute; top: -4px; width: 3px; height: 16px; background: #fff; margin-left: -1px; box-shadow: 0 0 0 1px #000; }
+.lb-views { align-items: center; }
+.lb-speeds { display: inline-flex; gap: 4px; }
+.lb-menu { position: fixed; z-index: 30; min-width: 190px; max-width: 280px; background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+.lb-menu[hidden] { display: none; }
+.lb-menu-title { color: var(--muted); font-size: 12px; padding: 4px 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; overflow-wrap: anywhere; }
+.lb-menu button[role=menuitem] { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 7px 10px; border-radius: 4px; }
+.lb-menu button[role=menuitem]:hover, .lb-menu button[role=menuitem]:focus-visible { background: #25465a; }
+.lb-menu button[hidden] { display: none; }
+.lb-menu-sp { padding: 4px; } .lb-menu-sp label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 3px; }
+.lb-menu-sp input { width: 100%; }
+.lb-menu-sp ul { list-style: none; margin: 4px 0; padding: 0; max-height: 168px; overflow-y: auto; }
+.lb-menu-sp li { padding: 5px 8px; border-radius: 3px; cursor: pointer; overflow-wrap: anywhere; }
+.lb-menu-sp li[aria-selected=true], .lb-menu-sp li:hover { background: #25465a; }
+.lb-center { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 20px; background: rgba(7,9,10,.55); }
+.lb-center[hidden] { display: none; }
+.lb-done { background: rgba(21,24,27,.92); color: var(--text); font-size: 16px; }
+.lb-done p { max-width: 520px; margin: 0; }
+.lb-statusline { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lb-count { font-weight: 600; }
+.lb-tools { display: flex; flex-direction: column; gap: 8px; }
+.lb-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.lb-sliders label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.lb-sliders input[type=range] { width: 120px; }
+.lb-actions { justify-content: flex-end; gap: 8px; }
+.lb-actions button { padding: 9px 16px; font-size: 15px; }
+button.kind.fish[aria-pressed=true] { border-color: #ffe94d; background: #4a4420; }
+button.kind.inv[aria-pressed=true] { border-color: #6fd3ff; background: #1f4252; }
+.lb-mine { margin: 0 12px 20px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; }
+.lb-mine-head { display: flex; justify-content: space-between; align-items: center; }
+.lb-mine-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.lb-mine-list button { width: 100%; text-align: left; }
+.lb-mine-list .tag { color: var(--muted); }
+.lb-mine-list .skipped { color: var(--warn); }
+.lb-modal { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 12px; }
+.lb-modal[hidden] { display: none; }
+.lb-modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; max-width: 460px; width: 100%; }
+.lb-who-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.lb-who-buttons button { padding: 9px 16px; font-size: 15px; }
+.message button { margin-left: 10px; }
+@media (max-width: 700px) {
+  .lb-stage { height: 56vh; }
+  .lb-actions { justify-content: stretch; } .lb-actions button { flex: 1; }
+  kbd { display: none; }
+}
+
+button.kind.nf[aria-pressed=true] { border-color: #ff7ad9; background: #4d2142; }
+.lb-cats { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.lb-cats button[aria-pressed=true] { border-color: #ff7ad9; background: #4d2142; }
+#cm-cat-list { display: flex; flex-direction: column; }
+#cm-cat-list button[aria-current] { font-weight: 700; }

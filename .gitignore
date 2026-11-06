@@ -23,3 +23,13 @@ deploy/public/
 
 # Marked-up partner screenshots and frames derived from them
 labels/debug/
+
+# Model weights and label frames stay out of git
+models/
+*.pth
+*.onnx
+label_sets/
+
+# Blind labelling: local save file and pulled team labels hold names and marks
+app/local_labels.jsonl
+labels/team/

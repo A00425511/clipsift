@@ -1,0 +1,13 @@
+# Preset: Community Fish Detector, Medium weights, CLAHE enhancement, 512 px tiles, threshold 0.05.
+# Use: python -m clipsift run VIDEO --config config/presets/cfd_medium_clahe.yaml   (or --preset cfd_medium_clahe)
+# On the one test frame it found more of the dotted fish than Nano but with lower precision, and it is slower.
+# One frame only, so this is not an accuracy figure.
+stages:
+  detector: cfd
+detector:
+  cfd:
+    variant: medium
+    enhancement: clahe
+    tile_size: 512
+    overlap: 0.25
+    threshold: 0.05

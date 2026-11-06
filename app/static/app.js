@@ -15,7 +15,8 @@
   const S = {
     runId: null, results: null, saved: null, species: [], aliases: [], index: [],
     mode: "sub", selId: null, showSetAside: false, qc: false,
-    diff: false, grid: false, boxes: true,
+    diff: false, grid: false, boxes: false,   // boxes = "Show model suggestions"; always off at run load, never stored
+   
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 },
     zoom: { k: 1, x: 0, y: 0 }, tool: "pan", drag: null,
@@ -304,6 +305,7 @@
     try {
       const [results, saved] = await Promise.all([Data.results(id), Data.saved(id)]);
       S.runId = id; S.results = results; S.saved = saved; S.selId = null;
+      S.boxes = false; paintSuggestToggle();
     } catch (e) { showEmpty(e.message); return; }
     $("empty").hidden = true;
     $("fixture-badge").hidden = !S.results.fixture;
@@ -506,7 +508,7 @@
     $("clip-tools").querySelector("#to-count").hidden = S.mode !== "sub";
     renderQueue(); renderTimeline();
     const cur = $("queue-list").querySelector(".current"); if (cur) cur.scrollIntoView({ block: "nearest" });
-    S.diff = false; setPressed("toggle-diff", false);
+    S.diff = false; setPressed("toggle-diff", false); $("movement-hint").hidden = true;
     loadMedia(u);
     S.zoom = { k: 1, x: 0, y: 0 }; applyZoom();
     $("point-tools").hidden = S.mode !== "sub";
@@ -535,17 +537,25 @@
   function showStill() {
     const img = $("still"), miss = $("media-missing");
     miss.hidden = true; img.hidden = false;
-    img.onerror = () => { img.hidden = true; miss.hidden = false; miss.textContent = S.diff ? "No difference image for this " + (S.mode === "sub" ? "point" : "segment") + "." : "No still image for this " + (S.mode === "sub" ? "point" : "segment") + "."; };
+    img.onerror = () => { img.hidden = true; miss.hidden = false; miss.textContent = S.diff ? "No movement view for this " + (S.mode === "sub" ? "point" : "segment") + "." : "No still image for this " + (S.mode === "sub" ? "point" : "segment") + "."; };
     img.onload = () => { if (S.mode === "sub") renderLabels(false); };
     img.src = mediaUrl(S.diff ? "diff" : "still");
-    img.alt = S.diff ? "Difference image: bright areas changed between frames" : "Still frame";
+    img.alt = S.diff ? "Movement view: bright areas changed between frames" : "Still frame";
     drawBoxes();
+  }
+  // Model suggestions (boxes and numbers) show only when asked for, and never in QC mode.
+  const suggestionsOn = () => S.boxes && !(S.mode === "sub" && S.qc);
+  function paintSuggestToggle() {
+    const cb = $("show-suggest"), blocked = S.mode === "sub" && S.qc;
+    cb.checked = suggestionsOn(); cb.disabled = blocked;
+    cb.title = blocked ? "Model suggestions stay hidden in QC mode" : "Show or hide the model's boxes and numbers";
+    $("suggest-caution").hidden = !cb.checked;
   }
   function drawBoxes() {
     const svg = $("boxes"); clear(svg);
     const u = unit(S.selId);
     svg.hidden = true;
-    if (!u || !S.boxes || S.diff || (S.mode === "sub" && S.qc)) return;
+    if (!u || !suggestionsOn() || S.diff) return;
     const dets = S.mode === "sub" ? (u.auto && u.auto.detections) : u.detections;
     if (!Array.isArray(dets) || !dets.length) return;
     svg.hidden = false;
@@ -565,7 +575,12 @@
     const f = S.filters, v = "brightness(" + f.brightness + "%) contrast(" + f.contrast + "%) saturate(" + f.saturation + "%)";
     $("still").style.filter = v; $("loop").style.filter = v;
     for (const k of Object.keys(f)) { $("f-" + k).value = f[k]; $("f-" + k).nextElementSibling.textContent = f[k] + "%"; }
-    localStorage.setItem("clipsift.filters", JSON.stringify(f));
+    try { localStorage.setItem("clipsift.filters", JSON.stringify(f)); } catch (e) { /* private mode: keep going */ }
+  }
+  function resetFilters() {
+    S.filters.brightness = 100; S.filters.contrast = 100; S.filters.saturation = 100;  // same object the sliders write to
+    applyFilters();
+    try { localStorage.removeItem("clipsift.filters"); } catch (e) { /* storage may be blocked */ }
   }
   const settingsPayload = () => Object.assign({}, S.filters);
 
@@ -708,6 +723,40 @@
       renderLabels(true);
     } catch (err) { message("Mark not saved: " + err.message, "error"); }
   }
+  // Which of my marks is under this image point? Dots use their on-screen size so zoomed-in clicks stay easy.
+  function labelAt(x, y) {
+    const [W] = dims(), rad = (6 * W) / Math.max(200, $("stage").clientWidth) / S.zoom.k, reach = rad * 1.6;
+    let best = null, bestD = Infinity;
+    for (const l of myLabels()) {
+      if (l.w != null && l.h != null) {
+        if (x >= l.x && x <= l.x + l.w && y >= l.y && y <= l.y + l.h) { const d = Math.hypot(x - (l.x + l.w / 2), y - (l.y + l.h / 2)); if (d < bestD) { best = l; bestD = d; } }
+      } else {
+        const d = Math.hypot(x - l.x, y - l.y);
+        if (d <= reach && d < bestD) { best = l; bestD = d; }
+      }
+    }
+    return best;
+  }
+  async function removeLabel(l) {
+    try {
+      await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: l.label_id });
+      S.saved.point_labels = (S.saved.point_labels || []).filter((x) => x.label_id !== l.label_id);
+      renderLabels(true);
+    } catch (err) { message("Could not remove that mark: " + err.message, "error"); }
+  }
+  async function clearAllLabels() {
+    if (S.mode !== "sub") return;
+    const mine = myLabels(); if (!mine.length) { message("No marks to clear.", ""); return; }
+    if (!confirm("Remove all " + mine.length + " of your marks on this picture? Undo will not bring them back.")) return;
+    try {
+      for (const l of mine) {
+        await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: l.label_id });
+        S.saved.point_labels = S.saved.point_labels.filter((x) => x.label_id !== l.label_id);
+      }
+      message("Cleared " + mine.length + " marks. Count fields were not changed; edit them by hand.", "ok");
+    } catch (err) { message("Clearing stopped partway: " + err.message, "error"); }
+    renderLabels(true);
+  }
   async function undoLabel() {
     if (S.mode !== "sub") return;
     const mine = myLabels(); if (!mine.length) { message("Nothing to undo.", ""); return; }
@@ -745,7 +794,11 @@
       const d = S.drag; S.drag = null; if (!d) return;
       const pv = $("labels").querySelector(".preview"); if (pv) pv.remove();
       if (d.type === "pan") return;
-      if (d.type === "dot") { addLabel("point", Math.round(d.x), Math.round(d.y)); return; }
+      if (d.type === "dot") {
+        const hit = labelAt(d.x, d.y);
+        if (hit) removeLabel(hit); else addLabel("point", Math.round(d.x), Math.round(d.y));
+        return;
+      }
       const [W] = dims(), minPx = (8 * W) / Math.max(200, st.clientWidth) / S.zoom.k;
       const w = Math.abs(d.x2 - d.x), h = Math.abs(d.y2 - d.y);
       if (w < minPx || h < minPx) { message("Drag to draw the " + d.type + ". It was too small, so nothing was saved.", ""); return; }
@@ -760,6 +813,7 @@
     }, { passive: false });
     document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
     $("p-undo").addEventListener("click", undoLabel);
+    $("p-clear").addEventListener("click", clearAllLabels);
     $("z-in").addEventListener("click", () => zoomBy(1.4)); $("z-out").addEventListener("click", () => zoomBy(1 / 1.4));
     $("z-reset").addEventListener("click", () => { S.zoom = { k: 1, x: 0, y: 0 }; applyZoom(); renderLabels(false); });
     $("reviewer").addEventListener("change", () => { if (S.mode === "sub" && S.selId) renderLabels(true); });
@@ -913,6 +967,24 @@
   }
 
   // ---------- subsample review (main pass) ----------
+  function paintSuggest(u) {
+    const auto = u.auto || {};
+    const showSug = !S.qc;
+    $("suggest-panel").hidden = !showSug;
+    paintSuggestToggle();
+    const sugOn = showSug && suggestionsOn();
+    $("sug-hint").hidden = !sugOn; $("sug-off").hidden = sugOn;
+    const mv = sugOn && auto.movement_unidentified > 0;
+    $("movement-banner").hidden = !mv;
+    $("movement-banner").textContent = "Movement, unidentified near this point (" + auto.movement_unidentified + " found). It is a note only and is not counted.";
+    const d = $("suggest"); clear(d);
+    if (sugOn) {
+      const row = (k, v) => d.append(el("dt", { text: k }), el("dd", { text: v }));
+      row("Fish (model)", fmtNum(auto.fish_count)); row("Invertebrates (model)", fmtNum(auto.invertebrate_count));
+      row("Motion near point", auto.motion_near_point == null ? "not computed" : (auto.motion_near_point ? "yes" : "no"));
+      row("Visibility score", fmtNum(auto.visibility_score, 2));
+    }
+  }
   function renderSubsample(u) {
     const head = $("seg-head"); clear(head);
     head.append(el("h2", { text: u.subsample_id }), el("span", { text: "at " + fmtTime(u.t_s) }));
@@ -920,19 +992,7 @@
     if (S.qc) head.append(badge("QC mode: blind second count", "audit"));
     $("audit-banner").hidden = !S.qc;
     $("audit-banner").textContent = "QC mode. Count this point fresh. The first count and the model suggestion are hidden on purpose.";
-    const auto = u.auto || {};
-    const showSug = !S.qc;
-    $("suggest-panel").hidden = !showSug;
-    const mv = showSug && auto.movement_unidentified > 0;
-    $("movement-banner").hidden = !mv;
-    $("movement-banner").textContent = "Movement, unidentified near this point (" + auto.movement_unidentified + " found). It is a note only and is not counted.";
-    const d = $("suggest"); clear(d);
-    if (showSug) {
-      const row = (k, v) => d.append(el("dt", { text: k }), el("dd", { text: v }));
-      row("Fish (model)", fmtNum(auto.fish_count)); row("Invertebrates (model)", fmtNum(auto.invertebrate_count));
-      row("Motion near point", auto.motion_near_point == null ? "not computed" : (auto.motion_near_point ? "yes" : "no"));
-      row("Visibility score", fmtNum(auto.visibility_score, 2));
-    }
+    paintSuggest(u);
     $("pass-row").hidden = !S.qc;
     // form: prefill only from the reviewer's own saved primary count, never from the model
     const prev = S.qc ? null : primaryOf(u.subsample_id);
@@ -1032,7 +1092,7 @@
   }
   function toggle(which) {
     if (which === "grid") { S.grid = !S.grid; renderGrid(); }
-    if (which === "diff") { S.diff = !S.diff; setPressed("toggle-diff", S.diff); showStill(); }
+    if (which === "diff") { S.diff = !S.diff; setPressed("toggle-diff", S.diff); $("movement-hint").hidden = !S.diff; showStill(); }
   }
   function onKey(e) {
     if (e.altKey || e.metaKey) return;
@@ -1250,9 +1310,16 @@
     $("toggle-diff").addEventListener("click", () => toggle("diff"));
     $("toggle-grid").addEventListener("click", () => toggle("grid"));
     $("grid-rows").addEventListener("change", renderGrid); $("grid-cols").addEventListener("change", renderGrid);
-    $("show-boxes").addEventListener("change", (e) => { S.boxes = e.target.checked; drawBoxes(); });
+    $("show-suggest").addEventListener("change", (e) => {
+      S.boxes = e.target.checked; paintSuggestToggle(); drawBoxes();
+      if (S.mode === "sub" && S.selId) { const u = unit(S.selId); if (u) paintSuggest(u); }
+    });
     for (const k of ["brightness", "contrast", "saturation"]) $("f-" + k).addEventListener("input", (e) => { S.filters[k] = parseInt(e.target.value, 10); applyFilters(); });
-    $("filter-reset").addEventListener("click", () => { S.filters = { brightness: 100, contrast: 100, saturation: 100 }; applyFilters(); });
+    $("filter-reset").addEventListener("click", resetFilters);
+    for (const k of ["brightness", "contrast", "saturation"]) {
+      $("f-" + k).addEventListener("change", (e) => { S.filters[k] = parseInt(e.target.value, 10); applyFilters(); });  // some browsers only fire change
+      $("f-" + k).addEventListener("dblclick", () => { S.filters[k] = 100; applyFilters(); });
+    }
     for (const b of document.querySelectorAll("[data-speed]")) b.addEventListener("click", () => {
       document.querySelectorAll("[data-speed]").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
       $("loop").playbackRate = parseFloat(b.dataset.speed);

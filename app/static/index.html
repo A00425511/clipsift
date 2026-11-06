@@ -14,6 +14,7 @@
 </div>
 <header class="topbar">
   <h1>ClipSift</h1>
+  <a class="btn" href="/label.html" title="Label fish in single frames, on your own. Blind: you never see anyone else's marks.">Label fish</a>
   <label class="run-pick">Run
     <select id="run-select"><option value="">Loading...</option></select>
   </label>
@@ -23,7 +24,7 @@
     <progress id="progress-bar" value="0" max="1"></progress>
   </div>
   <span class="spacer"></span>
-  <button type="button" id="more-tools" aria-pressed="false" title="Show or hide the extra tools: motion segments, recording notes, QC mode, exports, grid settings, contrast sliders, detection boxes, ellipse and box tools">More tools</button>
+  <button type="button" id="more-tools" aria-pressed="false" title="Show or hide the extra tools: motion segments, recording notes, QC mode, exports, grid settings, contrast sliders, ellipse and box tools">More tools</button>
   <label class="check qc-toggle adv"><input type="checkbox" id="qc-mode"> QC mode (blind second count)</label>
   <label class="who">Your name <input id="reviewer" type="text" maxlength="100" autocomplete="off" placeholder="e.g. Sam" aria-describedby="name-hint"></label>
   <a id="export-link" class="btn adv" href="#" data-export="export.csv" hidden>Export counts CSV</a>
@@ -99,7 +100,7 @@
 
     <div class="stage-wrap" id="stage-wrap">
       <h3 class="step-h sub-only"><span class="step-n">2</span> Mark what you see</h3>
-      <p class="hint sub-only" id="mark-help">Choose Dot, then click each animal that is inside the count second. Not sure about one? Leave it out.</p>
+      <p class="hint sub-only" id="mark-help">Choose Dot, then click each animal that is inside the count second. Not sure about one? Leave it out. The still picture is what gets counted. The clip below is only for context.</p>
       <div id="stage" class="stage">
         <div id="zoom" class="zoom">
           <img id="still" alt="Still frame from this segment" draggable="false">
@@ -110,12 +111,14 @@
         <div id="media-missing" class="media-missing" hidden></div>
       </div>
       <div class="stage-tools">
-        <button type="button" id="toggle-diff" aria-pressed="false">Difference image <kbd>D</kbd></button>
+        <button type="button" id="toggle-diff" aria-pressed="false" title="Shows what changed between frames. Bright areas moved. It is a hint for where to look, not a count.">Movement view <kbd>D</kbd></button>
         <button type="button" id="toggle-grid" aria-pressed="false">Grid <kbd>G</kbd></button>
         <label class="adv">Rows <input id="grid-rows" type="number" min="1" max="20" value="3"></label>
         <label class="adv">Columns <input id="grid-cols" type="number" min="1" max="20" value="6"></label>
-        <label class="check adv"><input type="checkbox" id="show-boxes" checked> Detection boxes</label>
+        <label class="check" id="suggest-toggle"><input type="checkbox" id="show-suggest"> Show model suggestions</label>
+        <span id="suggest-caution" class="hint" hidden>Rough suggestions. The model flags seafloor and the pipe, and isn't trained on this water.</span>
         <span id="grid-hint" class="hint"></span>
+        <span class="hint" id="movement-hint" hidden>Movement view: bright areas changed between frames, so it points at things that moved. Switch back to the still to count.</span>
       </div>
       <div class="point-tools" id="point-tools" hidden>
         <span class="lbl">Tool</span>
@@ -128,17 +131,18 @@
         <label class="check"><input type="radio" name="pkind" value="invertebrate"> Invertebrate</label>
         <input id="p-species" type="text" list="species-names" maxlength="200" placeholder="Species (optional)" aria-label="Species for new marks">
         <button type="button" id="p-undo">Undo <kbd>Z</kbd></button>
+        <button type="button" id="p-clear" title="Remove all of your dots on this picture (asks first)">Clear all marks</button>
         <button type="button" id="z-in" aria-label="Zoom in">+</button>
         <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
-        <button type="button" id="z-reset">Reset view</button>
+        <button type="button" id="z-reset" title="Back to the whole picture">Reset zoom</button>
         <span id="p-totals" class="p-totals" aria-live="polite"></span>
-        <span class="hint">Dot = one animal (circle for fish, square for invertebrate). Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan.</span>
+        <span class="hint">Dot = one animal (circle for fish, square for invertebrate). Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove one dot, click it again in Dot mode.</span>
       </div>
       <div class="sliders adv">
         <label>Brightness <input type="range" id="f-brightness" min="50" max="300" value="100"><output></output></label>
         <label>Contrast <input type="range" id="f-contrast" min="50" max="300" value="100"><output></output></label>
         <label>Saturation <input type="range" id="f-saturation" min="0" max="300" value="100"><output></output></label>
-        <button type="button" id="filter-reset">Reset</button>
+        <button type="button" id="filter-reset" title="Set brightness, contrast and saturation back to 100%">Reset sliders</button>
         <button type="button" id="filter-enhance" title="Stronger contrast and colour, like an image editor enhancement">Enhance preset</button>
         <span class="hint">Display only. Files are not changed. Settings are saved with each decision.</span>
       </div>
@@ -168,7 +172,8 @@
   <aside class="side" id="side-sub" aria-label="Subsample count" hidden>
     <section class="panel" id="suggest-panel" aria-labelledby="sug-h">
       <h2 id="sug-h">Suggested counts</h2>
-      <p class="hint">A computer guess to compare against, never the answer. Nothing is filled in for you. Count what you see.</p>
+      <p class="hint" id="sug-hint">A computer guess to compare against, never the answer. Nothing is filled in for you. Count what you see.</p>
+      <p class="hint" id="sug-off" hidden>Model suggestions are hidden so they do not sway your count. Turn them on under Mark what you see if you want to compare.</p>
       <dl id="suggest" class="counts"></dl>
     </section>
     <section class="panel" aria-labelledby="cnt-h">
@@ -210,7 +215,7 @@
         <button type="button" id="save-sub" class="primary"><span class="step-n">4</span> Save and go to the next <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
       </div>
       <p id="sub-result" class="hint" role="status"></p>
-      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> tick features, <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step, <kbd>G</kbd> grid, <kbd>D</kbd> difference. Keys pause while you type.</p>
+      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> tick features, <kbd>Space</kbd> play, <kbd>,</kbd> <kbd>.</kbd> step, <kbd>G</kbd> grid, <kbd>D</kbd> movement view. Keys pause while you type.</p>
     </section>
   </aside>
 
@@ -247,7 +252,7 @@
         <button type="button" data-decision="needs_second_look" class="d-second"><kbd>4</kbd> Needs second look</button>
       </div>
       <p id="last-decision" class="hint"></p>
-      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&darr;</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&uarr;</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> decide, <kbd>G</kbd> grid, <kbd>D</kbd> difference, <kbd>/</kbd> species. Keys pause while you type in a box.</p>
+      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&darr;</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&uarr;</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> decide, <kbd>G</kbd> grid, <kbd>D</kbd> movement view, <kbd>/</kbd> species. Keys pause while you type in a box.</p>
     </section>
   </aside>
 </main>
@@ -300,7 +305,7 @@
         <tr><td><kbd>P</kbd></td><td>Dot tool</td></tr>
         <tr><td><kbd>Z</kbd></td><td>Undo your last mark</td></tr>
         <tr><td><kbd>1</kbd> to <kbd>4</kbd></td><td>Tick shape, anatomy, colour, movement</td></tr>
-        <tr><td><kbd>D</kbd></td><td>Show or hide the difference image</td></tr>
+        <tr><td><kbd>D</kbd></td><td>Show or hide the movement view</td></tr>
         <tr><td><kbd>G</kbd></td><td>Show or hide the grid</td></tr>
         <tr><td><kbd>/</kbd></td><td>Jump to the species box</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Save and go to the next</td></tr>
@@ -321,7 +326,7 @@
     </section>
     <section id="h-suggest">
       <h3>What suggested counts are</h3>
-      <p>The tool may show a count made by software. It is only a hint to compare with, and it is never filled in for you. In this prototype the software is a simple stand-in that reacts to any movement, so expect it to be wrong. Your count is the one that is saved.</p>
+      <p>Model suggestions are off each time you open a recording, so they do not sway your count. Tick Show model suggestions under Mark what you see to see the boxes and the numbers. They are rough: the model flags seafloor and the pipe, and is not trained on this water. The tool may show a count made by software. It is only a hint to compare with, and it is never filled in for you. In this prototype the software is a simple stand-in that reacts to any movement, so expect it to be wrong. Your count is the one that is saved.</p>
     </section>
   </div>
 </dialog>

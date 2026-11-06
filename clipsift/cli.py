@@ -33,7 +33,18 @@ def cmd_run(a) -> int:
         ov.setdefault("stages", {})["detector"] = a.detector
     if a.sample_fps:
         ov["sample_fps"] = a.sample_fps
-    cfg = load_config(a.config, ov)
+    if a.device:
+        ov.setdefault("detector", {}).setdefault("cfd", {})["device"] = a.device
+    config_path = a.config
+    if a.preset:
+        config_path = resolve_path(f"config/presets/{a.preset}.yaml")
+        if not Path(config_path).is_file():
+            print(f"No preset named '{a.preset}' in config/presets.", file=sys.stderr)
+            return 2
+        if a.config:
+            print("Use either --config or --preset, not both.", file=sys.stderr)
+            return 2
+    cfg = load_config(config_path, ov)
     out = Path(a.out) if a.out else resolve_path(cfg["paths"]["runs_dir"])
     files = _expand(a.videos)
     if not files:
@@ -81,6 +92,8 @@ def main(argv=None) -> int:
     r.add_argument("videos", nargs="+")
     r.add_argument("--config"); r.add_argument("--out"); r.add_argument("--layer", type=int, choices=[0, 1, 2])
     r.add_argument("--detector"); r.add_argument("--sample-fps", type=float)
+    r.add_argument("--preset", help="name of a file in config/presets, e.g. cfd_medium_clahe")
+    r.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], help="device for the cfd detector")
     r.add_argument("--id", help="recording id (folder name)"); r.add_argument("--video-id")
     r.add_argument("--window-start", type=float); r.add_argument("--window-end", type=float)
     r.set_defaults(fn=cmd_run)
@@ -93,7 +106,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     try:
         return a.fn(a)
-    except (FileNotFoundError, ValueError, PermissionError, NotImplementedError) as ex:
+    except (FileNotFoundError, ValueError, PermissionError, NotImplementedError, ImportError) as ex:
         print(f"Error: {ex}", file=sys.stderr)
         return 1
 

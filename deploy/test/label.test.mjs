@@ -1,0 +1,131 @@
+// Run with:  node deploy/test/label.test.mjs   (Node 18+)
+// Tests the pure helpers in app/static/label.js: next-frame choice, zoom and pan maths, names.
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+const L = createRequire(import.meta.url)("../../app/static/label.js");
+
+let n = 0;
+const t = (name, fn) => { fn(); n++; console.log("ok - " + name); };
+const frames = Array.from({ length: 100 }, (_, i) => ({ frame_id: "f" + i, time_s: 60 + i * 20 }));
+
+t("names: presets keep their spelling, others are trimmed and capped", () => {
+  assert.equal(L.cleanName("  jacob "), "Jacob");
+  assert.equal(L.cleanName("ADRIEN"), "Adrien");
+  assert.equal(L.cleanName("Sam\n  Lee"), "Sam Lee");
+  assert.equal(L.cleanName("x".repeat(80)).length, 40);
+  assert.equal(L.cleanName(null), "");
+});
+t("next frame: fewest labels first, never done or skipped by this person, never two-label frames", () => {
+  const counts = { f0: 1, f1: 1, f2: 2, f3: 0 };
+  const mine = { f3: { state: "done" }, f4: { state: "skipped" } };
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) {
+    const f = L.pickNext(frames, counts, mine, "Jacob", null);
+    if (!f) break;
+    assert.ok(!mine[f.frame_id] && (counts[f.frame_id] || 0) < 2);
+    seen.add(f.frame_id);
+    mine[f.frame_id] = { state: "done" };       // pretend it was saved
+    counts[f.frame_id] = (counts[f.frame_id] || 0) + 1;
+  }
+  assert.ok(!seen.has("f2") && !seen.has("f3") && !seen.has("f4"));
+  assert.equal(L.pickNext(frames, counts, mine, "Jacob", null), null);   // nothing left
+});
+t("next frame: zero-label frames come before one-label frames", () => {
+  const counts = {}; for (let i = 0; i < 100; i++) counts[frames[i].frame_id] = i === 7 ? 0 : 1;
+  assert.equal(L.pickNext(frames, counts, {}, "Ali", null).frame_id, "f7");
+});
+t("next frame: stable for one person, different between people", () => {
+  const a1 = L.pickNext(frames, {}, {}, "Jacob", null).frame_id, a2 = L.pickNext(frames, {}, {}, "jacob", null).frame_id;
+  assert.equal(a1, a2);
+  const firsts = new Set(["Jacob", "Ali", "Gina", "Wang", "Adrien"].map((p) => L.pickNext(frames, {}, {}, p, null).frame_id));
+  assert.ok(firsts.size >= 4, "five people should mostly start on different frames, got " + [...firsts]);
+});
+t("next frame: skips the frame being left", () => {
+  const first = L.pickNext(frames, {}, {}, "Gina", null).frame_id;
+  assert.notEqual(L.pickNext(frames, {}, {}, "Gina", first).frame_id, first);
+});
+t("fit and clamp: centred when smaller, no empty edge when larger", () => {
+  const fit = L.fitScale(1000, 500, 3840, 2160);
+  assert.ok(Math.abs(fit - 500 / 2160) < 1e-9);
+  let v = L.clampView({ k: 1, x: 500, y: 500 }, 1000, 500, 3840, 2160, fit);
+  assert.ok(Math.abs(v.y) < 1e-9 && v.x > 0);                         // centred sideways, full height
+  v = L.clampView({ k: 4, x: 100, y: 100 }, 1000, 500, 3840, 2160, fit);
+  assert.equal(v.x, 0); assert.equal(v.y, 0);                          // dragged past the edge: pinned
+  v = L.clampView({ k: 4, x: -99999, y: -99999 }, 1000, 500, 3840, 2160, fit);
+  assert.ok(Math.abs(v.x - (1000 - 3840 * fit * 4)) < 1e-6);
+});
+t("zoom keeps the point under the cursor fixed and stops at the limits", () => {
+  const fit = 0.25, v0 = { k: 1, x: 10, y: 20 };
+  const before = [(300 - v0.x) / (fit * v0.k), (200 - v0.y) / (fit * v0.k)];
+  const v1 = L.zoomAt(v0, 3, 300, 200, fit);
+  const after = [(300 - v1.x) / (fit * v1.k), (200 - v1.y) / (fit * v1.k)];
+  assert.ok(Math.abs(before[0] - after[0]) < 1e-9 && Math.abs(before[1] - after[1]) < 1e-9);
+  assert.equal(L.zoomAt(v0, 0.01, 0, 0, fit).k, 1);
+  assert.equal(L.zoomAt(v0, 1e6, 0, 0, fit).k, 24);
+});
+t("filters and progress text", () => {
+  assert.equal(L.filterString(100, 100, false), "brightness(100%) contrast(100%)");
+  assert.match(L.filterString(120, 150, true), /saturate/);
+  assert.equal(L.progressText(12, 34, 100), "You: 12 frames. Team: 34 of 100 frames have two labels.");
+  assert.equal(L.progressText(1, 0, 100), "You: 1 frame. Team: 0 of 100 frames have two labels.");
+  assert.equal(L.fmtTime(125), "2:05");
+});
+t("species text: cleaned and capped; type-ahead ranks starts first, finds common names and aliases", () => {
+  assert.equal(L.cleanSpecies("  Gadus \u0007  morhua\n"), "Gadus morhua");
+  assert.equal(L.cleanSpecies("x".repeat(100)).length, 80);
+  assert.equal(L.cleanSpecies(null), "");
+  const idx = L.buildSpeciesIndex([
+    { scientific_name: "Gadus morhua", common_names: ["Atlantic cod", "cod"], aliases: ["Morhua vulgaris"] },
+    { scientific_name: "Pollachius virens", common_names: ["Pollock", "coalfish"], aliases: [] },
+    { scientific_name: "Scomber scombrus", common_names: ["Atlantic mackerel"], aliases: [] },
+    { common_names: ["broken"] }, null,
+  ]);
+  assert.equal(idx.length, 3);
+  assert.equal(L.speciesMatches(idx, "cod")[0].sci, "Gadus morhua");          // starts with "cod"
+  assert.equal(L.speciesMatches(idx, "atl").length, 2);                         // "Atlantic cod" and "Atlantic mackerel"
+  assert.equal(L.speciesMatches(idx, "coal")[0].sci, "Pollachius virens");
+  assert.equal(L.speciesMatches(idx, "vulgaris")[0].sci, "Gadus morhua");       // alias, inside the name
+  assert.equal(L.speciesMatches(idx, "zzz").length, 0);
+  assert.equal(L.speciesMatches(idx, "").length, 3);
+  assert.equal(L.resolveSpecies(idx, "Atlantic Cod"), "Gadus morhua");          // a known name becomes the scientific name
+  assert.equal(L.resolveSpecies(idx, "juvenile flatfish?"), "juvenile flatfish?");   // free text stays as typed
+  assert.equal(L.resolveSpecies(idx, "   "), "");
+});
+t("menu placement stays inside the viewport", () => {
+  assert.deepEqual(L.clampMenu(100, 100, 190, 140, 1024, 768), { x: 100, y: 100 });
+  assert.deepEqual(L.clampMenu(1000, 760, 190, 140, 1024, 768), { x: 1024 - 190 - 6, y: 768 - 140 - 6 });
+  assert.deepEqual(L.clampMenu(-50, -50, 190, 140, 1024, 768), { x: 6, y: 6 });
+  assert.deepEqual(L.clampMenu(10, 10, 2000, 2000, 1024, 768), { x: 6, y: 6 });   // bigger than the window: top left
+});
+t("clip time is relative to the count frame, and the count second is half a second either side", () => {
+  assert.equal(L.relTime(0, 5), "-5.0 s"); assert.equal(L.relTime(5, 5), "0.0 s"); assert.equal(L.relTime(7.34, 5), "+2.3 s");
+  assert.ok(L.inCountWindow(4.5, 5) && L.inCountWindow(5.5, 5) && L.inCountWindow(5, 5));
+  assert.ok(!L.inCountWindow(4.49, 5) && !L.inCountWindow(5.51, 5));
+  assert.deepEqual(L.SPEEDS, [1, 0.5, 0.25]);
+});
+t("views are kept in a fixed order with unknown names dropped", () => {
+  assert.deepEqual(L.orderedViews(["clip", "frame", "bogus", "movement", "frame"]), ["frame", "movement", "clip"]);
+  assert.deepEqual(L.orderedViews(null), []);
+});
+t("not fish: counts leave them out and the text shows them", () => {
+  const pts = [{ kind: "fish" }, { kind: "fish" }, { kind: "invertebrate" }, { kind: "not_fish", category: "algae" }, { kind: "not_fish" }];
+  assert.deepEqual(L.countMarks(pts), { fish: 2, invertebrate: 1, not_fish: 2 });
+  assert.equal(L.markCountText(pts, false), "Marked: 2 fish, 1 invertebrate, 2 not fish");
+  assert.equal(L.markCountText([{ kind: "not_fish" }], false), "Marked: 0 fish, 0 invertebrates, 1 not fish");
+  assert.equal(L.markCountText([], false), "No marks yet");
+  assert.equal(L.markCountText([], true), "Marked: no animals");
+});
+t("not fish: only not fish marks counts as no animals", () => {
+  assert.ok(L.onlyNotFish([{ kind: "not_fish" }, { kind: "not_fish" }]));
+  assert.ok(!L.onlyNotFish([{ kind: "not_fish" }, { kind: "fish" }]));
+  assert.ok(!L.onlyNotFish([]));
+});
+t("not fish: points are cleaned, old points still load", () => {
+  assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "not_fish", category: "debris", species: "x" }), { x: 1, y: 2, kind: "not_fish", category: "debris" });
+  assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "not_fish", category: "nope" }), { x: 1, y: 2, kind: "not_fish" });
+  assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "fish", species: " Gadus  morhua", category: "algae" }), { x: 1, y: 2, kind: "fish", species: "Gadus morhua" });
+  assert.deepEqual(L.cleanPoint({ x: 1, y: 2, kind: "invertebrate" }), { x: 1, y: 2, kind: "invertebrate" });
+  assert.equal(L.cleanPoint({ x: "a", y: 2 }), null);
+  assert.deepEqual(L.NOT_FISH_CATEGORIES.map((c) => c.id), ["algae", "debris", "equipment", "seabed", "bubbles", "other"]);
+});
+console.log(n + " checks passed");

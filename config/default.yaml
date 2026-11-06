@@ -3,8 +3,11 @@
 
 layer: 1                 # 0 = manual assist, 1 = local model, 2 = stubs (2a) ; see README
 sample_fps: 2.0          # sampling rate of the full-window motion scan
+detect_fps_segments: 0.2 # sparse model pass over active segments (frames per second). The model is slow, so it
+                         # does NOT run on every sampled frame. Only used by detectors that need full resolution.
 proxy_width: 320         # width used ONLY for the fast motion scan. Faint movement can vanish at low resolution.
-detect_width: 640        # width of frames given to detectors (0 = original). Boxes are scaled back to original pixels.
+detect_width: 640        # width of frames given to detectors such as motion_blob and onnx (0 = original). Boxes are scaled back.
+                         # The cfd detector ignores this: it always gets original resolution frames and tiles them.
 
 recording:
   site: null
@@ -14,7 +17,8 @@ recording:
 # Which backend runs each stage. Names are registered in clipsift/stages.
 stages:
   proposer: median_background
-  detector: motion_blob  # development stand-in. Use onnx once a model path is set.
+  detector: cfd          # Community Fish Detector (fish only). Needs requirements-model.txt and weights in models/.
+                         # Use motion_blob (no model, development stand-in) or onnx instead if you prefer.
   tracker: iou
   classifier: placeholder
   counter: basic
@@ -60,6 +64,18 @@ audit:
   seed: 1234
 
 detector:
+  cfd:
+    weights: null        # path to a .pth file; null = newest models/cfd-rf-detr-<variant>-*.pth
+    variant: nano        # nano | small | medium. Names the detections: source is cfd:<variant>
+    tile_size: 512       # pixels, cut from the ORIGINAL frame. Whole-frame use finds almost nothing.
+    overlap: 0.25
+    threshold: 0.05      # confidence is low on turbid water. One-frame test only; not tuned or validated.
+    count_threshold: 0.1 # stricter, for the suggested count only. Tested on two frames: not validated.
+    enhancement: none    # none | clahe (CLAHE on the L channel, before tiling)
+    device: auto         # auto picks cuda, then mps, then cpu. Or force cuda | mps | cpu.
+    batch: 1             # tiles per model call
+    merge_overlap: 0.5   # cross-tile merge: drop a box if this share of the smaller box is covered
+    roi_mask: null       # optional grayscale image, non-zero = analyse. null = whole frame.
   onnx:
     model_path: null     # REQUIRED for the onnx backend, for example models/fish.onnx
     input_size: 640
@@ -93,6 +109,11 @@ classifier:
 
 counter:
   mean_count_interval_s: 1.0
+
+# Review order for subsample points and segments (higher first). Applies when a model detector ran.
+review:
+  mid_conf_low: 0.10     # detections scoring between these two are 'mid-confidence' and rank first
+  mid_conf_high: 0.50
 
 loop:
   max_s: 20

@@ -1,0 +1,25 @@
+# Never commit: team code, secrets, local tooling
+.team_key
+**/.team_key
+.dev.vars
+.env
+.wrangler/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.venv/
+
+# Video and generated run output stay out of git (size, and rights on footage)
+runs/*
+!runs/.gitkeep
+deploy/public/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.crdownload
+
+# Marked-up partner screenshots and frames derived from them
+labels/debug/

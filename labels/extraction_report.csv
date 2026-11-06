@@ -1,0 +1,29 @@
+file,transect,stat,date,time_s,tags,grid_cols,grid_rows,red_dots,black_dots,red_ellipses,per_cell_counts,written_totals_hand_read,comparison,warnings
+T1-STAT 2_Sept 10 _count @ 14min_enhanced.png,T1,STAT 2,Sept 10,840,enhanced,6,3,0,567,0,"0,0=13;0,1=9;0,2=7;1,0=5;1,1=3;1,2=6;1,3=6;1,4=35;1,5=109;2,0=58;2,1=42;2,2=4;2,3=87;2,4=119;2,5=64","""""",,"cell 1,5 has 109 dots: likely texture false positives|cell 2,4 has 119 dots: likely texture false positives|cell 2,5 has 64 dots: likely texture false positives|cell 2,3 has 87 dots: likely texture false positives|cell 2,1 has 42 dots: likely texture false positives|cell 2,0 has 58 dots: likely texture false positives"
+T1-STAT 2_Sept 10 _count @ 22min_enhanced.png,T1,STAT 2,Sept 10,1320,enhanced,6,3,0,179,0,"0,0=13;0,1=25;0,2=12;0,3=7;0,4=1;1,0=14;1,1=10;1,2=3;1,3=8;1,4=8;1,5=2;2,1=4;2,2=2;2,3=2;2,4=58;2,5=10","{""0,0"": 13, ""0,1"": 25, ""0,2"": 12, ""0,3"": 7, ""1,0"": 14, ""1,1"": 10, ""1,2"": 3, ""1,3"": 8, ""1,4"": 8, ""1,5"": 2}","0,0: extracted 13 vs written 13;0,1: extracted 25 vs written 25;0,2: extracted 12 vs written 12;0,3: extracted 7 vs written 7;1,0: extracted 14 vs written 14;1,1: extracted 10 vs written 10;1,2: extracted 3 vs written 3;1,3: extracted 8 vs written 8;1,4: extracted 8 vs written 8;1,5: extracted 2 vs written 2","player bar not found; used fixed fallback box|cell 2,4 has 58 dots: likely texture false positives"
+T1-STAT 3_Sept 9 _count @ 17min.png,T1,STAT 3,Sept 9,1020,,0,0,0,0,2,,"""""",,no grid detected
+T1-STAT 3_Sept 9 _count @ 19min.png,T1,STAT 3,Sept 9,1140,,0,0,0,0,1,,"""""",,player bar not found; used fixed fallback box|no grid detected
+T1-STAT 3_Sept 9 _count @ 20min.png,T1,STAT 3,Sept 9,1200,,0,0,0,0,3,,"""""",,no grid detected
+T1_STAT 2_Sept 10_count @ 22 _marked green crab.png,T1,STAT 2,Sept 10,,marked green crab,0,0,0,0,1,,"""""",,player bar not found; used fixed fallback box|no grid detected
+T1_STAT 2_Sept 10_count @ 22 _no enhancements_marks.png,T1,STAT 2,Sept 10,,no enhancements,0,0,0,0,0,,"""""",,player bar not found; used fixed fallback box|no grid detected
+T2_STAT 2_Sept 10_count@ 10min.png,T2,STAT 2,Sept 10,600,,0,0,0,0,2,,"""""",,player bar not found; used fixed fallback box|no grid detected
+T2_STAT 2_Sept 10_count@ 11min.png,T2,STAT 2,Sept 10,660,,0,0,0,0,1,,"""""",,no grid detected
+T2_STAT 2_Sept 10_count@ 12min.png,T2,STAT 2,Sept 10,720,,0,0,0,0,2,,"""""",,no grid detected
+T2_STAT 2_Sept 10_count@ 13min.png,T2,STAT 2,Sept 10,780,,6,3,18,3,0,"0,2=5;0,3=11;0,4=2;2,2=3","""""",,
+T2_STAT 2_Sept 10_count@ 14min.png,T2,STAT 2,Sept 10,840,,6,3,46,0,3,"0,0=30;0,1=9;1,0=7","{""0,0"": 30, ""0,1"": 9, ""1,0"": 7}","0,0: extracted 30 vs written 30;0,1: extracted 9 vs written 9;1,0: extracted 7 vs written 7",
+T2_STAT 2_Sept 10_count@ 15min.png,T2,STAT 2,Sept 10,900,,0,0,0,0,3,,"""""",,no grid detected
+T2_STAT 2_Sept 10_count@ 21min.png,T2,STAT 2,Sept 10,1260,,6,3,134,0,2,"0,0=19;0,1=30;0,2=34;0,3=28;0,4=19;0,5=4","""""",,
+T2_STAT 2_Sept 10_count@ 7min.png,T2,STAT 2,Sept 10,420,,0,0,0,0,2,,"""""",,no grid detected
+T2_STAT 2_Sept 10_count@ 8min.png,T2,STAT 2,Sept 10,480,,0,0,0,0,1,,"""""",,player bar not found; used fixed fallback box|no grid detected
+T2_STAT 2_Sept 10_count@ 9min.png,T2,STAT 2,Sept 10,540,,0,0,0,0,4,,"""""",,no grid detected
+T2_STAT 3_Sept 9_count@ 25min30sec.png,T2,STAT 3,Sept 9,1530,,0,0,0,10,1,,"""""",,no grid detected
+T2_STAT 3_Sept 9_count@ 28min.png,T2,STAT 3,Sept 9,1680,,0,0,0,0,1,,"""""",,player bar not found; used fixed fallback box|no grid detected
+T3-STAT 3_Sept 9 _count @ 26min.png,T3,STAT 3,Sept 9,1560,,0,0,0,0,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 27min12sec.png,T3,STAT 3,Sept 9,1632,,0,0,0,0,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 27min50sec.png,T3,STAT 3,Sept 9,1670,,0,0,0,8,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 30min.png,T3,STAT 3,Sept 9,1800,,0,0,0,0,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 31min.png,T3,STAT 3,Sept 9,1860,,0,0,0,0,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 32min.png,T3,STAT 3,Sept 9,1920,,0,0,0,0,2,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 33min.png,T3,STAT 3,Sept 9,1980,,0,0,0,0,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 34min.png,T3,STAT 3,Sept 9,2040,,0,0,0,8,1,,"""""",,no grid detected
+T3-STAT 3_Sept 9 _count @ 35min.png,T3,STAT 3,Sept 9,2100,,0,0,0,0,1,,"""""",,no grid detected

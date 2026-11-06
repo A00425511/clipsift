@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coastal Action: team brief</title>
+<style>
+:root{--bg:#fafaf8;--fg:#1f2326;--muted:#5d646a;--line:#d9dcde;--card:#ffffff;--accent:#1d5c7a;--accentbg:#e4eef3;--warn:#8a5a00;--warnbg:#fbf1dc;--radius:6px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16191b;--fg:#e4e6e7;--muted:#a0a8ad;--line:#33393d;--card:#1d2124;--accent:#7fc0dd;--accentbg:#1f3440;--warn:#e8c477;--warnbg:#3a2f16}}
+:root[data-theme="dark"]{--bg:#16191b;--fg:#e4e6e7;--muted:#a0a8ad;--line:#33393d;--card:#1d2124;--accent:#7fc0dd;--accentbg:#1f3440;--warn:#e8c477;--warnbg:#3a2f16}
+:root[data-theme="light"]{--bg:#fafaf8;--fg:#1f2326;--muted:#5d646a;--line:#d9dcde;--card:#ffffff;--accent:#1d5c7a;--accentbg:#e4eef3;--warn:#8a5a00;--warnbg:#fbf1dc}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;overflow-wrap:anywhere}
+a{color:var(--accent)}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:3px}
+header.top{padding:16px 16px 0;max-width:1000px;margin:0 auto}
+header.top h1{font-size:1.4rem;margin:0 0 8px}
+nav.tabs{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+nav.tabs .in{max-width:1000px;margin:0 auto;padding:0 16px;display:flex;gap:4px;flex-wrap:wrap}
+nav.tabs a{display:block;padding:10px 14px;text-decoration:none;color:var(--muted);border-bottom:3px solid transparent;font-weight:600;font-size:.95rem}
+nav.tabs a[aria-current="page"]{color:var(--accent);border-bottom-color:var(--accent)}
+main{max-width:1000px;margin:0 auto;padding:8px 16px 24px}
+.view{display:block}
+body[data-view="quick"] #full,body[data-view="full"] #quick{display:none}
+h2{font-size:1.3rem;margin:20px 0 8px}
+h3{font-size:1.05rem;margin:24px 0 6px;border-top:1px solid var(--line);padding-top:14px}
+h4{font-size:.95rem;margin:14px 0 4px}
+p,ul,ol{margin:6px 0 10px}
+ul,ol{padding-left:22px}
+li{margin:3px 0}
+code,pre{font:.85rem/1.4 ui-monospace,Menlo,Consolas,monospace}
+pre{margin:0;padding:10px 12px}
+.note{background:var(--accentbg);border-left:4px solid var(--accent);padding:8px 12px;margin:10px 0;border-radius:0 4px 4px 0}
+.caution{background:var(--warnbg);border-left:4px solid var(--warn);padding:8px 12px;margin:10px 0;border-radius:0 4px 4px 0}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:8px 0 12px;border:1px solid var(--line);border-radius:4px;background:var(--card);max-width:100%}
+table{border-collapse:collapse;width:100%;min-width:600px;font-size:.88rem}
+th,td{padding:6px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--accentbg);font-weight:600}
+tr:last-child td{border-bottom:0}
+.tag{display:inline-block;font-size:.68rem;font-weight:600;line-height:1.2;padding:1px 6px;margin-left:4px;border:1px dashed var(--warn);color:var(--warn);background:var(--warnbg);border-radius:9px;vertical-align:middle;white-space:nowrap}
+.tag.draft{border:1px solid var(--accent);color:var(--accent);background:var(--card);border-radius:3px}
+details{border:1px solid var(--line);border-radius:4px;background:var(--card);padding:8px 12px;margin:8px 0}
+details summary{cursor:pointer;font-weight:600}
+/* quick view */
+.lede{font-size:1.05rem;margin:4px 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:10px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px 14px}
+.card h3{border:0;margin:0 0 4px;padding:0;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+.card ul,.card ol{margin:2px 0;padding-left:18px}
+.card li{margin:1px 0;font-size:.93rem}
+.card p{margin:2px 0;font-size:.93rem}
+.card.dates p b{display:block;color:var(--accent);font-size:.95rem}
+.card.dates p{margin:0 0 4px}
+.card.risk{border-left:4px solid var(--warn);background:var(--warnbg)}
+.card.accent{background:var(--accentbg)}
+.go{display:inline-block;margin:6px 0 4px;font-weight:600}
+footer{max-width:1000px;margin:0 auto;padding:16px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+@media print{
+ body{background:#fff;color:#000;font-size:11pt}
+ nav.tabs,.go{display:none}
+ body[data-view] #quick,body[data-view] #full{display:block !important}
+ #full{page-break-before:always}
+ .scroll{overflow:visible;border:1px solid #999}
+ table{min-width:0;font-size:9pt}
+ pre{white-space:pre-wrap}
+ a{color:#000}
+ .card{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<header class="top">
+<h1>Coastal Action: team brief</h1>
+</header>
+<nav class="tabs" aria-label="Views"><div class="in">
+<a href="#quick" data-tab="quick">The brief</a>
+<a href="#full" data-tab="full">Full plan</a>
+</div></nav>
+<main>
+
+<!-- ============ QUICK ============ -->
+<section class="view" id="quick" aria-label="The brief">
+<h2>The brief</h2>
+<p class="lede">We are building ClipSift (working title): a local tool that helps Coastal Action staff count fish and invertebrates in underwater video faster and more consistently.</p>
+
+<div class="grid">
+<div class="card dates"><h3>Key dates</h3>
+<p><b>Fri 6 Nov, 2:00pm</b>Mentors</p>
+<p><b>Sun 8 Nov, 11:59pm AST</b>Submission</p>
+<p><b>Mon 9 Nov</b>Presentations, Bedford</p>
+</div>
+<div class="card"><h3>How they work today</h3>
+<ul>
+<li>Stationary GoPro video</li>
+<li>MeanCount from sampled frames, fish and invertebrates</li>
+<li>Up to 6 to 7 person-hours per video hour (their estimate)</li>
+<li>Schools counted by dotting fish on a grid</li>
+</ul></div>
+<div class="card"><h3>The limit</h3>
+<p>No hosted generative AI. A small local model on their desktop is the plan, pending one confirmation.</p>
+</div>
+<div class="card accent"><h3>The plan</h3>
+<ul>
+<li><b>Layer 0:</b> manual assist</li>
+<li><b>Layer 1:</b> local model (the product)</li>
+<li><b>Layer 2:</b> scale-up demo</li>
+</ul></div>
+<div class="card"><h3>Where we are</h3>
+<p>A working app is live for the team. It uses two short sections of Coastal Action's real video and has no automatic counts yet. A first baseline on one frame found 16% to 44% of fish at about 18% precision, so we need a trained detector.</p>
+</div>
+<div class="card risk"><h3>Biggest risk</h3>
+<p>Accuracy in turbid water with few labels.</p>
+</div>
+</div>
+
+<div class="card"><h3>Try the demo</h3>
+<p>Open <a href="https://clipsift-demo.pages.dev/" id="demo-link">https://clipsift-demo.pages.dev/</a> (team code in the group chat).</p>
+<p>Enter a name, follow steps 1 to 4 or take the tour from the ? button, then send a feedback note.</p>
+</div>
+
+<div class="card"><h3>Top three, starting tonight</h3>
+<ol>
+<li>Everyone tries the demo and sends feedback.</li>
+<li>Agree workstreams and confirm what Coastal Action can share. Hand-count data would help most.</li>
+<li>Start training a detector afterward.</li>
+</ol></div>
+<a class="go" href="#full">Read the full plan</a>
+</section>
+
+<!-- ============ FULL ============ -->
+<section class="view" id="full" aria-label="Full plan">
+<h2>Full plan</h2>
+<p>This page is for the team: Jacob, Ali, Gina, Wang and Adrien. It covers the Coastal Action problem, what we plan to build, and what we know and do not know. A small <span class="tag">unconfirmed</span> tag marks facts we have not verified. A <span class="tag draft">draft</span> tag marks numbers from Coastal Action's draft protocol, which may change. "Coastal Action told us" marks remarks made to us in conversation, which are not exact quotes. ClipSift is a working title. "Sam" is a fictional persona for the demo.</p>
+
+<nav aria-label="Sections in this plan"><ul>
+<li><a href="#s-problem">The problem and the official statement</a></li>
+<li><a href="#s-limit">What the AI limit does and does not cover</a></li>
+<li><a href="#s-today">How Coastal Action works today</a></li>
+<li><a href="#s-photos">What the photos show</a></li>
+<li><a href="#s-goal">Goal and recommended MVP</a></li>
+<li><a href="#s-layers">The layers and upgrade ladder</a></li>
+<li><a href="#s-arch">Architecture</a></li>
+<li><a href="#s-train">Training plan</a></li>
+<li><a href="#s-over-time">Accuracy over time</a></li>
+<li><a href="#s-species">Species system</a></li>
+<li><a href="#s-count">Count accuracy and validation</a></li>
+<li><a href="#s-data">Data available</a></li>
+<li><a href="#s-tools">Similar tools</a></li>
+<li><a href="#s-value">Value model</a></li>
+<li><a href="#s-hw">Hardware</a></li>
+<li><a href="#s-try">Try the demo</a></li>
+<li><a href="#s-proto">Prototype status</a></li>
+<li><a href="#s-team">Team workstreams and weekend timetable</a></li>
+<li><a href="#s-demo">Demo story</a></li>
+<li><a href="#s-q">Open questions for Coastal Action</a></li>
+<li><a href="#s-claim">Things not to claim</a></li>
+<li><a href="#s-src">Key sources</a></li>
+</ul></nav>
+
+<h3 id="s-problem">The problem and the official statement</h3>
+<p>Coastal Action is a Mahone Bay charity (Bluenose Coastal Action Foundation, operating as Coastal Action). Its problem statement describes Nova Scotia waters with high and rapid tides, deep ports and high turbidity, and a growing number of tropical, invasive and unexpected fish that are hard to identify. Video surveys avoid handling and stressing fish, which is usually prohibited or discouraged. The statement lists four issues with video surveys:</p>
+<ul>
+<li>An outdated species list, especially with climate change drivers.</li>
+<li>Low visibility and interference from algae, sediment, grass and similar material.</li>
+<li>Reliance on human detection, with its errors and fatigue.</li>
+<li>Staff cost of analysing video.</li>
+</ul>
+<p>The ask is a resource that can assist with fish detection, identification and numeration within the conditions of Nova Scotia's waters. The statement names no audience beyond that. The document header reads "Blue Coastal Action"; we say "Coastal Action".</p>
+<div class="caution"><b>Limitations (official statement, exact wording):</b> "Due to environmental concerns, our use of AI is heavily restricted. At this time, we would not be able to support a publicly hosted AI model. However, we may be able to support an open-source model hosted locally, once we have the hardware to implement the system and more developed guidelines around the use of AI at Coastal Action."</div>
+<p>A publicly hosted AI model is ruled out at this time. A locally hosted open-source model is a possibility that depends on hardware and on guidelines Coastal Action is still developing. We have not seen their in-house AI policy.</p>
+
+<h3 id="s-limit">What the AI limit does and does not cover</h3>
+<p>Our understanding, from talking with Coastal Action, is that the limit is about large hosted generative AI services such as Claude or ChatGPT. A small model built for one task and run on a local desktop is a different thing. The official wording fits this reading, because it allows for "an open-source model hosted locally". It still mentions hardware and guidelines, so one plain confirmation from Coastal Action is needed before we treat the local model as accepted <span class="tag">unconfirmed</span>.</p>
+<div class="scroll"><table>
+<thead><tr><th>What the limit is about</th><th>What we are building</th></tr></thead>
+<tbody>
+<tr><td>Generative AI services like Claude or ChatGPT</td><td>A small, task-specific vision model: a local fish detection model</td></tr>
+<tr><td>Hosted or public AI models</td><td>Runs on their desktop, offline, from pinned open-source files; footage stays local</td></tr>
+<tr><td>Large-scale compute</td><td>Assists a person, who confirms every count</td></tr>
+</tbody></table></div>
+<p>The shipped tool uses no hosted generative AI. During development the team treats the footage we receive as public access, so design and training are not limited. This is the team's position and we have not seen it in writing from Coastal Action <span class="tag">unconfirmed</span>. The local-only rule and their policy apply to what we hand over.</p>
+<details><summary>Q&amp;A line if asked about the limit</summary>
+<p><b>Q:</b> Does the tool use hosted generative AI, and what about energy?<br><b>A:</b> It runs locally on their desktop with no hosted generative AI. We have not measured energy use.</p>
+</details>
+
+<h3 id="s-today">How Coastal Action works today</h3>
+<p>Coastal Action told us a GoPro records clips, several of which need review. Review is manual, mainly in VLC plus basic image software. For fish counts, a person takes a still and does a grid-based tagging count. Contrast and basic edits have helped, but Coastal Action described it as "far from a perfect science". Movement matters: a crab that was hard to see in one still showed up more easily in a short clip because it moved.</p>
+<p>Coastal Action told us it takes up to about 7 person-hours to assess 1 hour of video, with our notes recording 6 to 7. This is a spoken estimate, not a measurement.</p>
+<h4>The draft Video Analysis Protocol <span class="tag draft">draft</span></h4>
+<p>Coastal Action shared a draft protocol with open comments, so every number in it may change.</p>
+<ul>
+<li><b>Setup:</b> stationary, unbaited remote underwater video. Results feed long-term monitoring of a living shoreline offsetting project, so results must stay comparable across years.</li>
+<li><b>Window:</b> about 15 minutes of each video, after discarding the first and last minute, with up to 4 more minutes removable for sediment or setup <span class="tag draft">draft</span>.</li>
+<li><b>Metric:</b> MeanCount from systematic subsamples: 15 frames at 60 second intervals <span class="tag draft">draft</span>. Another draft version cites 60 points at 12 second intervals and an accuracy inflexion at 60 frames <span class="tag draft">draft</span>. Which applies is an open question.</li>
+<li><b>At each point:</b> watch about 5 seconds either side for context, and count only within the designated one second, to avoid double counting <span class="tag draft">draft</span>.</li>
+<li><b>What is counted:</b> fish and invertebrates (crabs, shrimp, worms, snails), plus species richness per video and whether juveniles are present.</li>
+<li><b>Two-of-four rule:</b> count an organism only if at least two of four characteristics hold: shape, anatomical features, colouration or flashes, swimming behaviour or movement. When unsure, exclude. Undercounting is preferred to overcounting.</li>
+<li><b>Visibility:</b> recorded in categories: under 0.5 m, 0.5 to 1.0 m, 1.0 to 1.5 m, over 1.5 m.</li>
+<li><b>Quality control:</b> at least 10% of annotated frames are counted a second time, blind, by another person. The target is under 6% difference and 95% agreement <span class="tag draft">draft</span>. The protocol does not include its percent-difference formula.</li>
+</ul>
+<p><b>Open discrepancies.</b> Recording length is unconfirmed: about 20 minutes in the protocol, about 1 hour in conversation, and 35:47 for the video we have. The usual length is to confirm. Coastal Action described grid tagging, but the protocol does not mention a grid. Both go to Coastal Action.</p>
+
+<h3 id="s-photos">What the photos show</h3>
+<p>Coastal Action shared 28 marked screenshots from 9 and 10 September subsamples (about 1918 by 1078 pixels). They show a stationary camera, a measuring pole in frame, and a rock or sand seabed.</p>
+<ul>
+<li><b>Schools are counted with a grid.</b> A grid of about 5 columns by 3 rows is laid over the frame, with one dot per fish and a total in each cell. Two example frames read about 102 and 46 fish by the written totals. The handwriting readings need checking <span class="tag">unconfirmed</span>.</li>
+<li><b>Large animals get ellipses.</b> Red ellipses mark individual animals, including large, camouflaged crabs on the bottom.</li>
+<li><b>Enhancement.</b> Some frames were strongly adjusted in an image editor. Marked and unmarked versions exist for some moments.</li>
+<li><b>Recording length.</b> The VLC bars show totals of about 36 minutes, matching the 35:47 video we have.</li>
+</ul>
+<p>This suggests two separate detection problems: small schooling fish in midwater (about 120 pixels long at 4K and faint, many per frame) and large camouflaged animals on the bottom. A plain box detector may struggle with the first.</p>
+<div class="caution"><b>Do not train on the marked screenshots directly.</b> A model would learn the red marks and the player bar. We extracted dots with a script. In cells with written totals, the dot counts match those totals. Elsewhere the script picks up seabed texture (for example 58 dots in one cell, 567 black dots in one image). Treat the extractions as weak labels that need a person to check them. Clean frames at the same timestamps should come from the original video.</div>
+
+<h3 id="s-goal">Goal and recommended MVP</h3>
+<p><b>Goal.</b> Build a program that makes Coastal Action's MeanCount workflow fast and consistent by their own rules. The tool assists a person and does not take over review. With it, more subsample points could become affordable, since one draft version of the protocol cites an accuracy inflexion at 60 frames. We state no time saving and no accuracy. The harder part is training and accuracy over time in turbid water, as sites, seasons and cameras vary.</p>
+<p>Our judgement is that the strongest package is Layers 0 and 1 as the product, with a contained Layer 2 demo to show the scale-up path.</p>
+<h4>Must-have</h4>
+<ul>
+<li>Automatic detection, tracking and counts on a long recording (Layer 1, on by default).</li>
+<li>A review queue ordered by model uncertainty, so uncertain and disagreeing segments come first.</li>
+<li>Local fine-tuning from reviewed frames, overnight on a GPU where one exists, or on a borrowed GPU with the weights copied back.</li>
+<li>Species suggestions with a gallery. Low-confidence cases stay "unknown" and go to a person.</li>
+<li>Method match: subsample points by their protocol, a dot tool and optional grid for schools, and the two-of-four checklist.</li>
+<li>Export in their sheet layout, shown beside the human count on stills they already counted.</li>
+<li>Manual-assist mode (Layer 0) in the same review app, as a fallback and a check.</li>
+<li>Safeguards: unexplained motion is labelled "movement, unidentified" and reviewed, never dropped; quiet time is set aside, never deleted, with a random human audit of roughly 5%; a test of proxy resolution against full resolution.</li>
+</ul>
+<h4>Should-have</h4>
+<ul><li>A site-aware species shortlist (watershed-level status only), per-site calibration, and an accuracy dashboard across model versions.</li></ul>
+<h4>Out of scope</h4>
+<ul><li>Real-time counting, sonar fusion, stereo length measurement, and hosted generative AI in the shipped tool.</li></ul>
+
+<h3 id="s-layers">The layers and upgrade ladder</h3>
+<div class="scroll"><table>
+<thead><tr><th></th><th>Layer 0: manual assist</th><th>Layer 1: local model, the product</th><th>Layer 2: scale-up demo</th></tr></thead>
+<tbody>
+<tr><td><b>What runs</b></td><td>Motion flagging, median background, difference view, contrast, grid tagging, species list</td><td>A local fish detector (YOLO-small or MegaFishDetector in ONNX), tracking, BioCLIP 2 species suggestions on crops. On by default</td><td>Bigger local models such as SAM 3.1, larger detectors and stronger species models, on a stronger GPU or workstation. A pre-computed, labelled proof of concept</td></tr>
+<tr><td><b>For</b></td><td>Any staff member on any PC</td><td>Staff, as the main tool</td><td>Decision makers, to see what a stronger machine gives</td></tr>
+<tr><td><b>Hardware</b></td><td>Current PC, CPU only</td><td>Same on CPU; a planned GPU would speed runs and allow local fine-tuning</td><td>CUDA GPU for SAM 3 (848M parameters; no memory figure found). Untested on the planned GPU</td></tr>
+<tr><td><b>Licence</b></td><td>Our code and standard libraries</td><td>Open-source weights only. BioCLIP 2 is MIT. Ultralytics is AGPL-3.0. MegaFishDetector says MIT but is YOLOv5-based, and inheritance is unconfirmed <span class="tag">unconfirmed</span></td><td>SAM 3 uses a custom SAM License that we have not fully read. Acceptable for a demo and development, not assumed acceptable for Layer 1</td></tr>
+<tr><td><b>Status</b></td><td>Fallback in the shared review app</td><td>Core product. Currently a non-ML stand-in</td><td>Contained demo, not shipped</td></tr>
+</tbody></table></div>
+<p><b>Optional extra.</b> The team may run a cloud generative vision model in development as a comparison. It is not part of what ships, not a pitch headline, and no footage goes to a cloud service without a team decision. Counts from such models are unproven: the best frontier model scored 42.1% exact accuracy at counting repetitions in video (PushupBench). That is pushups, not fish, so it is a warning sign only. There are no turbid underwater figures, so we would measure on our own holdout.</p>
+<p><b>Licence choice.</b> Because Layer 1 is the product, choose the detector licence early. AGPL is workable if the tool's source goes to Coastal Action with it. RT-DETR is a possible permissive alternative <span class="tag">unconfirmed</span>.</p>
+<h4>Upgrade ladder</h4>
+<p>Coastal Action's options over time. All timings are estimates, not measured on their hardware.</p>
+<div class="scroll"><table>
+<thead><tr><th>Step</th><th>Change</th><th>Unlocks</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>Current PC: Ryzen 5 5500, 32GB RAM, GTX 770 treated as CPU only</td><td>Layer 0, and Layer 1 run overnight (about 20 to 75 minutes per video hour, 90 or more for 4K HEVC on a slower CPU)</td></tr>
+<tr><td>1</td><td>Planned upgrade with an RTX 3060 12GB (confirm the 12GB version)</td><td>Faster Layer 1 (for a basic 6 to 8GB GPU an estimate is 10 to 30 minutes per video hour, not measured on a 3060), local fine-tuning, and likely some Layer 2 experiments, untested</td></tr>
+<tr><td>2</td><td>A 16 to 24GB CUDA GPU</td><td>More headroom for SAM 3.1 and a quantised 8B open vision-language model</td></tr>
+<tr><td>3</td><td>A 48GB+ GPU or a server</td><td>Larger open models and batch pre-labelling</td></tr>
+<tr><td>4</td><td>Coastal Action agrees to a cloud API</td><td>A cloud generative vision model as an optional reasoner</td></tr>
+</tbody></table></div>
+<h4>Layer 1 model plan</h4>
+<p>Small schooling fish: candidates are tiled detection or point-based counting, tested against plain box detection. We make no claim yet that either works. Camouflaged crabs: a detector plus motion across the context window around each point. The protocol says flounder are missed unless moving, and Coastal Action's crab example agrees. No controlled study we found shows motion beating single-frame detection, so the movement feature follows Coastal Action's practice and is not proven.</p>
+<p><b>Conservative rule.</b> The protocol prefers undercounting, so a model count must follow it. Calibrate thresholds to undercount rather than overcount, and report the threshold with every count. How the model should treat the two-of-four rule is an open question for Coastal Action. Dense processing happens first only in the context windows around the subsample points, which is far less video than the full window. The full-window scan follows, for species richness.</p>
+
+<h3 id="s-arch">Architecture</h3>
+<ul>
+<li><b>Stages:</b> SegmentProposer, Detector, Tracker, Classifier, Counter. Every stage writes to one shared JSON schema per segment, and one config file picks the layer and the backend for each stage. The app joins layers on segment and shows them side by side. Disagreements are queued first.</li>
+<li><b>Local review app:</b> Python backend, browser interface, no internet. The unit of work is one long recording (stitched GoPro chapters) as a timeline.</li>
+<li><b>Review view:</b> the still with an optional grid, a loop cut from the original, a difference view (frame beside frame minus median background), and display-only contrast sliders that never touch the stored original.</li>
+<li><b>Proxy-resolution risk:</b> downscaling for the motion scan can erase small, faint movement. Stills and loops come from the originals. We test the proxy against higher resolution on a known cryptic clip.</li>
+<li><b>Set-aside audit:</b> quiet time is set aside, never deleted, and a random human audit of roughly 5% makes silent misses measurable.</li>
+<li><b>Export:</b> in their sheet layout, with the model count shown beside the human count.</li>
+</ul>
+
+<h3 id="s-train">Training plan</h3>
+<p>Label quantities here are our inference, since we found no published minimum for fish detection. A practical range is 300 to 1,000 local frames to fine-tune a generic "fish" detector from a pretrained start. Species level needs far more per class, so species stays a review-queue job.</p>
+<div class="scroll"><table>
+<thead><tr><th>Situation</th><th>Route</th></tr></thead>
+<tbody>
+<tr><td>Past videos with hand counts</td><td>Run a generic detector zero-shot and score it against the sheets. Review the videos with the biggest disagreements, fine-tune, then re-check against the sheets.</td></tr>
+<tr><td>Past videos, no counts</td><td>Pre-label with a detector plus motion, then review 200 to 500 frames in active-learning order. Pretrain on Brackish, then fine-tune.</td></tr>
+<tr><td>A few manual samples only</td><td>Pre-label and review about 100 frames. Fine-tune on Brackish plus these, with a held-out test. Synthetic copy-paste images may be added but never enter the test set.</td></tr>
+</tbody></table></div>
+<ul>
+<li><b>Hand-count spreadsheets.</b> Matt is asking the technician about hand count data, which would be the biggest help. If shared, each row is a frame-level label: a count for a known video and timestamp. Use them for validation first (signed bias and mean absolute error per clip), then calibration (per-site correction and thresholds), then triage. Count-supervised training is roadmap only. FishDetector-R1 reports 30% lower error on DeepFish from sparse point labels, but it is research code and we read the abstract only.</li>
+<li><b>Pre-label then review</b> is the biggest saver. Filter pre-labels by confidence, because unfiltered pseudo-labels bake in errors.</li>
+<li><b>Active-learning order:</b> frames near the threshold, detector disagreement, unlabelled embedding clusters, tool-versus-sheet disagreement, and a random 10% holdout. Neighbouring frames never split across sets.</li>
+<li><b>Transfer:</b> start from Brackish or MegaFishDetector weights. Scene layout drives cross-site loss more than haze (Piccolo et al., abstract only), so expect to need local frames.</li>
+<li><b>Few-shot species gallery:</b> 5 to 20 reviewed crops per species, nearest neighbour on BioCLIP 2 or DINO embeddings. Below a threshold, send to review.</li>
+</ul>
+
+<h3 id="s-over-time">Accuracy over time</h3>
+<p>All of this is our design, not tested. Review writes labels. The model, the dataset manifest and the config are versioned and never overwritten. Frozen holdouts are split by video (an unseen site, date or season, and hard turbidity; about 20 to 30 videos or 300+ labelled frames), and a "fresh" set grows each season.</p>
+<ul>
+<li><b>Tracked per version:</b> recall at fixed precision, per-clip count bias and error, reviewer correction rate, and unknown-species rate.</li>
+<li><b>Retrain triggers:</b> correction rate up 25% relative, a new site, season or camera, a turbidity shift, or a watch-list species.</li>
+<li><b>Retrain rule:</b> after roughly 300 to 500 reviewed frames or a season, and only if the candidate beats the current model on the frozen and fresh sets. Keep a rollback.</li>
+<li><b>Borrowed GPU option:</b> a free T4 with about 2,000 images takes 20 to 60 minutes (estimate). Copy the ONNX weights to the desktop.</li>
+</ul>
+
+<h3 id="s-species">Species system</h3>
+<p>The backbone is the WoRMS AphiaID, cross-referenced to GBIF key, ITIS TSN, FishBase code and iNaturalist ID. Cod, American eel and black sea bass resolved cleanly in our test. GBIF is the fallback for freshwater taxa. WoRMS's licence field was empty in our test, so confirm it <span class="tag">unconfirmed</span>.</p>
+<p>The species list is versioned and offline, built by one rerunnable script:</p>
+<ol>
+<li>Seed list plus DFO survey species (Open Government Licence).</li>
+<li>Resolve to AphiaID. Synonyms and English and French vernacular names become aliases.</li>
+<li>Distribution tier from OBIS and GBIF. Absent species go to a watch tier, never deleted.</li>
+<li>Traits from the rfishbase parquet snapshot.</li>
+<li>Flags: at-risk (hand-entered with a date), invasive, range-expander.</li>
+<li>Images filtered per image: keep CC0, CC BY and CC BY-SA. CC BY-NC is a team decision. Drop the rest.</li>
+<li>Freeze as a dated JSON file with a manifest.</li>
+</ol>
+<p>Open-licensed images are scarce: 1 of 60 Nova Scotia cod and 21 of 352 eel observations pass an open filter, and black sea bass has none. Coastal Action's reviewed frames are the best reference set. The list is editable, an "unexpected, review" tier and an unknown queue drop nothing, and the shortlist shows watershed-level status only because ACCDC location rules are unverified.</p>
+
+<h3 id="s-count">Count accuracy and validation</h3>
+<p>Report four things: MaxN (with its frame), MeanCount over fixed-interval stills, tracked unique count where tracking allows, and the human count. These are relative indices, not abundance.</p>
+<ul>
+<li><b>Published figures</b> do not transfer to Nova Scotia. Mask R-CNN MaxN ran 1.5% and 7.8% above experts and citizen scientists with F1 92.3% in one Queensland setting (abstract only). The claim that MaxN follows a power function of abundance is a lead we could not see on the page we read <span class="tag">unconfirmed</span>.</li>
+<li><b>Interval.</b> Follow their interval as the default. On validation clips, check how MeanCount changes with more points, as a suggestion to them and not a change to their method.</li>
+<li><b>Uncertainty.</b> Report a range (bootstrap over frames for MeanCount, a confidence band for species), score visibility per clip, and mark low-visibility clips "counts are minima".</li>
+<li><b>Ceiling.</b> Human-to-human agreement is the limit the tool is judged against.</li>
+<li><b>Yardstick.</b> Use Coastal Action's own quality control numbers <span class="tag draft">draft</span>. With small counts one fish can exceed 6%, so report absolute differences too. We do not claim the tool meets these.</li>
+</ul>
+<h4>Validation protocol</h4>
+<ol>
+<li>Use the single labelled set described in the weekend plan: clear and turbid footage mixed, public footage if none arrives, said plainly. A stretch target is 10 clips of 5 minutes.</li>
+<li>Two or more people annotate independently (timestamp, species or unknown, count per subsample point, using their rules) and time themselves.</li>
+<li>Measure human-to-human agreement first: count difference, MaxN, species (percent and Cohen's kappa).</li>
+<li>Reconcile to a consensus set.</li>
+<li>Run Layer 1 on the same stills, with Layer 0 as the human baseline. Compare to each person and to the consensus.</li>
+<li>Stratify by visibility and abundance (0, 1 to 3, 4+).</li>
+<li>Record review minutes per clip with and without suggestions, in a split, swapped design so no person reviews the same clips twice.</li>
+</ol>
+<p><b>A good result</b> is a tool that differs from consensus about as much as one person differs from another, with human-plus-tool review faster than annotating alone. Expect lower accuracy than published figures on turbid footage. Ten clips is a pilot, not proof.</p>
+
+<h3 id="s-data">Data available</h3>
+<p>No public dataset matches cold, turbid Nova Scotia water with fish labels. Every public set we found is tropical, reef, aquarium, river sonar or deep sea. <b>Our top request:</b> one GoPro recording, even 10 minutes, ideally with a known cryptic animal, plus the matching hand-count spreadsheet and clean originals of the marked frames.</p>
+<div class="scroll"><table>
+<thead><tr><th>Item</th><th>What it is</th><th>Licence or caution</th><th>Fit</th></tr></thead>
+<tbody>
+<tr><td>Coastal Action footage and sheets</td><td>Recordings of unconfirmed length, probably several GoPro chapter files</td><td>The team treats early footage as public access for development. Not seen in writing. Reuse terms unknown <span class="tag">unconfirmed</span></td><td>The one thing that matters</td></tr>
+<tr><td><a href="https://vap.aau.dk/the-brackish-dataset/">Brackish</a> (Aalborg)</td><td>89 videos, 14,674 images on the Roboflow copy; 6 classes (fish, small fish, crab, shrimp, jellyfish, starfish). Cold, brackish, turbid Danish water</td><td>Licence unconfirmed. CC BY 4.0 appeared only in a search snippet and the source page states none. Check in a browser <span class="tag">unconfirmed</span></td><td>Best fallback proxy; "fish" is one class</td></tr>
+<tr><td><a href="https://novascotia.ca/water-resources-data-portal/">NS Water Resources Data Portal</a></td><td>Groundwater, river, lake, water quality and weather data</td><td>The portal says it is not definitive, and station data may not reflect nearby conditions. Coastal Action mentioned a recent provincial water release, name unknown. Whether this is it is unconfirmed <span class="tag">unconfirmed</span></td><td>Context layer</td></tr>
+<tr><td><a href="https://ouvert.canada.ca/data/dataset/ae6e6074-4321-09ee-cec1-a7d111de95bc">NS 1:10,000 watersheds</a></td><td>Watershed polygons in CSV, GeoJSON and SHP</td><td>Open Government Licence, Nova Scotia</td><td>Watershed join for the shortlist</td></tr>
+<tr><td>ACCDC rare-species records on <a href="https://api.gbif.org/v1/dataset?q=atlantic%20canada%20conservation%20data%20centre">GBIF</a></td><td>Rare and at-risk records</td><td>CC BY 4.0 on GBIF. The ACCDC site did not connect, so its sensitive-location rules are unverified <span class="tag">unconfirmed</span></td><td>Watershed-level status only</td></tr>
+<tr><td>GBIF and OBIS occurrences</td><td>Mostly citizen science with uneven sampling; OBIS is marine only</td><td>GBIF licences vary per record (CC BY, CC0, CC BY-NC). Check before public use</td><td>Shortlist input and reference images</td></tr>
+<tr><td>FathomNet, DeepFish, OzFish, Caltech Fish Counting</td><td>Deep-sea ROV, tropical Australia, Western Australia BRUVs, river sonar</td><td>Terms not confirmed <span class="tag">unconfirmed</span></td><td>Weak; wrong habitat</td></tr>
+<tr><td>YouTube or BRUV clips</td><td>Searchable, none vetted</td><td><b>Must not be scraped, trained on or redistributed.</b> Use only with the uploader's permission or a CC licence, and only for a private demo</td><td>Private demo clip at most</td></tr>
+<tr><td><a href="https://huggingface.co/FathomNet/megafishdetector">MegaFishDetector</a></td><td>Generic "fish" boxes, YOLOv5-based, no accuracy numbers on the card</td><td>MIT on the card, but built on AGPL YOLOv5. Whether the weights inherit AGPL is unconfirmed <span class="tag">unconfirmed</span></td><td>Detector option</td></tr>
+<tr><td><a href="https://github.com/fishial/fish-identification">Fishial</a></td><td>Detector, classifier (866 classes, 93.22%) and segmenter</td><td>Repo is MIT. The 93.22% is on its own test set only. The detector is YOLO-based, so the same inheritance question applies</td><td>Detector option</td></tr>
+<tr><td><a href="https://huggingface.co/imageomics/bioclip-2">BioCLIP 2</a></td><td>Zero-shot species suggestions; the card warns of bias toward well-represented species</td><td>MIT</td><td>Suggestions on tracked crops only</td></tr>
+<tr><td><a href="https://github.com/ultralytics/ultralytics">Ultralytics YOLO</a></td><td>Easiest training and export</td><td>AGPL-3.0. Fine for a proof of concept; flag it for a product</td><td>Optional</td></tr>
+<tr><td><a href="https://gopro.github.io/gpmf-parser/">GoPro GPMF telemetry</a></td><td>Accelerometer (about 200 Hz), gyro and timestamps. HERO12 has no GPS receiver</td><td>GoPro's own support page would not load, so other GoPro figures are orders of magnitude</td><td>Accelerometer spikes flag camera shake</td></tr>
+</tbody></table></div>
+
+<h3 id="s-tools">Similar tools</h3>
+<div class="scroll"><table>
+<thead><tr><th>Name</th><th>What to learn from it</th></tr></thead>
+<tbody>
+<tr><td><a href="https://fundyforce.ca/news-and-updates/2021-03-26/ai-software-developed-in-n-s-provides-glimpse-into-wild-and-murky-bay-of-fundy-cbc-news">Echofilter</a> (Dalhousie, FORCE)</td><td>AI proposes, a person verifies, in murky Fundy water. Reported as saving more than half of 70 to 80 hours per 24 hours of data. Sonar, not video</td></tr>
+<tr><td><a href="https://www.innovasea.com/wp-content/uploads/2026/01/Innovsea-PR-Tagless-Fish-Detection-5-11.pdf">Innovasea Ocean Aware</a> (Dartmouth)</td><td>Shows demand. Its "90 percent" is a company claim from early trials, partly sonar-based, and not comparable to optical video in turbid water</td></tr>
+<tr><td>VIAME and DIVE (Kitware)</td><td>Free, proven backbone. VIAME core is BSD-3 with some more restrictive optional add-ons; DIVE is Apache-2.0. Generic and heavy to install</td></tr>
+<tr><td>Mystic River herring project <span class="tag">unconfirmed</span></td><td>Closest nonprofit analogue: motion-triggered clips, volunteers validate, AI added later</td></tr>
+<tr><td>Salmon Vision <span class="tag">unconfirmed</span></td><td>Community-led, small team, person in the loop. Fixed weir camera, easier than tidal sites</td></tr>
+<tr><td><a href="https://www.frontiersin.org/articles/10.3389/fmars.2022.944582/pdf">AIMS BRUVS workflow</a></td><td>About 4,000 video hours needing about 12,000 analyst hours per year (about 3 to 1, Australian). Context only, not our ratio</td></tr>
+<tr><td><a href="https://coralnet.ucsd.edu/about/">CoralNet</a></td><td>Annotate a few, auto-label the rest. Still images of seabed life, not fish video</td></tr>
+</tbody></table></div>
+
+<h3 id="s-value">Value model</h3>
+<p>The value claim is a proposal: fast, consistent MeanCount by their rules, with more subsample points affordable. We state no time saving. The formula below is for year one, using measured numbers only.</p>
+<ul>
+<li>V: video hours per year (Coastal Action to supply).</li>
+<li>a: analyst hours per video hour today. Coastal Action's spoken estimate is 6 to 7, not measured.</li>
+<li>b: human hours per video hour with the tool, measured by us including review, for each layer.</li>
+<li>w: loaded hourly wage, and S: one-time setup hours (Coastal Action to supply).</li>
+</ul>
+<p><b>Hours saved in year one = V x (a - b) - S.</b> Cost saved = hours saved x w. Unattended computer hours are counted separately. We make no time-saving ratio and no claim of 10 minutes until measured. The idea of cutting 7 hours to 10 minutes is an aspiration, not a result.</p>
+
+<h3 id="s-hw">Hardware</h3>
+<ul>
+<li><b>Current PC</b> (Coastal Action emailed us): Ryzen 5 5500, 32GB RAM, GTX 770. The GTX 770 is a Kepler card (compute capability 3.0), and current deep learning stacks are unlikely to support it, untested. We treat the PC as CPU only. Coastal Action told us it would start by running the tool on a local desktop, and that the unit is considered feasible.</li>
+<li><b>Planned upgrade</b> "in the near future", specified to host a 30 to 40 billion parameter model: ideally Ryzen 7 7700X, 32GB DDR4 RAM, RTX 3060 12GB. Not yet bought.</li>
+<li><b>DDR5 point.</b> AMD lists the Ryzen 7 7700X as DDR5 only (socket AM5). The email's "32GB DDR4" with a 7700X will not work.</li>
+<li><b>12GB point.</b> NVIDIA sells the RTX 3060 in 12GB and 8GB variants. Confirm the 12GB version when buying.</li>
+<li><b>30 to 40B point.</b> Weights alone for such a model are about 15 to 20GB at 4-bit (our arithmetic). That is more than 12GB of video memory, so it would offload to system RAM and run slowly. Small vision models fit comfortably and do not need it. We should ask Coastal Action what the 30 to 40B model is for.</li>
+<li>The upgrade plan shows a local model is on Coastal Action's roadmap, though the wording of their limit still calls for one plain confirmation.</li>
+</ul>
+
+<h3 id="s-try">Try the demo</h3>
+<p>The team demo is at <a href="https://clipsift-demo.pages.dev/" id="demo-link">https://clipsift-demo.pages.dev/</a>. It needs a team code, shared in the group chat.</p>
+<ul>
+<li><b>What it holds.</b> Two 2.5 minute sections of Coastal Action's real video (T1 STAT 2): 20:30 to 23:00, with a school of fish around 22:00, and 13:00 to 15:30. They are scaled to 1080p, with points every 15 seconds for demo purposes rather than their 60 seconds.</li>
+<li><b>No automatic counts yet.</b> People count by hand. Counts stay in each person's browser.</li>
+<li><b>Steps.</b> Open the link and enter a name. Follow steps 1 to 4, or take the tour from the ? button. A fake-data sample is also in the menu.</li>
+<li><b>Feedback.</b> The Feedback button sends notes to Jacob's team list. Please send at least one note before the meeting.</li>
+</ul>
+
+<h3 id="s-proto">Prototype status</h3>
+<p>A working app exists, with the team demo above. The code is in the clipsift folder next to this brief. It has a pipeline, a review app with a subsample queue, dot and ellipse tools, quality control mode, export, a species list of 42 entries, an annotation extractor, and 49 automated tests that pass. A synthetic test clip runs through the pipeline, export and review app in a browser: results load, the context clip plays, dots land in the right grid cells and feed the count field.</p>
+<h4>Real footage findings</h4>
+<ul>
+<li><b>Video.</b> 4K HEVC, 35:47 long. The camera clock reads 2016, so dates come from folders.</li>
+<li><b>Speed.</b> The pipeline processed a 15 minute window in 324 s on a fast Mac (M4 Pro). Coastal Action's PC will be slower; not measured.</li>
+<li><b>Motion filter.</b> It set aside 21 of 40 segments. 29 segments were flagged low visibility. The non-ML stand-in counted 0.13 per point, which is not a measure of accuracy.</li>
+<li><b>Real labels.</b> Their hand dots are real labels: 103 dots transferred to a clean 4K frame at 22:00.3, aligned, and confirmed on fish by eye in the area viewed. One frame so far.</li>
+<li><b>Frame matching.</b> VLC timestamps are not exact enough. The 22:00 images match about 22:00.3 and 22:01.1, so labels are matched by image.</li>
+<li><b>Fish size.</b> Fish there are about 120 px long at 4K and faint.</li>
+<li><b>First baseline.</b> On that frame, simple background subtraction found 16% to 44% of fish with about 18% precision. This is one frame and a baseline only. Most false hits were seabed and light beams. So a trained detector is needed.</li>
+<li><b>Known fix.</b> The filename parser reads transect T1 but not STAT from "T1-STAT2".</li>
+<li><b>Window.</b> The default window is 1:00 to 16:00, while marked points on this video include 14:00 and 22:00. Window choice is to confirm.</li>
+</ul>
+<p>A private test clip is also used for checks. The motion stand-in marked every segment active there and counted surface ripples and weed. It is for local checks only.</p>
+<div class="caution"><b>What it is not.</b> There is no trained detector yet, so nothing counted automatically is model accuracy. Layer 1 uses a non-ML stand-in that reacts to any movement (shake, kelp, bubbles). Tiled inference and the point-counting stub are off by default and untested. The quality control percent-difference formula is a placeholder because the protocol omits it. Layer 2 and the species classifier are stubs.</div>
+<h4>How to run it</h4>
+<p>Needs Python 3.10 or newer, and ffmpeg on the path for browser-playable loops. Run from the clipsift folder.</p>
+<div class="scroll"><pre><code>python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+brew install ffmpeg
+python -m clipsift run "path/to/GX010221_T1@1217pm.MP4" "path/to/GX020221_T1@1226pm.MP4" --out runs
+python -m clipsift export runs/GX0221_T1
+python -m clipsift evaluate runs/GX0221_T1/results.json --labels labels.csv --out eval_rows.csv
+python -m pytest</code></pre></div>
+<p>On Windows use <code>py -m venv .venv</code>, <code>.venv\Scripts\Activate.ps1</code> and <code>winget install Gyan.FFmpeg</code>. <code>run</code> groups GoPro chapters by video number into one timeline. <code>--layer 0</code> runs manual assist only. The README in the clipsift folder lists every option. The video ID is a guess at their spreadsheet format and can be overridden.</p>
+
+<h3>How we'll be judged</h3>
+<p>This is the 2025 rubric; the 2026 one may differ. Up to 10 minutes to present, then 5 minutes of questions. Each of five criteria is scored 0 to 3, for a total out of 15.</p>
+<ul>
+<li><b>Impact:</b> solves the stated problem; feasible and scalable; shows strong understanding of the problem.</li>
+<li><b>Functionality:</b> designed for the end user; stable, good-quality code; can adapt to future needs.</li>
+<li><b>Innovation:</b> a fresh approach; diversity of thought; current technology used creatively.</li>
+<li><b>Presentation:</b> clear and concise; engaging; strong answers to questions.</li>
+<li><b>Execution:</b> meets expectations; creative, sound and well presented; everyone clearly took part.</li>
+</ul>
+<h3 id="s-team">Team workstreams and weekend timetable</h3>
+<p><b>Tonight, Thu 5 Nov, about 8:30pm:</b> everyone tries the demo and sends feedback, we agree workstreams, and we confirm what Coastal Action can share. Training work starts afterward. Accuracy and training details come later this weekend.</p>
+<p>Individual skills are not recorded, so these are workstreams, not assignments. Jacob, Ali, Gina and Wang are in the Master of Business Analytics, and Adrien is in the Master of Computing and Data Analytics. The judging rubric we have (the 2025 version, which the 2026 one may not match) scores Execution partly on whole-team participation, so everyone should visibly contribute. Labelling is the shared bottleneck, so everyone labels.</p>
+<div class="scroll"><table>
+<thead><tr><th>Workstream</th><th>Scope</th></tr></thead>
+<tbody>
+<tr><td>Pipeline and models</td><td>Extend the skeleton. Train the first real detector for Layer 1 first, then the Layer 2 demo, and extend the evaluate command</td></tr>
+<tr><td>Review app and interface</td><td>Build on the skeleton's review app: timeline, side-by-side layers, species list editor</td></tr>
+<tr><td>Labelling and validation</td><td>Labelling rules, the benchmark set, the validation protocol, metric tables</td></tr>
+<tr><td>Species data</td><td>The WoRMS build script, aliases, flags, images, unknown queue</td></tr>
+<tr><td>Pitch and value</td><td>Questions and answers, value model, deck, the Sam demo, submission format</td></tr>
+</tbody></table></div>
+<h4>Labelled set (build first)</h4>
+<p>One labelled set serves both the benchmark and the validation protocol. It holds 20 to 30 segments of 30 to 60 seconds across several videos (Coastal Action's if they arrive, else Brackish and public clips). Two people label each: MaxN, unique count, and boxes on 5 frames. Split by video, about 60% development and 40% locked test. Prefer protocol-style subsample points, and score against hand counts if the technician shares them. Report n and failures. About 25 segments is directional only.</p>
+<div class="scroll"><table>
+<thead><tr><th>When</th><th>Plan</th></tr></thead>
+<tbody>
+<tr><td>Fri 6 Nov</td><td>2:00pm mentor meeting. Run the pipeline on any further real clip that arrives. Top task through Saturday: train the first real detector. Agree labelling rules and make the first labels.</td></tr>
+<tr><td>Sat 7 Nov</td><td>Get the first real detector working on a long recording by about midday, then the review-and-fine-tune loop and the species gallery. Layer 2 sits in a fixed 4-hour time box. Stop rule: if SAM 3.1 gives no tracked boxes on a test clip within 2 hours, stop and report it as not achieved. Labelling in shifts.</td></tr>
+<tr><td>Sun 8 Nov</td><td>Evaluation and validation tables. Freeze at midday. Rehearse twice. Submit before 11:59pm AST.</td></tr>
+<tr><td>Mon 9 Nov</td><td>In-person presentations at the RBC Halifax Innovation Hub in Bedford. We expect up to 10 minutes presenting and 5 for questions, as in 2025 <span class="tag">unconfirmed</span>.</td></tr>
+</tbody></table></div>
+
+<h3 id="s-demo">Demo story</h3>
+<p>The user is Sam, a fictional Coastal Action field technician. Results are pre-processed, with a live scrub. The demo runs 10 minutes.</p>
+<ol>
+<li><b>Problem (1 min):</b> a long recording and the protocol's subsample points counted by hand.</li>
+<li><b>The model does the work (2):</b> the local fish detection model runs on a long recording, and detections, tracks and counts appear on the timeline.</li>
+<li><b>A person confirms (1.5):</b> Sam works through the review queue with the subsample still, dot tool, loop, difference view and a "movement, unidentified" hit. Planned: a real frame with a school and a crab, labelled "planned" until the frame exists.</li>
+<li><b>Counts in their layout (1):</b> export in Coastal Action's sheet layout, beside the human count.</li>
+<li><b>A fixed label improves the next run (1.5):</b> shown only if measured, otherwise described as the plan.</li>
+<li><b>Honest results (1.5):</b> measured recall and count error against the human ceiling, audit miss rate, and failures.</li>
+<li><b>Ladder, value, next step (1.5):</b> the upgrade ladder with a pre-computed Layer 2 result on the same segment, labelled as a proof of concept that does not ship, then the value formula and a pilot ask.</li>
+</ol>
+
+<h3 id="s-q">Open questions for Coastal Action</h3>
+<p>Most go through the mentors, most plan-changing first.</p>
+<ol>
+<li>Matt is asking the technician about the hand-count spreadsheets. If shared, in what format (columns, video ID, timestamp)?</li>
+<li>Can we have clean originals, without marks or enhancement, of the 28 marked frames?</li>
+<li>Which sampling applies: 15 frames at 60 seconds, or 60 points at 12 seconds?</li>
+<li>How long are the recordings? This video is 35:47. Is that usual, or are others about 20 minutes or about 1 hour?</li>
+<li>Which window should we use on this video? Marked points include 14:00 and 22:00.</li>
+<li>Are schools always dot-counted, or only sometimes?</li>
+<li>Which camera model and settings are used?</li>
+<li>What should the model do with the two-of-four rule?</li>
+<li>What is the 30 to 40B model for, and what about the DDR5 point?</li>
+<li>Is a small local model acceptable? One plain confirmation is enough.</li>
+</ol>
+<p>Also: who the audience is, the acceptable error for at-risk species, which provincial water release was meant, reuse terms for footage, whether a species list already exists, and, for the organisers, the submission format and the 2026 rubric.</p>
+
+<h3 id="s-claim">Things not to claim</h3>
+<ul>
+<li>That we meet Coastal Action's AI policy (we have not seen it), or that Coastal Action has approved Layer 1, or that the planned upgrade is bought.</li>
+<li>That the tool meets the protocol's quality control thresholds, or that the prototype counts fish on real video.</li>
+<li>That a model count follows the conservative rule before thresholds are calibrated and tested.</li>
+<li>That the marked screenshots are clean labels.</li>
+<li>Any accuracy, or any Nova Scotia accuracy not measured on held-out local footage.</li>
+<li>Any time saving. Also that 6 to 7 hours is measured, that 7 hours to 10 minutes is a result, or any ratio or cost saving without measured minutes.</li>
+<li>That timings were measured on their PC, or that motion beats stills.</li>
+<li>That nothing leaves the PC, unless checked with the network disabled.</li>
+<li>That vision-language models count well, that SAM 3 is open source in the Layer 1 sense, that MaxN follows a power function, or that any sampling interval beats theirs.</li>
+<li>That the tool can stand in for human review, identifies rare or invasive arrivals, or that tracked counts equal abundance.</li>
+<li>That Brackish is CC BY 4.0, that MegaFishDetector weights are MIT-clean, that ACCDC permits showing locations, or that the water portal is the release Coastal Action meant.</li>
+<li>Innovasea's "90 percent" as a comparable figure. Say "warm-water range-expanders", not "tropical species are common".</li>
+</ul>
+
+<h3 id="s-src">Key sources</h3>
+<ul>
+<li>Official problem statement for Coastal Action (PDF shared by the organisers; no link).</li>
+<li>Coastal Action's draft Video Analysis Protocol, a draft with open comments (shared by Coastal Action; no link).</li>
+<li>Coastal Action's marked subsample screenshots, 28 images (shared by Coastal Action; no link).</li>
+<li><a href="https://coastalaction.org">Coastal Action homepage</a></li>
+<li><a href="https://novascotia.ca/water-resources-data-portal/">NS Water Resources Data Portal</a></li>
+<li><a href="https://ouvert.canada.ca/data/dataset/ae6e6074-4321-09ee-cec1-a7d111de95bc">NS 1:10,000 watersheds dataset</a></li>
+<li><a href="https://gopro.github.io/gpmf-parser/">GoPro gpmf-parser</a></li>
+<li><a href="https://www.frontiersin.org/articles/10.3389/fmars.2022.944582/pdf">Frontiers 2022: AIMS video and analyst hours</a></li>
+<li><a href="https://www.marinespecies.org/">WoRMS</a> and <a href="https://github.com/ropensci/rfishbase">rfishbase</a></li>
+<li><a href="https://github.com/facebookresearch/sam3">SAM 3 repository</a> (custom SAM License, not fully read)</li>
+<li><a href="https://huggingface.co/imageomics/bioclip-2">BioCLIP 2 card</a> and <a href="https://huggingface.co/FathomNet/megafishdetector">MegaFishDetector card</a></li>
+<li><a href="https://github.com/fishial/fish-identification">Fishial repository</a></li>
+<li><a href="https://vap.aau.dk/the-brackish-dataset/">Brackish dataset page</a> (licence not stated there)</li>
+<li><a href="https://aistudio.google.com/docs/video-understanding">Gemini video understanding docs</a> (prices not verified)</li>
+<li><a href="https://arxiv.org/abs/2604.23407">PushupBench</a>, <a href="https://arxiv.org/abs/2512.05996">FishDetector-R1</a> and <a href="https://arxiv.org/abs/2601.13975">Piccolo et al.</a> (abstracts only)</li>
+<li><a href="https://www.biorxiv.org/content/10.1101/805796v1">Ditria et al.</a> (one Queensland setting)</li>
+<li><a href="https://peerj.com/articles/15426/">Erickson et al. 2023</a>, cited by the protocol (we did not open the page) <span class="tag">unconfirmed</span></li>
+</ul>
+</section>
+
+</main>
+<footer>
+<p>Unofficial team notes, 5 Nov 2026. Not reviewed or endorsed by RBC or Coastal Action.</p>
+</footer>
+<script>
+(function(){
+ var views=["quick","full"];
+ function show(){
+  var h=(location.hash||"").replace("#","");
+  var isTab=views.indexOf(h)>=0;
+  var target=null;
+  if(!isTab){
+   target=h&&document.getElementById(h);
+   h=(target&&document.getElementById("full").contains(target))?"full":"quick";
+  }
+  document.body.setAttribute("data-view",h);
+  var tabs=document.querySelectorAll("nav.tabs a");
+  for(var i=0;i<tabs.length;i++){
+   if(tabs[i].getAttribute("data-tab")===h)tabs[i].setAttribute("aria-current","page");
+   else tabs[i].removeAttribute("aria-current");
+  }
+  if(target)target.scrollIntoView();
+  else window.scrollTo(0,0);
+ }
+ window.addEventListener("hashchange",show);
+ show();
+})();
+</script>
+</body>
+</html>

@@ -11,7 +11,8 @@ clips. Review files (*.jsonl) are never copied.
 With --label-set <id> (repeatable), also copies label_sets/<id> (frames, clips, diff, manifest.json only) to
 public/label_sets/<id>, so the blind labelling page (label.html) works. Same allow-list rule: nothing
 whose name contains "river" goes in. If the set has a calibration.json (a list of frame ids), it is put into the
-copied manifest as `calibration`.
+copied manifest as `calibration`. calibration.json can also be {"calibration": [...], "calibration_only": true}, which
+holds every other frame back from the label page until it is set to false and the site is rebuilt.
 
 Limits checked (Cloudflare Workers static assets): under 20,000 files (free plan) and every file under
 25 MiB. The platform handles HTTP Range requests for video.
@@ -141,6 +142,8 @@ def copy_label_set(root: Path, sid: str, out: Path) -> dict:
             cal = json.loads(cal_file.read_text(encoding="utf-8"))
         except ValueError:
             raise BuildError(f"Label set '{sid}' has an unreadable calibration.json.") from None
+        if isinstance(cal, dict) and cal.get("calibration_only") is True:
+            manifest["calibration_only"] = True     # the label page offers only these frames until this is turned off
         cal = cal.get("calibration") if isinstance(cal, dict) else cal
         known = {f.get("frame_id") for f in manifest["frames"] if isinstance(f, dict)}
         if not isinstance(cal, list) or any(not isinstance(i, str) or i not in known for i in cal):

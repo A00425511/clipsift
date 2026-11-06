@@ -15,6 +15,9 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 0.7.1 (2026-11-06)
+- Label page: hold every frame back except the five calibration frames, until the team debrief. Saved labels are kept. To reopen, set `calibration_only` to false in `label_sets/<set>/calibration.json` and rebuild the site.
+
 ### 0.7.0 (2026-11-06)
 Rebuilt around Coastal Action's protocol. See `docs/PROTOCOL_WORKFLOW.md`.
 - Review app: five steps in protocol order: Visibility, Watch window, Count points, Quality check, Report.

@@ -240,6 +240,14 @@ t("calibration: not assigned again as normal frames, and an empty list changes n
   const skipThis = L.pickNext(frames, {}, {}, "Ali", "f2", ["f2", "f4"]);
   assert.equal(skipThis.frame_id, "f4");               // the exclude rule still works for the prefetch
 });
+t("calibration only: every other frame is held back, and finished people get nothing new", () => {
+  const fr = [{ frame_id: "a" }, { frame_id: "b" }, { frame_id: "c" }, { frame_id: "d" }];
+  assert.equal(L.pickNext(fr, {}, {}, "Sam", null, ["c", "a"], true).frame_id, "c");
+  assert.equal(L.pickNext(fr, {}, { c: { state: "done" } }, "Sam", null, ["c", "a"], true).frame_id, "a");
+  assert.equal(L.pickNext(fr, {}, { c: { state: "done" }, a: { state: "done" } }, "Sam", null, ["c", "a"], true), null);
+  assert.notEqual(L.pickNext(fr, {}, { c: { state: "done" }, a: { state: "done" } }, "Sam", null, ["c", "a"], false), null);
+  assert.equal(L.calibrationProgressText(["c", "a"], { c: { state: "done" }, b: { state: "done" } }), "You: 1 of 2 calibration frames done.");
+});
 t("calibration: the on-screen label", () => {
   assert.equal(L.calibrationText(["a", "b", "c", "d", "e"], "b"), "Calibration frame 2 of 5");
   assert.equal(L.calibrationText(["a"], "zz"), "");

@@ -803,6 +803,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                 cal = json.loads(cal_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 abort(422, "calibration.json could not be read")
+            if isinstance(cal, dict) and cal.get("calibration_only") is True:
+                data["calibration_only"] = True
             cal = cal.get("calibration") if isinstance(cal, dict) else cal
             known = {f.get("frame_id") for f in data.get("frames") or [] if isinstance(f, dict)}
             if isinstance(cal, list):

@@ -15,6 +15,10 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.0.1 (2026-11-07)
+- Team site: the Label fish link stays visible. In the local app it sits behind More tools.
+- Team site: step 6 no longer calls a server route the site doesn't have.
+
 ### 1.0.0 (2026-11-07)
 Rebuilt the review app as a local workflow app. The automated counter is off, and is now a prototype for later. See `docs/PROTOCOL_WORKFLOW.md`.
 - Home screen: drop a video, choose one from this computer without copying it, or type a path. The parts of a split GoPro video are joined. Lists videos in progress.

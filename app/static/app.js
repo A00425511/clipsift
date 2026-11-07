@@ -266,6 +266,7 @@
     paintRestart(); paintNames();
     $("new-video").hidden = !!DEMO;
     $("demo-banner").hidden = !DEMO;
+    if (DEMO) $("label-link").classList.remove("adv");   // the team site is where people tag frames
     applyView();
     await loadSpecies();
     try {
@@ -1438,7 +1439,7 @@
     if (step !== "visibility") $("vis-video").pause();
     if (step === "visibility") renderVisibility();
     if (step === "qc") renderQc();
-    if (step === "verify") { pollJobs().then(renderVerify); }
+    if (step === "verify") { if (DEMO) renderVerify(); else pollJobs().then(renderVerify); }
     if (counting && (was !== S.qc || wasRecount !== S.recount || !S.selId)) {
       S.selId = null; renderChrome();
       if (step === "count") maybeTour();

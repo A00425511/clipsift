@@ -106,7 +106,8 @@
       if (!best || worst <= best.worst) best = { worst, fd, id, a: rows[i], b: rows[j] };
     }
     const { a, b } = best, gap = Math.max(Math.abs(fish(a) - fish(b)), Math.abs(inv(a) - inv(b))), over = best.worst > limit;
-    return { gap, small_gap: over && gap <= smallGap, fish_diff: best.fd, inv_diff: best.id, percent_diff: best.worst, first_counter: a.counter, second_counter: b.counter,
+    const counts = rows.map((r) => ({ counter: r.counter, fish: fish(r), inv: inv(r) }));
+    return { gap, small_gap: over && gap <= smallGap, counts, has_animals: counts.some((c) => c.fish || c.inv), all_average_fish: counts.reduce((x, c) => x + c.fish, 0) / counts.length, fish_diff: best.fd, inv_diff: best.id, percent_diff: best.worst, first_counter: a.counter, second_counter: b.counter,
       first_fish: fish(a), second_fish: fish(b), first_inv: inv(a), second_inv: inv(b), first_total: fish(a) + inv(a), second_total: fish(b) + inv(b),
       average_fish: (fish(a) + fish(b)) / 2, average_inv: (inv(a) + inv(b)) / 2, n_counts: rows.length, counters: rows.map((r) => r.counter), recount_needed: over && gap > smallGap };
   }
@@ -114,23 +115,32 @@
     const done = sample.filter((s) => points[s]), diffs = done.map((s) => points[s].percent_diff);
     const agreement = diffs.length ? Math.round(Math.max(0, 100 - diffs.reduce((x, y) => x + y, 0) / diffs.length) * 10) / 10 : null;
     const recount = done.filter((s) => points[s].recount_needed);
+    const animal = done.filter((s) => points[s].has_animals).map((s) => points[s].percent_diff);
+    const animalAgreement = animal.length ? Math.round(Math.max(0, 100 - animal.reduce((x, y) => x + y, 0) / animal.length) * 10) / 10 : null;
     let status = "pass";
     if (!sample.length) status = "no_sample";
     else if (sample.some((s) => !primaryIds.has(s))) status = "counting";
     else if (done.length < sample.length) status = "waiting_second";
     else if (recount.length) status = "review";
-    return { sample: sample.slice(), n_sample: sample.length, n_done: done.length, recount, n_within: done.length - recount.length, agreement, limit, target, status };
+    return { sample: sample.slice(), n_sample: sample.length, n_done: done.length, recount, n_within: done.length - recount.length, agreement, limit, target, n_animal_frames: animal.length, animal_agreement: animalAgreement, status };
   }
   // The wording for a recommendation. One place, so the step and the report say the same thing.
   function qcMessage(c) {
     const left = c.n_sample - c.n_done;
+    const animals = c.n_animal_frames == null ? "" : c.n_animal_frames ? " " + c.n_animal_frames + " of " + c.n_done + " frames had animals, and agreement on those is " + c.animal_agreement + "%." : " No checked frame had animals, so this only shows that both people saw nothing.";
     return {
       no_sample: ["No frames to check", "This video has no count points yet."],
       counting: ["Waiting for the first count", c.n_sample + " frames have been picked at random. They stay hidden until the first count is finished."],
       waiting_second: ["Waiting for a second person", left + " of " + c.n_sample + " frames still need a blind second count."],
-      review: ["Worth a second look", c.recount.length + " of " + c.n_done + " frames differ by more than " + c.limit + "% and by more than one animal. A recount is optional, preferably with a different person. Agreement is " + c.agreement + "%, and the protocol's target is " + c.target + "%."],
-      pass: ["Counts are close", c.agreement >= c.target ? "Agreement is " + c.agreement + "%, and no frame needs another look." : "Agreement is " + c.agreement + "%, under the protocol's " + c.target + "% target, but no frame differs by more than a small gap. This is common when frames have few fish."],
+      review: ["Worth a second look", c.recount.length + " of " + c.n_done + " frames differ by more than " + c.limit + "% and by more than one animal. A recount is optional, preferably with a different person. Agreement is " + c.agreement + "%, and the protocol's target is " + c.target + "%." + animals],
+      pass: ["Counts are close", c.agreement >= c.target ? ("Agreement is " + c.agreement + "%, and no frame needs another look." + animals) : ("Agreement is " + c.agreement + "%, under the protocol's " + c.target + "% target, but no frame differs by more than a small gap. This is common when frames have few fish." + animals)],
     }[c.status];
+  }
+  // Every count of a frame, by name, then the rule for the value used. Nothing is dropped from view.
+  function qcCounts(q) {
+    const rows = q.counts || [{ counter: q.first_counter, fish: q.first_fish, inv: q.first_inv }, { counter: q.second_counter, fish: q.second_fish, inv: q.second_inv }];
+    return { people: rows.map((c) => c.counter).join(", "), fish: rows.map((c) => c.fish).join(", "), inv: rows.map((c) => c.inv).join(", "),
+      rule: rows.length > 2 ? "Uses the closest two counts, " + q.first_counter + " and " + q.second_counter + ". Averaging all " + rows.length + " gives " + (Math.round(q.all_average_fish * 100) / 100) + "." : "" };
   }
   // Marks two people placed on one frame, paired by distance. Shows why two counts differ, and never changes them.
   function matchMarks(a, b, radius) {
@@ -166,6 +176,7 @@
     const n = counted.length, mean = n ? sum("finalFish") / n : null;
     const sd = n > 1 ? Math.sqrt(counted.reduce((a, p) => a + ((p.finalFish || 0) - mean) ** 2, 0) / (n - 1)) : null;
     const notes = saved.latest_recording_notes || {};
+    const qcRows = (saved.subsample_reviews || []).filter((r) => r.pass !== "primary");
     for (const p of counted) for (const [name, n] of Object.entries(p.species)) {
       const row = bySpecies[name] || (bySpecies[name] = { name, total: 0, points: 0 });
       row.total += n; row.points += 1;
@@ -177,18 +188,23 @@
       visibilityChanges: points.filter((p) => p.visibilityDirection).map((p) => ({ id: p.id, t: p.t, direction: p.visibilityDirection, category: p.visibility })), reviewSet: saved.review_set || null,
       totalFish: sum("fish"), totalInv: sum("inv"), totalUnknown: sum("unknown"), points,
       sd, se: sd == null ? null : sd / Math.sqrt(n), zeroPoints: counted.filter((p) => !p.fish).length,
-      interval: proto.interval_s, speciesObserved: [...new Set([...(notes.species_observed || []), ...Object.keys(bySpecies)])], juveniles: notes.juveniles == null ? null : notes.juveniles,
+      interval: proto.interval_s, speciesObserved: [...new Set([...(notes.species_observed || []), ...Object.keys(bySpecies), ...qcRows.flatMap((r) => Object.keys(r.species_counts || {}))])],
+      qcNotes: qcRows.filter((r) => r.notes || Object.keys(r.species_counts || {}).length).map((r) => ({ id: r.subsample_id, counter: r.counter, fish: r.total_fish_count, species: r.species_counts || {}, notes: r.notes || "" })), juveniles: notes.juveniles == null ? null : notes.juveniles,
       visibility: saved.visibility || notes.visibility_by_observer || [],
+      fileName: ((rec.source_files || [])[0] || "").split(/[\\/]/).pop() + ((rec.source_files || []).length > 1 ? " and " + (rec.source_files.length - 1) + " more" : ""), surveyDate: rec.date || null,
+      counters: [...new Set(counted.map((p) => p.counter).filter(Boolean))], secondCounters: [...new Set(qcRows.map((r) => r.counter).filter(Boolean))],
       species: Object.values(bySpecies).map((s) => ({ ...s, meanCount: s.total / n })).sort((a, b) => b.total - a.total || (a.name < b.name ? -1 : 1)),
       qcPairs: qc.length, qcRecounts: qc.filter((q) => q.recount_needed).length, qcAgreement: saved.qc_agreement == null ? null : saved.qc_agreement };
   }
   function reportCsv(rep, fmtTime) {
     const names = rep.species.map((s) => s.name);
-    const header = ["Video", "Point", "Time", "Time (s)", "Counted", "Fish", "Invertebrates", "Unknown", "Visibility", "Counter", "Notes"].concat(names.map((n) => "Count: " + n));
-    const rows = rep.points.map((p) => [rep.video, p.id, fmtTime(p.t), p.t, p.counted ? "yes" : "no", p.fish, p.inv, p.unknown, p.visibility, p.counter, p.notes].concat(names.map((n) => (n in p.species ? p.species[n] : ""))));
+    const header = ["Video", "Point", "Time", "Time (s)", "Counted", "Fish", "Fish used in MeanCount", "Invertebrates", "Unknown", "Visibility", "Counter", "Notes"].concat(names.map((n) => "Count: " + n));
+    const rows = rep.points.map((p) => [rep.video, p.id, fmtTime(p.t), p.t, p.counted ? "yes" : "no", p.fish, p.finalFish, p.inv, p.unknown, p.visibility, p.counter, p.notes].concat(names.map((n) => (n in p.species ? p.species[n] : ""))));
     return csvText(header, rows);
   }
-  const api = { percentDiff, assessPoint, qcVerdict, qcMessage, matchMarks, visibilitySummary, VIS_ORDER, inCount, countBands, csvText, buildReport, reportCsv, clipRange, scrubTime, clipControl, ENHANCE_PRESETS, enhanceFilter, cleanEnhance, nextEnhance, forKind, speciesName, speciesLabel, cleanNameMode, relTime };
+  // A named species has a two-word name. Anything else ("Unknown fish", Actinopterygii) is a broader group.
+  const isSpeciesName = (n) => /^(?!Unknown|Unidentified)[A-Z][a-z]+ [a-z]+$/.test(n);
+  const api = { isSpeciesName, percentDiff, assessPoint, qcVerdict, qcMessage, qcCounts, matchMarks, visibilitySummary, VIS_ORDER, inCount, countBands, csvText, buildReport, reportCsv, clipRange, scrubTime, clipControl, ENHANCE_PRESETS, enhanceFilter, cleanEnhance, nextEnhance, forKind, speciesName, speciesLabel, cleanNameMode, relTime };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ClipSiftDisplay = api;
 })(typeof window !== "undefined" ? window : globalThis);

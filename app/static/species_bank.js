@@ -75,7 +75,12 @@
     const items = visible();
     const grid = $("grid");
     grid.replaceChildren(...items.map(card));
-    if (!items.length) grid.append(el("p", "hint", "Nothing here."));
+    if (!items.length && REVIEW && S.filter === "todo") {
+      const box = el("div", "bank-done"), link = el("a", "btn primary", "See the summary in Step 6");
+      link.href = `/?run=${encodeURIComponent(S.run)}&step=verify`;
+      box.append(el("h2", "", `All ${S.bank.items.length} items checked`), el("p", "hint", "Thank you. These answers are saved, and they don't change any count."), link);
+      grid.append(box);
+    } else if (!items.length) grid.append(el("p", "hint", "Nothing here."));
   }
 
   function checkAlert() {
@@ -106,6 +111,8 @@
     clip.removeAttribute("src");
     if (name) { clip.src = fileUrl(name); clip.load(); }
     $("d-player").disabled = !name;
+    $("d-play").hidden = !name;
+    $("d-play").textContent = "Play clip";
     $("d-hold").textContent = name
       ? "Click and hold, or hold Space, to play 2.5 seconds either side."
       : "No clip for this candidate.";
@@ -142,6 +149,11 @@
     p.addEventListener("keyup", stopClip);
     p.addEventListener("blur", stopClip);
     p.addEventListener("contextmenu", (e) => e.preventDefault());
+    $("d-play").addEventListener("click", () => {
+      const on = $("d-clip").hidden;
+      if (on) playClip(); else stopClip();
+      $("d-play").textContent = on ? "Stop clip" : "Play clip";
+    });
   }
 
   function setupSplitter() {
@@ -196,6 +208,7 @@
 
   async function save(ev) {
     ev.preventDefault();
+    if (S.saving || !S.item) return;   // a second Enter mustn't save over the next item
     const outcome = (document.querySelector("input[name=outcome]:checked") || {}).value;
     const reviewer = $("reviewer").value.trim();
     const status = $("d-status");
@@ -204,6 +217,11 @@
     const rec = speciesRecord($("d-species").value);
     const body = { item_id: S.item.id, outcome, reviewer, life_stage: $("d-stage").value, notes: $("d-notes").value,
                    species: rec ? rec.scientific_name : $("d-species").value.trim() };
+    S.saving = true;
+    try { await saveItem(body, status); } finally { S.saving = false; }
+  }
+
+  async function saveItem(body, status) {
     const res = await fetch(`/api/runs/${encodeURIComponent(S.run)}/species_bank/decisions${SET_Q}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
@@ -235,7 +253,7 @@
     S.bank = data.bank;
     S.decisions = data.decisions || {};
     $("csv").href = `/api/runs/${encodeURIComponent(id)}/${REVIEW ? "review_set" : "species_bank"}.csv`;
-    $("back").href = `/?run=${encodeURIComponent(id)}`;
+    $("back").href = `/?run=${encodeURIComponent(id)}${REVIEW ? "&step=verify" : ""}`;
     const opened = REVIEW || store.get("bank-open-" + id) === "1";
     $("gate").hidden = opened;
     $("bank").hidden = !opened;
@@ -274,6 +292,14 @@
         const l = el("label"), r = el("input"); r.type = "radio"; r.name = "outcome"; r.value = v; l.append(r, " " + t); return l;
       }));
       $("reviewer").value = store.get("clipsift.reviewer") || $("reviewer").value;
+      // Keys for a run of 30: 1 to 6 pick the answer, Enter saves.
+      document.addEventListener("keydown", (e) => {
+        if (e.target.matches("input[type=text], input:not([type]), textarea, select") || e.ctrlKey || e.metaKey || !S.item) return;
+        const r = document.querySelectorAll("input[name=outcome]")[Number(e.key) - 1];
+        if (r) r.checked = true;
+        else if (e.key === "Enter" && !e.target.matches("button")) { e.preventDefault(); $("d-form").requestSubmit(); }
+      });
+      $("bank-intro").textContent += " Keys: 1 to 6 pick an answer, and Enter saves.";
     }
     $("gate-ok").addEventListener("click", () => { store.set("bank-open-" + S.run, "1"); loadRun(S.run); });
     if (sel.value) await loadRun(sel.value);

@@ -45,6 +45,7 @@
         <video id="d-clip" muted loop playsinline preload="auto" hidden></video>
         <span id="d-box" class="bank-box" hidden></span>
       </button>
+      <button type="button" id="d-play">Play clip</button>
       <p id="d-hold" class="hint"></p>
       <form id="d-form">
         <fieldset class="bank-outcomes">
@@ -61,7 +62,7 @@
         <label class="fb-row">Life stage
           <select id="d-stage"><option value="unknown">Unknown</option><option value="adult">Adult</option><option value="juvenile">Juvenile</option></select></label>
         <label class="fb-row">Notes <textarea id="d-notes" rows="2" maxlength="2000"></textarea></label>
-        <button type="submit" class="primary">Save and next</button> <span id="d-status" class="hint" role="status"></span>
+        <div class="bank-savebar"><button type="submit" class="primary">Save and next <kbd>Enter</kbd></button> <span id="d-status" class="hint" role="status"></span></div>
       </form>
     </div>
   </aside>

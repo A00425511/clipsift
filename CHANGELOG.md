@@ -15,6 +15,17 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.1.0 (2026-11-07)
+Fixes from a simulated trial with three staff. See the ClipSift Usability Trial doc.
+- Blind counts: MeanCount, Step 2 notes and the comparison stay hidden from anyone yet to count. The name box has a solid background and can't be skipped when a video opens.
+- Quality check: every count shows with its name, and the rule for the value used is stated. Agreement also shows on frames with animals. Recount species and notes reload and reach the report.
+- Step 3: saving over someone else's first count asks first.
+- Step 3: larger picture and a Bigger picture button (`V`), a No animals button (`N`), the cursor leaves the box on each new point, and the mark type resets after Unsure. Unknown fills in from marks.
+- Report: Used in MeanCount column, file name, survey date, who counted, a Reviewed by line, and species split from unidentified groups. Setup has a Survey date box.
+- Step 6: the box is drawn on the crop, with a Play button, keys, a finished message and links to frames with missed animals. Save stays on screen.
+- Step 6 fix: a set could pick the same item twice. Saving twice quickly could record a decision against the wrong item.
+- Polish: point count shown in setup, video time on the Step 2 player, tick boxes no longer jump, counts in the point list, and smaller wording fixes.
+
 ### 1.0.2 (2026-11-07)
 - Count points: after scrubbing or stepping with `,` and `.`, the frame stays paused. Space goes back to the count frame, and the next press plays.
 

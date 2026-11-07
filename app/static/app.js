@@ -15,8 +15,8 @@
 
   const S = {
     runId: null, results: null, saved: null, species: [], aliases: [], index: [],
-    mode: "sub", selId: null, qc: false, recount: false, step: "count", who: "",
-    diff: false, grid: false, watch: { species: [], points: false },
+    mode: "sub", selId: null, qc: false, recount: false, step: "count", who: "", whoSet: false,
+    diff: false, grid: false, watch: { species: [], points: false }, big: localStorage.getItem("clipsift.big") === "1", wantStep: null,
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
     markHistory: [], motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, held: false, hudRaf: 0, names: "common",
@@ -272,6 +272,7 @@
     try {
       const runs = await fillRuns();
       const want = new URLSearchParams(location.search).get("run");
+      S.wantStep = new URLSearchParams(location.search).get("step");
       if (want && runs.some((r) => r.run_id === want)) { $("run-select").value = want; loadRun(want); return; }
       if (DEMO) {
         if (!runs.length) { showEmpty("The demo recordings did not load. Try refreshing the page. If it keeps happening, tell the team with the Feedback button."); return; }
@@ -300,7 +301,7 @@
     setMotion(false);
     for (const id of PANELS) $(id).hidden = true;
     $("empty").hidden = true; $("progress-wrap").hidden = true; $("fixture-badge").hidden = true;
-    S.results = null; S.runId = null; S.selId = null; $("run-select").value = "";
+    S.results = null; S.runId = null; S.selId = null; S.whoSet = false; $("run-select").value = "";
     if (DEMO) return;
     $("home").hidden = false; $("run-pick").hidden = true; $("new-video").hidden = true;
     let d;
@@ -317,13 +318,13 @@
     box.append(el("table", { class: "rater-table" },
       el("thead", {}, el("tr", {}, ["People", "Frames", "Within " + d.rater.limit + "%", "Mean difference", "Who counts higher"].map((t) => el("th", { text: t })))),
       el("tbody", {}, d.rater.pairs.map((p) => el("tr", {}, [p.a + " and " + p.b, p.frames, p.within + " of " + p.frames, p.mean_percent_diff + "%",
-        p.mean_fish_gap === 0 ? "Level" : (p.mean_fish_gap > 0 ? p.a : p.b) + " by " + Math.abs(p.mean_fish_gap).toFixed(1) + " fish"].map((t) => el("td", { text: String(t) })))))));
+        p.mean_fish_gap === 0 ? "Level" : (p.mean_fish_gap > 0 ? p.a : p.b) + " by " + Math.abs(p.mean_fish_gap).toFixed(1) + " fish per frame"].map((t) => el("td", { text: String(t) })))))));
   }
 
   // ---------- who is working: a saved name, asked for each time a video opens ----------
   function paintWho() { $("who-name").textContent = S.who ? "Working as " + S.who : "Choose your name"; }
   function setWho(name) {
-    S.who = name; paintWho();
+    S.who = name; S.whoSet = true; S.watch.reveal = false; paintWho();
     try { localStorage.setItem("clipsift.reviewer", name); localStorage.setItem("bank-reviewer", name); } catch (e) { /* storage may be blocked */ }
     $("who-dlg").close();
     if (S.results) { const back = S.qc ? "qc" : S.step; S.selId = null; refreshSaved().then(() => { setStep(locked() && ["count", "report", "verify"].includes(back) ? "qc" : back); if (S.step === "count") maybeTour(); }); }
@@ -331,7 +332,8 @@
   async function askWho() {
     const list = await Data.profiles().catch(() => []), box = $("who-list"); clear(box);
     for (const n of list) box.append(el("button", { type: "button", class: n === S.who ? "primary" : "", text: n, on: { click: () => setWho(n) } }));
-    $("who-status").textContent = list.length ? "" : "No one is set up yet. Add your name below.";
+    $("who-status").textContent = list.length ? "" : "No one is set up yet. Add your name.";
+    $("who-cancel").hidden = !S.whoSet;
     if (!$("who-dlg").open) $("who-dlg").showModal();
     if (!list.length) $("who-new").focus();
   }
@@ -365,7 +367,7 @@
   // ---------- load a run ----------
   async function loadRun(id) {
     if (!id) { showHome(); return; }
-    message(""); $("home").hidden = true; $("run-pick").hidden = false; $("new-video").hidden = !!DEMO;
+    message(""); S.whoSet = false; S.watch.reveal = false; $("home").hidden = true; $("run-pick").hidden = false; $("new-video").hidden = !!DEMO;
     try {
       const [results, saved] = await Promise.all([Data.results(id), Data.saved(id)]);
       S.runId = id; S.results = results; S.saved = saved; S.selId = null;
@@ -389,6 +391,7 @@
   }
   // Where to pick up: the first step that still needs doing.
   function firstStep() {
+    if (S.wantStep) { const s = S.wantStep; S.wantStep = null; return s; }
     if (!(S.saved.visibility || []).length) return "visibility";
     if (!S.saved.latest_recording_notes) return "watch";
     return S.saved.n_counted < subs().length ? "count" : "qc";
@@ -431,6 +434,11 @@
     const c = check(), me = reviewer();
     return c.status === "waiting_second" && !firstCounters().has(me);
   }
+  // Someone new to a flagged frame may be about to recount it, so its earlier counts stay folded away until they ask.
+  function freshToRecount() {
+    const c = check();
+    return c.status === "review" && !c.recount.some((id) => S.saved.qc[id].counters.includes(reviewer()));
+  }
   function isDone(id) {
     if (S.mode === "sub") return S.qc ? !!secondOf(id) : !!primaryOf(id);
     return !!(S.saved.latest_review || {})[id];
@@ -454,16 +462,16 @@
       item("Analysis window", r.protocol && r.protocol.window_start_s != null ? fmtTime(r.protocol.window_start_s) + " to " + fmtTime(r.protocol.window_end_s) : "n/a"),
       item("Count points", fmtNum(sm.n_subsamples ?? subs().length)),
     );
-    const hide = S.qc || locked();
-    box.append(item("MeanCount (index)", hide ? "hidden until your blind count is done" : fmtNum(S.saved.mean_count_final ?? S.saved.mean_count_reviewed, 2)));
-    const meta = [rec.transect && "Transect " + rec.transect, rec.stat && statText(rec.stat), rec.year, rec.season].filter(Boolean).join(" . ");
+    const hide = S.qc || locked() || !S.whoSet;
+    box.append(item("MeanCount (index)", !S.whoSet ? "hidden until you choose your name" : hide ? "hidden until your blind count is done" : fmtNum(S.saved.mean_count_final ?? S.saved.mean_count_reviewed, 2)));
+    const meta = [rec.transect && "Transect " + rec.transect, rec.stat && statText(rec.stat), rec.year, rec.season].filter(Boolean).join(", ");
     if (meta) box.append(el("div", { class: "stat meta", text: meta }));
   }
   function renderProgress() {
     const wrap = $("progress-wrap"); wrap.hidden = false;
     const ids = queue(), done = ids.filter(isDone).length;
     let t = (S.mode === "sub" ? (S.qc ? "QC counted " : "Counted ") : "Reviewed ") + done + " of " + ids.length;
-    if (S.mode === "sub" && !S.qc && !locked() && S.saved.mean_count_reviewed != null) t += " . MeanCount so far " + S.saved.mean_count_reviewed.toFixed(2);
+    if (S.mode === "sub" && !S.qc && !locked() && S.whoSet && S.saved.mean_count_reviewed != null) t += ". MeanCount " + (S.saved.mean_count_final ?? S.saved.mean_count_reviewed).toFixed(2);
     $("progress-text").textContent = t;
     $("progress-bar").max = Math.max(1, ids.length); $("progress-bar").value = done;
   }
@@ -512,8 +520,7 @@
     note.hidden = !(S.mode === "sub" && S.qc);
     if (!note.hidden) {
       const q = qcSample();
-      const withFirst = q.items.filter((s) => primaryOf(s.subsample_id)).length;
-      note.textContent = (S.recount ? "Recount: " + queue().length : "Blind count: " + q.items.length) + " frames, picked at random. Earlier counts are hidden." + (withFirst ? "" : "");
+      note.textContent = (S.recount ? "Recount: " + queue().length + (queue().length === 1 ? " frame" : " frames") + " where the counts differ." : "Blind count: " + q.items.length + " frames, picked at random.") + " Earlier counts are hidden.";
     }
     const ids = queue();
     if (!ids.length) {
@@ -536,7 +543,8 @@
         if (u.flags && u.flags.shake) b.append(badge("Shake", "flag"));
         if (u.flags && u.flags.low_visibility) b.append(badge("Low visibility", "flag"));
       }
-      b.append(el("span", { class: "q-done", text: done ? "✓ done" : "" }));
+      const r = done && S.mode === "sub" && !S.qc ? primaryOf(id) : null;
+      b.append(el("span", { class: "q-done", text: !done ? "" : r && r.counter === reviewer() ? "✓ " + r.total_fish_count + " fish, " + r.invertebrate_count + " inv" : "✓ done" }));
       list.append(el("li", {}, b));
     });
   }
@@ -561,6 +569,8 @@
     const cur = $("queue-list").querySelector(".current"); if (cur) cur.scrollIntoView({ block: "nearest" });
     S.diff = false; setPressed("toggle-diff", false); $("movement-hint").hidden = true;
     setMotion(false);
+    if (isTyping(document.activeElement)) document.activeElement.blur();   // otherwise Space and the other keys do nothing on the new point
+    if (markKind() === "unsure") setMarkKind("fish");   // later marks must not silently go uncounted
     loadMedia(u);
     S.zoom = { k: 1, x: 0, y: 0 }; applyZoom();
     $("point-tools").hidden = S.mode !== "sub";
@@ -631,6 +641,7 @@
     if (on === S.motion) return;
     S.motion = on;
     $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on); setPressed("motion-btn", on);
+    $("motion-btn").firstChild.textContent = on ? "Stop clip " : "Play clip ";
     const r = clipRange();
     if (on) {
       v.playbackRate = currentSpeed();
@@ -778,6 +789,7 @@
     $("p-totals").textContent = blocked ? "Use a different name for the blind second count." : (labels.length ? "Marked: " + fish + " fish, " + inv + " invertebrates" + (uns ? ", " + uns + " Unsure (not counted)" : "") : "No marks yet. Click an animal on the picture to place a dot.");
     if (feed && labels.length && !blocked) {
       $("c-fish").value = fish; $("c-inv").value = inv;
+      $("c-unk").value = labels.filter((l) => l.kind !== "unsure" && !l.species).length || "";
       const withSp = labels.filter((l) => l.species);
       if (withSp.length) {
         const m = {}; for (const l of withSp) m[l.species] = (m[l.species] || 0) + 1;
@@ -1096,14 +1108,14 @@
     if (S.qc) head.append(badge(S.recount ? "Recount" : "Blind second count", "audit"));
     head.append(el("button", { type: "button", class: "quiet", text: S.qc ? "Back to the quality check" : "", hidden: !S.qc, on: { click: () => setStep("qc") } }));
     $("audit-banner").hidden = !S.qc;
-    $("audit-banner").textContent = "Count this frame fresh. Earlier counts are hidden on purpose.";
     $("movement-banner").hidden = true;
-    // form: prefill only from this person's own first count
-    const first = primaryOf(u.subsample_id), prev = !S.qc && first && first.counter === reviewer() ? first : null;
+    // form: prefill only from this person's own latest count, of any kind
+    const prev = ownCount(u.subsample_id);
+    $("audit-banner").textContent = prev ? "Your earlier count is loaded. Other people's counts are hidden." : "Count this frame fresh. Earlier counts are hidden on purpose.";
     $("c-fish").value = prev ? prev.total_fish_count : ""; $("c-inv").value = prev ? prev.invertebrate_count : "";
     $("c-unk").value = prev && prev.unknown_count ? prev.unknown_count : "";
     S.ss.rows = prev ? Object.entries(prev.species_counts || {}).map(([name, n]) => ({ name, n, free: !resolve(name) })) : [];
-    const carried = !prev && !S.qc ? carriedVisibility(u) : null;
+    const carried = !S.qc ? (prev && !prev.visibility_direction ? prev.visibility_category : !prev ? carriedVisibility(u) : null) : null;
     S.carriedVis = carried;
     $("c-vis").value = prev && prev.visibility_direction ? prev.visibility_category || "" : "";
     document.querySelector('input[name=vdir][value="' + ((prev && prev.visibility_direction) || "") + '"]').checked = true;
@@ -1113,10 +1125,11 @@
     for (const cb of $("chars").querySelectorAll("input")) cb.checked = !!(prev && (prev.characteristics || []).includes(cb.value));
     $("ss-species").value = "";
     paintSpeciesRows(); paintCharsWarn();
-    const r = !S.qc && prev ? "Your earlier count is loaded. Saving adds a new row; earlier rows are kept." : "";
+    const r = prev ? "Your earlier count is loaded. Saving adds a new row; earlier rows are kept." : "";
     $("sub-result").textContent = r;
   }
   // Visibility from the nearest earlier counted point, so it is only typed when it changes. Never in a blind count.
+  function ownCount(id) { let r = null; for (const x of S.saved.subsample_reviews || []) if (x.subsample_id === id && x.counter === reviewer()) r = x; return r; }
   const visChange = () => document.querySelector("input[name=vdir]:checked").value;
   function paintVisDir() { $("c-vis-row").hidden = !visChange(); }
   function carriedVisibility(u) {
@@ -1144,12 +1157,13 @@
   function paintCharsWarn() {
     const n = $("chars").querySelectorAll("input:checked").length;
     const anyCount = (parseInt($("c-fish").value, 10) || 0) + (parseInt($("c-inv").value, 10) || 0) > 0;
-    $("chars-warn").hidden = !(anyCount && n < 2);
+    $("chars-warn").classList.toggle("ghost", !(anyCount && n < 2));   // keeps its space, so the boxes never jump
   }
   function addSpecies(sel) {
     if (!sel || !sel.value) return;
     const ex = S.ss.rows.find((r) => r.name === sel.value);
-    if (ex) ex.n += 1; else S.ss.rows.push({ name: sel.value, n: 1, free: sel.free });
+    const total = (parseInt($("c-fish").value, 10) || 0) + (parseInt($("c-inv").value, 10) || 0), used = S.ss.rows.reduce((a, r) => a + r.n, 0);
+    if (ex) ex.n += 1; else S.ss.rows.push({ name: sel.value, n: Math.max(1, total - used), free: sel.free });   // starts with whatever isn't assigned yet
     $("ss-species").value = ""; paintSpeciesRows();
   }
   async function saveSubsample() {
@@ -1157,7 +1171,7 @@
     const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : parseInt(v, 10); };
     const fish = num("c-fish"), inv = num("c-inv");
     if (!reviewer()) { askWho(); return; }
-    if (fish == null || inv == null || fish < 0 || inv < 0) { message("Enter fish and invertebrate counts. Use 0 if there were none.", "error"); (fish == null ? $("c-fish") : $("c-inv")).focus(); return; }
+    if (fish == null || inv == null || fish < 0 || inv < 0) { const say = "Enter fish and invertebrate counts. Use 0 if there were none, or press No animals."; message(say, "error"); $("sub-result").textContent = say; (fish == null ? $("c-fish") : $("c-inv")).focus(); return; }
     const move = $("c-move").checked, notes = $("c-notes").value.trim();
     const sc = {}; for (const r of S.ss.rows) sc[r.name] = (sc[r.name] || 0) + r.n;
     const payload = {
@@ -1169,7 +1183,8 @@
       free_text_species: S.ss.rows.filter((r) => r.free).map((r) => r.name),
       notes: (move ? "Movement, unidentified. " : "") + notes, contrast_settings: settingsPayload(),
     };
-    const id = S.selId;
+    const id = S.selId, first = primaryOf(id);
+    if (!S.qc && first && first.counter !== reviewer() && !confirm("This point was counted by " + first.counter + ". Saving makes your count the first count, in place of theirs. Save anyway?")) return;
     try {
       await Data.save(S.runId, "subsample_reviews", payload);
       await refreshSaved();
@@ -1179,6 +1194,19 @@
       if (!S.qc && S.saved.n_counted >= subs().length && queue().indexOf(id) === queue().length - 1) { setStep("qc"); return; }
       step(1);
     } catch (e) { message("Not saved: " + e.message, "error"); }
+  }
+
+  function noAnimals() {
+    if (S.mode !== "sub" || !S.selId) return;
+    if (myLabels().some((l) => l.kind !== "unsure")) { message("This point has marks on it. Clear them first if nothing is really there.", "warn"); return; }
+    $("c-fish").value = 0; $("c-inv").value = 0; $("c-unk").value = ""; paintCharsWarn();
+    saveSubsample();
+  }
+  function paintBig() { document.body.classList.toggle("big-view", S.big); setPressed("big-view", S.big); }
+  function toggleBig() {
+    S.big = !S.big; paintBig();
+    try { localStorage.setItem("clipsift.big", S.big ? "1" : "0"); } catch (e) { /* storage may be blocked */ }
+    requestAnimationFrame(() => { applyZoom(); renderLabels(false); });
   }
 
   // ---------- navigation and keys ----------
@@ -1216,6 +1244,8 @@
     if (k === "arrowright" || k === "arrowdown" || k === "j") { e.preventDefault(); step(1); }
     else if (k === "arrowleft" || k === "arrowup" || k === "k") { e.preventDefault(); step(-1); }
     else if (k === "g") toggle("grid");
+    else if (k === "n") noAnimals();
+    else if (k === "v") toggleBig();
     else if (k === "d") toggle("diff");
     else if (S.mode === "sub" && k === "p") setTool("dot");
     else if (S.mode === "sub" && k === "e") setTool("ellipse");
@@ -1270,6 +1300,12 @@
       S.saved = await Data.saved(S.runId); setStep("count");
     } catch (e) { say("Not saved: " + e.message); }
   }
+  // The first counter's notes say when the fish pass, so they stay hidden from anyone about to count blind.
+  function paintWatchForm() {
+    const shut = locked(), fresh = !shut && freshToRecount() && !S.watch.reveal;
+    $("watch-form").hidden = shut || fresh; $("watch-hidden").hidden = !(shut || fresh); $("watch-reveal").hidden = !fresh;
+    $("watch-hidden-text").textContent = shut ? "Earlier notes stay hidden until your blind count is done. You can still watch the video." : "Earlier notes are hidden in case you're about to recount.";
+  }
   function setWatch(points) {
     const v = $("watch-video"), url = Data.windowUrl(S.runId);
     if (!url) points = true;
@@ -1298,7 +1334,7 @@
     $("vis-status").textContent = "";
     const out = $("vis-others"); clear(out);
     const sum = D.visibilitySummary(rows), others = rows.length - (mine ? 1 : 0);
-    out.append(el("p", { class: "hint", text: rows.length + " of 2 to 3 people have rated this video." + (rows.length < 2 ? " Ask someone else to rate it under their own name." : "") }));
+    out.append(el("p", { class: "hint", text: (rows.length === 1 ? "1 person has" : rows.length + " people have") + " rated this video." + (rows.length < 2 ? " The protocol asks for 2 to 3, so ask someone else to rate it under their own name." : "") }));
     if (!mine) { if (others) out.append(el("p", { class: "hint", text: "Their ratings stay hidden until you've saved yours." })); }
     else {
       out.append(el("ul", { class: "plain" }, rows.map((r) => el("li", { text: r.observer + ": " + r.category }))));
@@ -1323,8 +1359,9 @@
   function startBlind(recount) { S.recount = recount; setStep("blind"); }
   function renderQc() {
     const c = check(), me = reviewer(), [title, detail] = D.qcMessage(c), v = $("qc-verdict");
-    v.className = "verdict " + c.status; clear(v); v.append(el("b", { text: title }), el("span", { text: detail }));
-    const act = $("qc-actions"), res = $("qc-results"); clear(act); clear(res);
+    const act = $("qc-actions"), res = $("qc-results"); clear(act); clear(res); clear(v);
+    if (!S.whoSet) return;   // nothing shows until the person is known
+    v.className = "verdict " + c.status; v.append(el("b", { text: title }), el("span", { text: detail }));
     const isFirst = firstCounters().has(me);
     if (c.status === "counting") act.append(el("button", { type: "button", text: "Go to counting", on: { click: () => setStep("count") } }));
     if (c.status === "waiting_second") {
@@ -1342,18 +1379,19 @@
     if (!c.n_done || c.status === "waiting_second" || c.status === "counting" || locked()) return;
     const ids = c.sample.filter((id) => S.saved.qc[id]);
     // Someone new may be about to recount, so the first counts don't show until they ask.
-    const fresh = c.status === "review" && !c.recount.some((id) => S.saved.qc[id].counters.includes(me));
+    const fresh = freshToRecount();
     const wrap = fresh ? el("details", {}, el("summary", { text: "Show the comparison. Leave this closed if you're about to recount." })) : res;
     if (fresh) res.append(wrap);
-    wrap.append(el("div", { class: "qc-stats" }, el("span", { text: c.n_within + " of " + c.n_done + " frames within " + p.qc_max_percent_diff + "%" }), el("span", { text: "Agreement " + c.agreement + "%, target " + c.target + "%" })));
+    wrap.append(el("div", { class: "qc-stats" }, el("span", { text: c.n_within + " of " + c.n_done + " frames within " + p.qc_max_percent_diff + "%" }), el("span", { text: "Agreement " + c.agreement + "%, target " + c.target + "%" }), el("span", { text: c.n_animal_frames ? "On the " + c.n_animal_frames + " with animals: " + c.animal_agreement + "%" : "No frames with animals" })));
     wrap.append(el("table", { class: "qc-table" },
       el("thead", {}, el("tr", {}, ["Frame", "Time", "People", "Fish", "Average", "Difference", "Invertebrates", "Difference", "Marks in both", "Result", ""].map((t) => el("th", { text: t })))),
       el("tbody", {}, ids.map((id) => {
-        const q = S.saved.qc[id], u = unit(id, "sub"), m = marksFor(id, q);
-        return el("tr", {}, [id, fmtTime(u.t_s), q.first_counter + ", " + q.second_counter + (q.n_counts > 2 ? " (of " + q.n_counts + " counts)" : ""), q.first_fish + " and " + q.second_fish, q.average_fish, q.fish_diff.toFixed(1) + "%",
-          q.first_inv + " and " + q.second_inv, q.inv_diff.toFixed(1) + "%", m.both.length + " of " + (m.both.length + m.onlyA.length + m.onlyB.length), qcWord(q)].map((t) => el("td", { text: String(t) })),
+        const q = S.saved.qc[id], u = unit(id, "sub"), m = marksFor(id, q), all = D.qcCounts(q);
+        return el("tr", {}, [id, fmtTime(u.t_s), all.people, all.fish, q.average_fish, q.fish_diff.toFixed(1) + "%",
+          all.inv, q.inv_diff.toFixed(1) + "%", m.both.length + " of " + (m.both.length + m.onlyA.length + m.onlyB.length), qcWord(q)].map((t) => el("td", { text: String(t) })),
           el("td", {}, el("button", { type: "button", class: "quiet", text: "Compare", on: { click: () => compareMarks(id, q) } })));
       }))));
+    for (const id of ids) { const rule = D.qcCounts(S.saved.qc[id]).rule; if (rule) wrap.append(el("p", { class: "hint", text: id + ": " + rule })); }
     wrap.append(el("div", { id: "qc-compare", class: "qc-compare" }));
   }
   const qcWord = (q) => (q.recount_needed ? "Worth a look" : q.small_gap ? "Small gap" : "Close");
@@ -1397,11 +1435,13 @@
       return;
     }
     box.append(el("p", { text: st.done + " of " + st.total + " items checked." }));
-    box.append(el("div", { class: "qc-actions" }, el("a", { class: "btn primary", href: "/species_bank.html?run=" + enc(S.runId) + "&set=review", text: st.done ? "Carry on checking" : "Start checking" }),
+    box.append(el("div", { class: "qc-actions" }, el("a", { class: "btn primary", href: "/species_bank.html?run=" + enc(S.runId) + "&set=review", text: st.done >= st.total ? "Look through the items" : st.done ? "Carry on checking" : "Start checking" }),
       el("a", { class: "btn", href: "/api/runs/" + enc(S.runId) + "/review_set.csv", text: "Download results as CSV" })));
     const rows = Object.entries(st.by_source);
     if (rows.length) box.append(el("table", { class: "qc-table" }, el("thead", {}, el("tr", {}, ["Where it came from", "Animal", "Not an animal", "Unclear"].map((t) => el("th", { text: t })))),
       el("tbody", {}, rows.map(([k, r]) => el("tr", {}, [SOURCE_WORDS[k] || k, r.animal, r.not_animal, r.unclear].map((t) => el("td", { text: String(t) })))))));
+    if (st.missed && st.missed.length) box.append(el("p", { text: "Animals the counter hadn't marked, as judged here. Open a frame to look. Nothing changes unless someone recounts it." }),
+      el("div", { class: "qc-actions" }, st.missed.map((m) => el("button", { type: "button", text: m.subsample_id + " at " + fmtTime(m.time_s) + (m.n > 1 ? " (" + m.n + ")" : ""), on: { click: () => { setStep("count"); select(m.subsample_id); } } }))));
     if (st.model) box.append(el("p", { class: "hint", text: "Model: " + st.model + ". These answers don't change any count." }));
   }
 
@@ -1424,7 +1464,7 @@
     const notes = S.saved.latest_recording_notes || {}, tag = (k, t) => { document.querySelector('[data-state="' + k + '"]').textContent = t; };
     const seen = (S.saved.visibility || []).length, all = subs().length, counted = subs().filter((s) => primaryOf(s.subsample_id)).length, c = check(), rs = S.saved.review_set;
     tag("visibility", seen ? seen + " rated" : "");
-    tag("watch", (notes.species_observed || []).length ? notes.species_observed.length + " species" : (S.saved.latest_recording_notes ? "done" : ""));
+    tag("watch", locked() || !S.whoSet ? "" : (notes.species_observed || []).length ? notes.species_observed.length + " species" : (S.saved.latest_recording_notes ? "done" : ""));
     tag("count", counted + " of " + all);
     tag("qc", { pass: "done", review: "done, see notes" }[c.status] || (c.n_done + " of " + c.n_sample));
     tag("verify", rs ? rs.done + " of " + rs.total : "");
@@ -1441,7 +1481,7 @@
     for (const [id, name] of [["step-visibility", "visibility"], ["step-watch", "watch"], ["step-qc", "qc"], ["step-verify", "verify"]]) $(id).hidden = step !== name;
     setMotion(false);
     const wv = $("watch-video");
-    if (step === "watch") { wv.loop = false; setWatch(S.watch.points); fillNotes(); } else wv.pause();
+    if (step === "watch") { wv.loop = false; setWatch(S.watch.points); fillNotes(); paintWatchForm(); } else wv.pause();
     if (step !== "visibility") $("vis-video").pause();
     if (step === "visibility") renderVisibility();
     if (step === "qc") renderQc();
@@ -1488,14 +1528,23 @@
       NV.duration = d.duration_s;
       const n = d.names || {};
       for (const [id, v] of [["nv-id", n.video_id], ["nv-transect", n.transect], ["nv-stat", n.stat], ["nv-year", n.year], ["nv-season", n.season], ["nv-name", d.suggested_name]]) if (v != null && !$(id).value) $(id).value = v;
+      paintPointCount();
       if (path) $("nv-chosen").textContent = path + (d.parts && d.parts.length > 1 ? ", joined from " + d.parts.length + " parts" : "");
       for (const f of d.frames) box.append(el("button", { type: "button", "aria-pressed": "false", title: "Start the window at " + fmtTime(f.t_s), on: { click: (e) => {
-        $("nv-start").value = f.t_s;
+        $("nv-start").value = f.t_s; paintPointCount();
         const limit = (NV.duration || 0) > 1800 ? 900 : (NV.duration || 0) > 1500 ? 600 : 300;
         $("nv-window-hint").textContent = f.t_s > limit ? "That removes more than the protocol allows for a video this long. The start time is recorded in the report." : "The protocol starts at 1:00 and allows up to 4 more minutes.";
         for (const b of box.children) b.setAttribute("aria-pressed", b === e.currentTarget ? "true" : "false");
       } } }, el("img", { src: f.url, alt: "Frame at " + fmtTime(f.t_s) }), el("span", { text: fmtTime(f.t_s) })));
     } catch (e) { if (ask === NV.previewAsk) nvStatus(e.message, "error"); }
+  }
+  // The real number of points for the chosen window, so "every 15 s" doesn't surprise anyone.
+  function paintPointCount() {
+    const d = NV.duration, num = (id) => { const v = $(id).value; return v === "" ? null : Number(v); };
+    if (!d) { $("nv-count").textContent = ""; return; }
+    const start = num("nv-start") ?? 60, end = num("nv-end") ?? Math.min(d - 60, start + 900), every = num("nv-points") ?? 60;
+    const n = end > start ? Math.floor((end - start - 1) / every) + 1 : 0;
+    $("nv-count").textContent = n ? "This gives " + n + (n === 1 ? " count point." : " count points.") : "This window is too short for any count points. Check Window start and end under More options.";
   }
   function uploadVideo(file) {
     return new Promise((resolve, reject) => {
@@ -1535,7 +1584,8 @@
   // The setup window, for one chosen video.
   async function setupVideo(pick) {
     closeDialogs(); nvStatus("");
-    for (const id of ["nv-path", "nv-name", "nv-id", "nv-start", "nv-end", "nv-transect", "nv-stat", "nv-year", "nv-season"]) $(id).value = "";
+    NV.duration = null; $("nv-count").textContent = "";
+    for (const id of ["nv-path", "nv-name", "nv-id", "nv-start", "nv-end", "nv-transect", "nv-stat", "nv-year", "nv-season", "nv-date"]) $(id).value = "";
     $("nv-chosen").textContent = pick.path || pick.id || "Choose a video below"; $("nv-preview-wrap").hidden = true;
     $("nv-folder-wrap").hidden = !!pick.path; $("new-dlg").showModal();
     try {
@@ -1547,7 +1597,8 @@
   async function startJob() {
     const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
     const body = { video: $("nv-video").value || null, path: $("nv-path").value, name: $("nv-name").value.trim(), layer: 0, window_start: num("nv-start"), window_end: num("nv-end"), video_id: $("nv-id").value.trim(), interval: num("nv-points"),
-      transect: $("nv-transect").value.trim(), stat: $("nv-stat").value.trim(), year: num("nv-year"), season: $("nv-season").value.trim() };
+      transect: $("nv-transect").value.trim(), stat: $("nv-stat").value.trim(), year: num("nv-year"), season: $("nv-season").value.trim(), date: $("nv-date").value };
+    if (!body.year && !body.season && !body.date && !confirm("There's no survey date, year or season. These appear on the report. Carry on without them?")) return;
     try {
       const job = await post("/api/jobs", body);
       NV.autoOpen = job.name;
@@ -1568,7 +1619,8 @@
       if (j.error) line.append(el("p", { class: "warn-text", text: j.error }));
       ul.append(line);
     }
-    const run = NV.jobs.find((j) => j.status === "running"), waiting = NV.jobs.filter((j) => j.status === "queued").length, b = $("job-badge");
+    const videoJobs = NV.jobs.filter((j) => j.kind !== "review_set");   // step 6 shows its own progress
+    const run = videoJobs.find((j) => j.status === "running"), waiting = videoJobs.filter((j) => j.status === "queued").length, b = $("job-badge");
     b.hidden = !run && !waiting;
     b.textContent = run ? "Processing " + run.name + ": " + run.progress + (waiting ? ", " + waiting + " waiting" : "") : waiting + " waiting";
   }
@@ -1603,8 +1655,8 @@
     const table = (cols, rows) => el("table", { class: "rp-table" }, el("thead", {}, el("tr", {}, cols.map((c) => el("th", { text: c })))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", { text: c == null ? "" : String(c) }))))));
     const stat = (l, v) => el("div", { class: "rp-stat" }, el("b", { text: v == null ? "n/a" : String(v) }), el("span", { text: l }));
     const meta = [rep.transect && "Transect " + rep.transect, rep.stat && statText(rep.stat), rep.year, rep.season].filter(Boolean).join(", ");
-    box.append(el("h1", { text: "ClipSift count report" }), el("p", { class: "rp-meta", text: "Video " + rep.video + (meta ? ". " + meta : "") + "." + (rep.windowStart != null ? " Analysis window " + fmtTime(rep.windowStart) + " to " + fmtTime(rep.windowEnd) + "." : "") }),
-      el("div", { class: "rp-stats" }, stat("Points counted", rep.counted + " of " + rep.planned), stat(rep.qcPairs ? "MeanCount, using QC averages" : "MeanCount (fish per point)", dec(rep.meanCount, 2)), stat("Standard deviation", dec(rep.sd, 2)), stat("Standard error", dec(rep.se, 2)), stat("Points with no fish", rep.zeroPoints), stat("Fish", rep.totalFish), stat("Invertebrates", rep.totalInv), stat("Unknown", rep.totalUnknown), stat("Species observed in the window", rep.speciesObserved.length), stat("Species in counted points", rep.species.length)));
+    box.append(el("h1", { text: "ClipSift count report" }), el("p", { class: "rp-meta", text: "Video " + rep.video + (rep.fileName ? " (" + rep.fileName + ")" : "") + (meta ? ". " + meta : "") + "." + (rep.surveyDate ? " Surveyed " + rep.surveyDate + "." : "") + (rep.windowStart != null ? " Analysis window " + fmtTime(rep.windowStart) + " to " + fmtTime(rep.windowEnd) + "." : "") }),
+      el("div", { class: "rp-stats" }, stat("Points counted", rep.counted + " of " + rep.planned), stat(rep.qcPairs ? "MeanCount, using QC averages" : "MeanCount (fish per point)", dec(rep.meanCount, 2)), stat("Standard deviation (sample)", dec(rep.sd, 2)), stat("Standard error", dec(rep.se, 2)), stat("Points with no fish", rep.zeroPoints), stat("Fish", rep.totalFish), stat("Invertebrates", rep.totalInv), stat("Unknown", rep.totalUnknown), stat("Species identified", rep.speciesObserved.filter(D.isSpeciesName).length), stat("Unidentified or broader groups", rep.speciesObserved.filter((n) => !D.isSpeciesName(n)).length)));
     const vis = rep.visibility.map((v) => v.observer + ": " + v.category).join("; "), vsum = D.visibilitySummary(rep.visibility);
     box.append(el("p", { class: "rp-meta", text: "One point every " + (rep.interval ?? "?") + " s. Visibility: " + (vis || "not recorded") + ". Juveniles: " + (rep.juveniles == null ? "not recorded" : rep.juveniles ? "present" : "absent") + "." }));
     if (rep.visibilityChanges.length) box.append(el("p", { class: "rp-meta", text: "Visibility changed by 0.5 m or more at " + rep.visibilityChanges.map((c) => fmtTime(c.t) + " (" + (c.direction === "increasing" ? "better" : "worse") + (c.category ? ", " + c.category : "") + ")").join("; ") + "." }));
@@ -1614,15 +1666,19 @@
     box.append(el("h2", { text: "Species observed in the window" }), el("p", { text: rep.speciesObserved.length ? rep.speciesObserved.map(reportName).join("; ") : (rep.noneSeen ? "None seen." : "Not recorded yet.") }));
     box.append(el("h2", { text: "Species in counted points" }));
     box.append(rep.species.length ? table(["Species", "Count", "Points seen at", "MeanCount"], rep.species.map((s) => [reportName(s.name), s.total, s.points, s.meanCount.toFixed(2)])) : el("p", { text: "No species recorded yet." }));
-    box.append(el("h2", { text: "Points" }), table(["Point", "Time", "Fish", "Invertebrates", "Unknown", "Species", "Visibility", "Counter", "Notes"],
-      rep.points.map((p) => [p.id, fmtTime(p.t), p.counted ? p.fish : "not counted", p.inv, p.unknown, Object.entries(p.species).map(([n, c]) => reportName(n) + ": " + c).join("; "), p.visibility, p.counter, p.notes])));
+    box.append(el("h2", { text: "Points" }), table(["Point", "Time", "Fish", "Used in MeanCount", "Invertebrates", "Unknown", "Species", "Visibility", "Counter", "Notes"],
+      rep.points.map((p) => [p.id, fmtTime(p.t), p.counted ? p.fish : "not counted", p.finalFish, p.inv, p.unknown, Object.entries(p.species).map(([n, c]) => reportName(n) + ": " + c).join("; "), p.visibility, p.counter, p.notes])));
     if (rep.qcCheck && rep.qcPairs) {
       const [title, detail] = D.qcMessage(rep.qcCheck);
       box.append(el("h2", { text: "Quality check" }), el("p", { text: title + ". " + detail + " Formulas are provisional until Coastal Action confirms them." }),
-        table(["Point", "People", "Fish", "Average", "Difference", "Invertebrates", "Difference", "Result"], Object.entries(rep.qcPoints).map(([id, q]) => [id, q.first_counter + ", " + q.second_counter, q.first_fish + " and " + q.second_fish, q.average_fish, q.fish_diff.toFixed(1) + "%", q.first_inv + " and " + q.second_inv, q.inv_diff.toFixed(1) + "%", qcWord(q)])));
+        table(["Point", "People", "Fish", "Average", "Difference", "Invertebrates", "Difference", "Result"], Object.entries(rep.qcPoints).map(([id, q]) => { const all = D.qcCounts(q); return [id, all.people, all.fish, q.average_fish, q.fish_diff.toFixed(1) + "%", all.inv, q.inv_diff.toFixed(1) + "%", qcWord(q)]; })));
+      for (const [id, q] of Object.entries(rep.qcPoints)) { const rule = D.qcCounts(q).rule; if (rule) box.append(el("p", { class: "rp-meta", text: id + ": " + rule })); }
+      if (rep.qcNotes.length) box.append(el("h3", { text: "Notes from quality check counts" }), table(["Point", "Counter", "Fish", "Species", "Notes"], rep.qcNotes.map((n) => [n.id, n.counter, n.fish, Object.entries(n.species).map(([k, c]) => reportName(k) + ": " + c).join("; "), n.notes])));
       if (rep.meanFirst != null) box.append(el("p", { class: "rp-meta", text: "MeanCount from first counts only: " + rep.meanFirst.toFixed(2) + "." }));
     }
     if (rep.reviewSet) box.append(el("p", { class: "rp-meta", text: "Model flags: " + rep.reviewSet.done + " of " + rep.reviewSet.total + " checked by a person. These do not affect any count." }));
+    box.append(el("h2", { text: "Sign-off" }), el("p", { class: "rp-meta", text: "First count: " + (rep.counters.join(", ") || "none") + ". Second counts: " + (rep.secondCounters.join(", ") || "none") + ". Report opened by: " + (reviewer() || "not recorded") + "." }),
+      el("p", { class: "rp-sign", text: "Reviewed by ______________________    Date ______________" }));
     box.append(el("p", { class: "rp-note", text: "Counts are a relative index, not abundance. Every count here was made by a person, with no model suggestions. Created " + new Date().toLocaleString() + "." }));
     S.report = rep;
     const shots = el("div", { class: "rp-shots" });
@@ -1632,7 +1688,7 @@
   }
   // A counted frame with its counter's marks drawn on, like Coastal Action's marked screenshots.
   function addShot(box, p) {
-    const img = new Image(), fig = el("figure", {}, el("figcaption", { text: p.id + " at " + fmtTime(p.t) + ": " + p.fish + " fish, " + (p.inv || 0) + " invertebrates" }));
+    const img = new Image(), fig = el("figure", {}, el("figcaption", { text: p.id + " at " + fmtTime(p.t) + ": " + p.fish + " fish, " + (p.inv || 0) + " invertebrates. Marks by " + p.counter }));
     box.append(fig);
     img.onload = () => {
       const w = 900, h = Math.round((w * img.naturalHeight) / img.naturalWidth), c = el("canvas", { width: w, height: h }), g = c.getContext("2d");
@@ -1689,7 +1745,7 @@
   const TOUR = [
     { target: "steps", title: "Follow the steps", body: "These steps follow Coastal Action's protocol, in order. Each one shows its progress. The ? button at the top has more help." },
     { target: "timeline-wrap", title: "The whole recording", body: "Each tick is a point to count. Grey means not counted yet, green means done. Click a tick to jump to it." },
-    { target: "stage-wrap", title: "Play, then mark", body: "Hold Space to play 5 seconds either side in the picture. The green bar shows the count second. Then click each animal to place a dot. Not sure about one? Leave it out." },
+    { target: "stage-wrap", title: "Play, then mark", body: "Hold Space to play 5 seconds either side in the picture. The yellow border shows the count second. Then click each animal to place a dot. Not sure about one? Leave it out." },
     { target: "side-sub", title: "Check your count", body: "The totals fill in from your dots. Tick which features you can see, and note any change in visibility." },
     { target: "save-sub", title: "Save and go to the next", body: "Press Save to keep your count and open the next point. The ? button at the top has help and can replay this tour." },
   ];
@@ -1768,6 +1824,7 @@
     $("home-btn").addEventListener("click", () => { if (DEMO) return; closeDialogs(); showHome(); });
     $("who-btn").addEventListener("click", askWho);
     $("who-form").addEventListener("submit", addWho);
+    $("who-cancel").addEventListener("click", () => $("who-dlg").close());
     $("browse-btn").addEventListener("click", browse);
     $("file-pick").addEventListener("change", (e) => addFiles([...e.target.files]));
     $("home-path-go").addEventListener("click", () => { const p = $("home-path").value.trim(); if (p) setupVideo({ path: p }); });
@@ -1783,6 +1840,9 @@
       document.querySelectorAll("[data-wspeed]").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
       $("watch-video").playbackRate = parseFloat(b.dataset.wspeed);
     });
+    $("watch-reveal").addEventListener("click", () => { S.watch.reveal = true; paintWatchForm(); });
+    $("who-dlg").addEventListener("cancel", (e) => { if (!S.whoSet && S.results) e.preventDefault(); });
+    $("who-dlg").addEventListener("close", () => { if (!S.whoSet && S.results) $("who-dlg").showModal(); });   // the name can't be skipped
     $("rn-none").addEventListener("change", () => { if ($("rn-none").checked) { S.watch.species = []; paintWatchSpecies(); } });
     for (const r of document.querySelectorAll("input[name=vdir]")) r.addEventListener("change", paintVisDir);
     $("nv-close").addEventListener("click", () => $("new-dlg").close());
@@ -1861,6 +1921,15 @@
     for (const id of ["c-fish", "c-inv"]) $(id).addEventListener("input", () => { paintCharsWarn(); paintSpeciesSum(); });
     $("chars").addEventListener("change", paintCharsWarn);
     $("save-sub").addEventListener("click", saveSubsample);
+    $("no-animals").addEventListener("click", noAnimals);
+    $("big-view").addEventListener("click", toggleBig);
+    paintBig();
+    $("watch-video").addEventListener("timeupdate", () => {
+      const p = (S.results && S.results.protocol) || {}, v = $("watch-video");
+      $("watch-clock").textContent = S.watch.points || p.window_start_s == null ? "" : "Video time " + fmtTime(Math.floor(p.window_start_s + v.currentTime)) + ". Use this time in notes, because it matches the count points.";
+    });
+    for (const id of ["nv-start", "nv-end", "nv-points"]) $(id).addEventListener("input", paintPointCount);
+    $("nv-points").addEventListener("change", paintPointCount);
     $("rn-save").addEventListener("click", saveNotes);
     wireTools();
     document.addEventListener("keydown", onKey);

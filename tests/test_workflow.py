@@ -75,6 +75,19 @@ def test_verdict_walks_through_every_status():
     assert v({"a", "b"}, {"a": point(0), "b": point(2)}) == "pass"
 
 
+def test_empty_frames_cannot_hide_the_frame_with_fish():
+    pts = {"a": qc.assess_point([row("x", 0), row("y", 0)], LIMIT), "b": qc.assess_point([row("x", 0), row("y", 0)], LIMIT),
+           "c": qc.assess_point([row("x", 20), row("y", 22)], LIMIT)}
+    v = qc.verdict(["a", "b", "c"], {"a", "b", "c"}, pts, LIMIT, TARGET)
+    assert v["agreement"] == 96.8 and v["n_animal_frames"] == 1 and v["animal_agreement"] == 90.5
+
+
+def test_every_count_stays_listed_after_a_recount():
+    p = qc.assess_point([row("Ana", 20), row("Ben", 25), row("Cy", 22)], LIMIT)
+    assert [c["counter"] for c in p["counts"]] == ["Ana", "Ben", "Cy"] and round(p["all_average_fish"], 2) == 22.33
+    assert p["average_fish"] == 21
+
+
 def test_agreement_cannot_go_below_zero():
     assert qc.verdict(["a"], {"a"}, {"a": {"percent_diff": 200, "recount_needed": True}}, LIMIT, TARGET)["agreement"] == 0
 
@@ -157,6 +170,22 @@ def test_meancount_uses_the_average_of_checked_frames(env):
     assert c.get("/api/interrater").get_json()["pairs"][0]["frames"] == len(ids)
 
 
+def test_home_hides_meancount_while_a_blind_count_is_due(env):
+    c, _ = env
+    count_all(c)
+    assert c.get("/api/progress").get_json()["videos"][0]["mean_count"] is None
+    blind(c)
+    assert c.get("/api/progress").get_json()["videos"][0]["mean_count"] == 20
+
+
+def test_species_named_in_a_recount_reach_the_summary(env):
+    c, _ = env
+    count_all(c)
+    c.post(R + "/subsample_reviews", json={"subsample_id": "ss_01", "counter": "Ben", "pass": "recount", "total_fish_count": 20, "invertebrate_count": 0, "species_counts": {"Menidia menidia": 20}})
+    text = c.get(R + "/export_summary.csv").get_data(as_text=True)
+    assert "Menidia menidia" in text and "QC frames with animals" in text
+
+
 def test_empty_export_cells_stay_empty(env):
     c, _ = env
     c.post(R + "/subsample_reviews", json={"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 1, "invertebrate_count": 0})
@@ -221,6 +250,13 @@ def test_share_passes_on_when_a_source_runs_short():
     assert len(picked) == 20
 
 
+def test_no_item_is_picked_twice():
+    for size in range(10, 60):
+        pool = [{"id": f"{size}-{i}", "max_confidence": i / 100} for i in range(size)]
+        picked = verify.choose({"agree": pool, "model_only": [], "elsewhere": []}, 10, str(size))
+        assert len({i["id"] for i in picked}) == len(picked) == 10
+
+
 def test_source_stays_hidden_until_someone_decides(review):
     c, _ = review
     url = R + "/species_bank?set=review"
@@ -256,6 +292,28 @@ def test_review_set_refuses_before_counting(env, monkeypatch):
     c, _ = env
     res = c.post(R + "/review_set", json={"count": 36})
     assert res.status_code == 400
+
+
+def test_review_summary_lists_real_animals_the_counter_missed(review):
+    c, run = review
+    bank = json.loads((run / "review_set" / "bank.json").read_text())
+    item = next(i for i in bank["items"] if i["source"] == "model_only")
+    c.post(R + "/species_bank/decisions?set=review", json={"item_id": item["id"], "outcome": "fish", "reviewer": "Ana"})
+    assert c.get(R + "/saved").get_json()["review_set"]["missed"][0]["subsample_id"] == item["subsample_id"]
+
+
+def test_unknown_fish_is_not_counted_as_a_species(env):
+    c, _ = env
+    c.post(R + "/recording_notes", json={"species_observed": ["Actinopterygii", "Unknown fish", "Gadus morhua"]})
+    row = c.get(R + "/export_summary.csv").get_data(as_text=True).splitlines()
+    assert dict(zip(next(__import__("csv").reader([row[0]])), next(__import__("csv").reader([row[1]]))))["Number of species identified"] == "1"
+
+
+def test_survey_date_reaches_the_job(env, tmp_path):
+    c, _ = env
+    video = tmp_path / "GX010999.mp4"
+    video.write_bytes(b"x")
+    assert c.post("/api/jobs", json={"path": str(video), "name": "dated", "date": "2025-08-27"}).status_code == 201
 
 
 def test_marks_match_inside_a_box_or_nearby():

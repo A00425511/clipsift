@@ -60,7 +60,7 @@ def cmd_run(a) -> int:
         print(f"== video {key}: {[p.name for p in paths]}")
         d = run(paths, cfg, out, recording_id=a.id, video_id=a.video_id,
                 window_start_s=a.window_start, window_end_s=a.window_end,
-                meta={"transect": a.transect, "stat": a.stat, "year": a.year, "season": a.season})
+                meta={"transect": a.transect, "stat": a.stat, "year": a.year, "season": a.season, "date": a.date})
         print(f"run folder: {d}")
     return 0
 
@@ -110,7 +110,7 @@ def main(argv=None) -> int:
     r.add_argument("--id", help="recording id (folder name)"); r.add_argument("--video-id")
     r.add_argument("--interval", type=float, help="seconds between count points")
     r.add_argument("--window-start", type=float); r.add_argument("--window-end", type=float)
-    r.add_argument("--transect"); r.add_argument("--stat"); r.add_argument("--year", type=int); r.add_argument("--season")
+    r.add_argument("--transect"); r.add_argument("--stat"); r.add_argument("--year", type=int); r.add_argument("--season"); r.add_argument("--date")
     r.set_defaults(fn=cmd_run)
     f = sp.add_parser("verify", help="after counting: build the set of model flags for a person to check")
     f.add_argument("run_dir"); f.add_argument("--count", type=int, default=36); f.add_argument("--config")

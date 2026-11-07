@@ -58,7 +58,10 @@ def assess_point(rows: list, limit: float, small_gap: int = SMALL_GAP) -> dict:
     c, a, b = best
     gap = max(abs(_fish(a) - _fish(b)), abs(_inv(a) - _inv(b)))
     over = c["percent_diff"] > limit
-    return {**c, "gap": gap, "small_gap": over and gap <= small_gap, "first_counter": a.get("counter"), "second_counter": b.get("counter"),
+    every = [{"counter": r.get("counter"), "fish": _fish(r), "inv": _inv(r)} for r in rows]
+    return {**c, "gap": gap, "small_gap": over and gap <= small_gap, "counts": every,
+            "has_animals": any(x["fish"] or x["inv"] for x in every),
+            "all_average_fish": sum(x["fish"] for x in every) / len(every), "first_counter": a.get("counter"), "second_counter": b.get("counter"),
             "first_fish": _fish(a), "second_fish": _fish(b), "first_inv": _inv(a), "second_inv": _inv(b),
             "first_total": _fish(a) + _inv(a), "second_total": _fish(b) + _inv(b),
             "average_fish": (_fish(a) + _fish(b)) / 2, "average_inv": (_inv(a) + _inv(b)) / 2,
@@ -72,8 +75,12 @@ def verdict(sample: list, primary_ids, points: dict, limit: float, target: float
     diffs = [points[sid]["percent_diff"] for sid in done]
     agreement = round(max(0.0, 100 - sum(diffs) / len(diffs)), 1) if diffs else None
     recount = [sid for sid in done if points[sid]["recount_needed"]]
+    # Two empty counts score 100%, so a mostly empty sample can hide the one frame that matters.
+    animal = [points[sid]["percent_diff"] for sid in done if points[sid].get("has_animals")]
+    animal_agreement = round(max(0.0, 100 - sum(animal) / len(animal)), 1) if animal else None
     out = {"sample": list(sample), "n_sample": len(sample), "n_done": len(done), "recount": recount,
-           "n_within": len(done) - len(recount), "agreement": agreement, "limit": limit, "target": target}
+           "n_within": len(done) - len(recount), "agreement": agreement, "limit": limit, "target": target,
+           "n_animal_frames": len(animal), "animal_agreement": animal_agreement}
     if not sample:
         status = "no_sample"
     elif any(sid not in primary_ids for sid in sample):

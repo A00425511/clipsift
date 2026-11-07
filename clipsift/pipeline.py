@@ -407,7 +407,7 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
     res = Results(
         recording=Recording(recording_id=rec_id, video_id=vid, transect=info["transect"], stat=info["stat"],
                             year=info["year"], season=info["season"], site=cfg["recording"].get("site"),
-                            date=cfg["recording"].get("date"), **timeline.meta()),
+                            date=info.get("date") or cfg["recording"].get("date"), **timeline.meta()),
         run=Run(layer=layer, model_version=model_version, config_hash=config_hash(cfg),
                 created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 sample_fps=cfg["sample_fps"]),

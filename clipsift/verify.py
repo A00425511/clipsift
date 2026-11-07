@@ -118,8 +118,8 @@ def choose(pools: dict, total: int, seed: str) -> list:
         pool = sorted(pools.get(s, []), key=lambda i: i["max_confidence"] or 0)
         n = take[s]
         if n:
-            step = len(pool) / n
-            out += [pool[int(i * step + rng.random() * step)] for i in range(n)]
+            cuts = [int(i * len(pool) / n) for i in range(n + 1)]   # n bands that never overlap, so nothing is picked twice
+            out += [pool[rng.randrange(a, b)] for a, b in zip(cuts, cuts[1:])]
     rng.shuffle(out)
     return out
 
@@ -129,12 +129,15 @@ def _write_images(item: dict, frame, scale: float, files: Path, cfg: dict) -> No
     x1, y1, x2, y2 = (int(v * scale) for v in item["bbox"])
     h, w = frame.shape[:2]
     pad = max(40, x2 - x1, y2 - y1)
-    crop = frame[max(0, y1 - pad):min(h, y2 + pad), max(0, x1 - pad):min(w, x2 + pad)]
+    cx, cy = max(0, x1 - pad), max(0, y1 - pad)
+    crop = frame[cy:min(h, y2 + pad), cx:min(w, x2 + pad)]
     if crop.size:
         k = cfg["crop_px"] / max(crop.shape[:2])
         crop = cv2.resize(crop, None, fx=k, fy=k, interpolation=cv2.INTER_CUBIC)
+        # a crop can hold several fish, so the box says which one the question is about
+        cv2.rectangle(crop, (int((x1 - cx) * k), int((y1 - cy) * k)), (int((x2 - cx) * k), int((y2 - cy) * k)), (77, 233, 255), 2)
     marked = frame.copy()
-    cv2.rectangle(marked, (x1, y1), (x2, y2), (77, 233, 255), max(2, w // 640))
+    cv2.rectangle(marked, (x1, y1), (x2, y2), (77, 233, 255), max(3, w // 400))
     name = item["id"]
     cv2.imwrite(str(files / f"{name}_crop.jpg"), crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
     cv2.imwrite(str(files / f"{name}_frame.jpg"), resize_to_width(marked, cfg["frame_width"]), [cv2.IMWRITE_JPEG_QUALITY, 82])

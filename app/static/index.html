@@ -89,7 +89,7 @@
   <div class="vis-grid">
     <div>
       <video id="vis-video" controls muted loop playsinline preload="metadata"></video>
-      <p class="hint">The first count point. If this video has its own visibility video, or a pole, use that instead.</p>
+      <p class="hint">The first count point. Use the pole here if there is one. If this video has its own visibility video, use that instead.</p>
     </div>
     <div>
       <fieldset class="choice" id="vis-choice">
@@ -124,10 +124,15 @@
         <button type="button" data-wspeed="1" aria-pressed="true">1x</button>
       </div>
       <video id="watch-video" controls muted playsinline preload="metadata"></video>
+      <p id="watch-clock" class="hint"></p>
       <p id="watch-missing" class="note-missing" hidden>This video has no whole-window file, so only the 10 second clips are here.</p>
       <div id="watch-chips" class="watch-chips" aria-label="Count points" hidden></div>
     </div>
-    <div>
+    <div id="watch-hidden" hidden>
+      <p class="hint" id="watch-hidden-text"></p>
+      <button type="button" id="watch-reveal" hidden>Show the notes</button>
+    </div>
+    <div id="watch-form">
       <h3>Species present</h3>
       <div class="combo">
         <input id="rn-sp-input" type="text" role="combobox" aria-expanded="false" aria-controls="rn-sp-list" aria-autocomplete="list" autocomplete="off" placeholder="Add a species you saw" aria-label="Add a species you saw">
@@ -214,7 +219,8 @@
         <button type="button" id="hold-restart" aria-pressed="true" title="On: the clip starts from the beginning each time you hold Space. Off: it carries on from where it stopped. (R)">Restart each time <kbd>R</kbd></button>
         <span class="lbl">Enhance <kbd>C</kbd></span>
         <span id="enhance-group" class="enhance-group" role="group" aria-label="Enhance preset"></span>
-        <button type="button" id="toggle-diff" aria-pressed="false" title="Shows what changed between frames. Bright areas moved. It is a hint for where to look, not a count.">Movement view <kbd>D</kbd></button>
+        <button type="button" id="big-view" aria-pressed="false" title="Make the picture larger by hiding the summary, timeline and tips. (V)">Bigger picture <kbd>V</kbd></button>
+        <button type="button" id="toggle-diff" aria-pressed="false" title="Shows what changed between frames. Bright areas moved. It is a hint for where to look, not a count. Works best when the camera is still.">Movement view <kbd>D</kbd></button>
         <button type="button" id="toggle-grid" aria-pressed="false">Grid <kbd>G</kbd></button>
         <label class="adv">Rows <input id="grid-rows" type="number" min="1" max="20" value="3"></label>
         <label class="adv">Columns <input id="grid-cols" type="number" min="1" max="20" value="6"></label>
@@ -262,7 +268,7 @@
       <div class="count-grid">
         <label>Fish <input id="c-fish" type="number" min="0" max="100000"></label>
         <label>Invertebrates <input id="c-inv" type="number" min="0" max="100000"></label>
-        <label>Unknown / unable to ID <input id="c-unk" type="number" min="0" max="100000" placeholder="0"></label>
+        <label title="How many of the fish and invertebrates above have no species. Part of those totals, not added to them.">Of these, unknown or unable to ID <input id="c-unk" type="number" min="0" max="100000" placeholder="0"></label>
       </div>
       <h3>Per species</h3>
       <div class="combo">
@@ -281,7 +287,7 @@
         <label><input type="checkbox" value="colouration_or_flashes"> <kbd>3</kbd> Colour or flashes</label>
         <label><input type="checkbox" value="swimming_behaviour"> <kbd>4</kbd> Swimming or movement</label>
       </fieldset>
-      <p id="chars-warn" class="warn-text" hidden>Fewer than two ticked. The protocol says to leave out an organism unless two or more features tell it apart. When unsure, leave it out.</p>
+      <p id="chars-warn" class="warn-text ghost">Fewer than two ticked. The protocol says to leave out an organism unless two or more features tell it apart. When unsure, leave it out.</p>
       <label class="check"><input type="checkbox" id="c-move"> Possible animals I could not confirm (a note only, never counted)</label>
       <fieldset class="choice inline" id="c-vdir">
         <legend>Visibility since the last point</legend>
@@ -298,6 +304,7 @@
         <button type="button" class="quiet" data-note="Counted one extra: certain it was a different fish.">Certain it was a different fish</button>
       </div>
       <div class="save-row">
+        <button type="button" id="no-animals" title="Nothing seen at this point: sets fish and invertebrates to 0, saves and moves on. (N)">No animals <kbd>N</kbd></button>
         <button type="button" id="save-sub" class="primary"><span class="step-n">4</span> Save and go to the next <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
       </div>
       <p id="sub-result" class="hint" role="status"></p>
@@ -401,6 +408,8 @@
         <tr><td><kbd>1</kbd> to <kbd>4</kbd></td><td>Tick shape, anatomy, colour, movement</td></tr>
         <tr><td><kbd>D</kbd></td><td>Show or hide the movement view</td></tr>
         <tr><td><kbd>G</kbd></td><td>Show or hide the grid</td></tr>
+        <tr><td><kbd>N</kbd></td><td>No animals: record 0 and go to the next point</td></tr>
+        <tr><td><kbd>V</kbd></td><td>Bigger picture</td></tr>
         <tr><td><kbd>/</kbd></td><td>Jump to the species box</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Save and go to the next</td></tr>
         <tr><td><kbd>E</kbd> and <kbd>B</kbd></td><td>Ellipse and box tools</td></tr>
@@ -426,6 +435,7 @@
   <h2 id="who-h">Who is working on this video?</h2>
   <p class="hint">Your counts, ratings and marks are saved under this name. It appears in the report and in the agreement checks.</p>
   <div id="who-list" class="who-list"></div>
+  <button type="button" id="who-cancel" class="quiet" hidden>Cancel</button>
   <form id="who-form" class="path-row"><input id="who-new" type="text" maxlength="60" autocomplete="off" placeholder="Add a new person" aria-label="Add a new person"> <button type="submit">Add</button></form>
   <p id="who-status" class="fb-status" role="status"></p>
 </dialog>
@@ -449,7 +459,9 @@
     <label class="fb-row">Count points
       <select id="nv-points"><option value="">15 points, every 60 s (protocol)</option><option value="15">60 points, every 15 s</option></select></label>
   </div>
+  <p id="nv-count" class="hint"></p>
   <div class="fb-four">
+    <label class="fb-row">Survey date <input id="nv-date" type="date"></label>
     <label class="fb-row">Transect <input id="nv-transect" type="text" maxlength="40" autocomplete="off"></label>
     <label class="fb-row">STAT <input id="nv-stat" type="text" maxlength="40" autocomplete="off"></label>
     <label class="fb-row">Year <input id="nv-year" type="number" min="1990" max="2100"></label>

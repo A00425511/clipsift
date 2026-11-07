@@ -51,6 +51,7 @@ SUB_FILES = {"still": "still.jpg", "diff": "diff.jpg", "context": "context.mp4"}
 SUB_MIME = {"still": "image/jpeg", "diff": "image/jpeg", "context": "video/mp4"}
 PASSES = {"primary", "qc_blind", "recount"}
 VISIBILITY_DIRECTIONS = ("increasing", "decreasing")
+SPECIES_RE = re.compile(r"^(?!Unknown|Unidentified)[A-Z][a-z]+ [a-z]+$")   # two-word names only: "Unknown fish" isn't a species. Same rule as display.js
 CHARACTERISTICS = ("shape", "anatomical_features", "colouration_or_flashes", "swimming_behaviour")
 VISIBILITY = ("<0.5 m", "0.5-1.0 m", "1.0-1.5 m", ">1.5 m")
 # Defaults only. The run's own results.json "protocol" block wins. Draft protocol, so all configurable.
@@ -634,14 +635,17 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             return None
         decided = bank_decisions(run_dir, "review_set")
         done = {i: d for i, d in decided.items() if any(x.get("id") == i for x in bank["items"])}
-        by_source = {}
+        by_source, missed = {}, {}
         for item in bank["items"]:
             d = done.get(item.get("id"))
             if d:
+                if item.get("source") == "model_only" and TRAINING_LABEL.get(d.get("outcome")) in ("fish", "invertebrate", "fish_or_invertebrate"):
+                    sid = item.get("subsample_id")   # a real animal the counter hadn't marked, for a person to go and look at
+                    missed.setdefault(sid, {"subsample_id": sid, "time_s": item.get("time_s"), "n": 0})["n"] += 1
                 row = by_source.setdefault(item.get("source"), {"animal": 0, "not_animal": 0, "unclear": 0})
                 label = TRAINING_LABEL.get(d.get("outcome"))
                 row["not_animal" if label == "not_animal" else "animal" if label else "unclear"] += 1
-        return {"total": len(bank["items"]), "done": len(done), "by_source": by_source, "created_at": bank.get("created_at"),
+        return {"total": len(bank["items"]), "done": len(done), "by_source": by_source, "missed": sorted(missed.values(), key=lambda m: m["time_s"]), "created_at": bank.get("created_at"),
                 "model": (bank.get("source") or {}).get("model")}
 
     # ---- people: profiles, and how closely they agree across videos ----------
@@ -685,7 +689,9 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             rec = results.get("recording") or {}
             out.append({"run_id": d.name, "video_id": rec.get("video_id") or d.name, "fixture": bool(results.get("fixture")) or (d / "FIXTURE.txt").is_file(),
                         "created_at": (results.get("run") or {}).get("created_at"), "n_counted": info["n_counted"], "n_subsamples": info["n_subsamples"],
-                        "qc_status": info["qc_check"]["status"], "mean_count": info["mean_count_final"]})
+                        "qc_status": info["qc_check"]["status"],
+                        # hidden while a blind count may still be to come: MeanCount and the point count give away the total
+                        "mean_count": None if info["qc_check"]["status"] in ("counting", "waiting_second") else info["mean_count_final"]})
         return jsonify(videos=out)
 
     # ---- new videos: pick or add a video, then process it in the background ----
@@ -856,7 +862,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         video_id = clean_str(data.get("video_id"), "video_id", 100) or None
         year = clean_int(data.get("year"), "year", 1990, 2100)
         meta = {"transect": clean_str(data.get("transect"), "transect", 40), "stat": clean_str(data.get("stat"), "stat", 40),
-                "year": year, "season": clean_str(data.get("season"), "season", 40)}
+                "year": year, "season": clean_str(data.get("season"), "season", 40), "date": clean_str(data.get("date"), "date", 20)}
         return jsonify(jobs.add(name, paths, layer, ws, we, video_id, interval, meta)), 201
 
     @app.post("/api/jobs/<job_id>/cancel")
@@ -1367,7 +1373,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         rec = results.get("recording") or {}
         proto = results.get("protocol") or {}
         species = set(n.get("species_observed") or [])
-        for r in info["latest_primary"].values():
+        for r in revs:   # a species named in a blind count or recount counts too
             species.update((r.get("species_counts") or {}).keys())
         vis = "; ".join(f"{v['observer']}: {v['category']}" for v in visibility_rows(run_dir, notes))
         finals = list(info["final_fish"].values())
@@ -1375,16 +1381,18 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         header = ["Video ID", "Transect", "STAT", "Year", "Season", "Window start (s)", "Window end (s)",
                   "Subsamples counted", "Subsamples planned", "MeanCount (fish per subsample, reviewed)",
                   "MeanCount with QC averages", "Standard deviation", "Standard error",
-                  "Species observed", "Number of species", "Juveniles present (1/0)", "Visibility by observer",
-                  "QC pairs", "QC recounts suggested", "QC agreement (%) (provisional)", "QC result", "Note"]
+                  "Species and groups observed", "Number of species identified", "Juveniles present (1/0)", "Visibility by observer",
+                  "QC pairs", "QC recounts suggested", "QC agreement (%) (provisional)", "QC frames with animals",
+                  "QC agreement on frames with animals (%) (provisional)", "QC result", "Note"]
         qcs = info["qc"].values()
         row = [rec.get("video_id") or rec.get("recording_id") or run_id, rec.get("transect"), rec.get("stat"),
                rec.get("year"), rec.get("season"),
                n.get("window_start_s", proto.get("window_start_s")), n.get("window_end_s", proto.get("window_end_s")),
                info["n_counted"], info["n_subsamples"], info["mean_count_reviewed"], info["mean_count_final"],
                None if sd is None else round(sd, 3), None if sd is None else round(sd / math.sqrt(len(finals)), 3),
-               "; ".join(sorted(species)), len(species), n.get("juveniles"), vis,
-               len(info["qc"]), sum(1 for q in qcs if q["recount_needed"]), info["qc_agreement"], info["qc_check"]["status"],
+               "; ".join(sorted(species)), sum(1 for x in species if SPECIES_RE.match(x)), n.get("juveniles"), vis,
+               len(info["qc"]), sum(1 for q in qcs if q["recount_needed"]), info["qc_agreement"], info["qc_check"]["n_animal_frames"],
+               info["qc_check"]["animal_agreement"], info["qc_check"]["status"],
                "Counts are a relative index, not abundance."]
         return csv_response([["" if c is None else c for c in row]], header, f"{run_id}_video_summary.csv")
 

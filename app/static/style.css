@@ -312,3 +312,12 @@ dialog.report { width: min(1000px, 96vw); max-height: 92vh; padding: 14px 18px; 
 .nv-chosen { font-weight: 600; word-break: break-all; }
 @media (max-width: 900px) { .home { grid-template-columns: 1fr; } .fb-four { grid-template-columns: 1fr 1fr; } }
 .run-pick[hidden] { display: none; }
+.ghost { visibility: hidden; }
+.rp-sign { margin-top: 26px; }
+.nv-preview button[aria-pressed=true] { outline: 2px solid var(--accent); }
+.workspace[data-mode=sub] { grid-template-columns: 170px minmax(0, 1fr) 320px; }
+.workspace[data-mode=sub] .q-item { flex-wrap: wrap; }
+body.big-view #summary, body.big-view #timeline-wrap, body.big-view #path, body.big-view #mark-help { display: none !important; }
+body.big-view .workspace[data-mode=sub] { grid-template-columns: 120px minmax(0, 1fr) 300px; padding: 6px; }
+.lb-countmark { left: 12px; transform: none; }
+#who-dlg::backdrop { background: #15181b; }   /* solid: nothing from the last person shows behind the name box */

@@ -73,6 +73,16 @@ t("blind check: the demo's copy of the rules gives the same answers as clipsift/
   assert.deepEqual([small.percent_diff, small.recount_needed, small.small_gap], [40, false, true]);
   assert.equal(v(["a", "b"], { a: pt(0), b: pt(2) }), "pass");
   assert.equal(D.qcMessage(D.qcVerdict(["a"], new Set(["a"]), { a: pt(0) }, 6, 95))[0], "Counts are close");
+  const three = D.assessPoint([row("Ana", 20, 0), row("Ben", 25, 0), row("Cy", 22, 0)], 6), c3 = D.qcCounts(three);
+  assert.deepEqual([c3.people, c3.fish, three.average_fish], ["Ana, Ben, Cy", "20, 25, 22", 21]);
+  assert.match(c3.rule, /closest two counts, Ana and Cy\. Averaging all 3 gives 22\.33/);
+  const none = D.assessPoint([row("a", 0, 0), row("b", 0, 0)], 6), some = D.assessPoint([row("a", 20, 0), row("b", 22, 0)], 6);
+  const mix = D.qcVerdict(["x", "y"], new Set(["x", "y"]), { x: none, y: some }, 6, 95);
+  assert.deepEqual([mix.n_animal_frames, mix.animal_agreement], [1, 90.5]);
+  assert.match(D.qcMessage(mix)[1], /1 of 2 frames had animals, and agreement on those is 90\.5%/);
+});
+t("species names: only two-word names count as species", () => {
+  assert.deepEqual(["Gadus morhua", "Actinopterygii", "Unknown fish", "Menidia sp."].map(D.isSpeciesName), [true, false, false, false]);
 });
 t("marks: two people's marks pair up by distance, each mark used once", () => {
   const m = D.matchMarks([{ x: 0, y: 0 }, { x: 100, y: 0 }], [{ x: 5, y: 0 }, { x: 500, y: 0 }], 20);

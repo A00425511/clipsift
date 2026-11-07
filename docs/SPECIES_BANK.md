@@ -15,10 +15,10 @@ The bank stays outside the count:
 ## How it works
 
 1. Ali's V6 finds and tracks candidates around chosen times in the video.
-2. `tools/build_species_bank.py` picks the clearest view of each track, and saves a close crop, a film strip of its movement and the full frame.
+2. `tools/build_species_bank.py` merges overlapping tracks of the same animal, picks the clearest view, and saves a close crop, the full frame and a 5-second clip.
 3. It sets aside likely fixed objects. These stay visible under their own filter and are never deleted.
 4. It raises flags that set the review order, and each flag says why.
-5. A reviewer opens `/species_bank.html`, picks a species or another outcome, and sets the life stage.
+5. A reviewer opens `/species_bank.html`, can hold the frame to play 2.5 seconds either side, then picks a species or another outcome and sets the life stage.
 6. If the species is listed as invasive, at risk or a possible range expander, the page shows that status and asks for expert confirmation.
 7. Decisions go to `species_bank/decisions.jsonl` in the run folder, and can be downloaded as CSV.
 
@@ -37,11 +37,12 @@ Run on one video, T1-STAT2 411, using V6 output for 18 points. These thresholds 
 
 | Measure | Result |
 |---|---|
-| Candidate tracks from V6 | 124 |
-| Left to review | 64 |
-| Set aside as likely fixed objects | 60. A visual check of a near-identical earlier pass showed almost all were pipe, cable tie or a seabed hollow |
-| Crab at 21:40 | Found in 3 tracks, all in the first 8 of the review order |
-| Crab at 24:20 | Found in 1 track, 42nd of 64, with no flag |
+| Tracks from V6 | 124 |
+| Candidates after merging repeat views of one animal | 106 |
+| Left to review | 56 |
+| Set aside as likely fixed objects | 50. A visual check of a near-identical earlier pass showed almost all were pipe, cable tie or a seabed hollow |
+| Crab at 21:40 | 4 tracks merged into 1 candidate, 3rd in the review order |
+| Crab at 24:20 | 1 candidate, 34th of 56, with no flag |
 
 The first filter hid the 21:40 crab because it sat beside the pipe. Comparing each candidate with the normal view of that spot fixed this, and that case is now covered by a test.
 
@@ -58,6 +59,7 @@ The first filter hid the 21:40 crab because it sat beside the pipe. Comparing ea
 1. Run V6 across the whole watch window, then rebuild the bank. At about 7 seconds per 10-second stretch on CPU, a 15-minute window should take around 10 minutes.
 2. Add a button that copies confirmed species into the watch window list, so nothing changes without a person choosing it.
 3. Show confirmed flagged species and any juveniles in the report.
-4. Merge near-identical views of the same animal, so one crab isn't reviewed several times.
+4. Handle schools: one box can cover several fish, and many fish look alike. This needs its own approach.
 5. Ask Coastal which species they most want flagged, and whether photos of this quality would satisfy them.
-6. Use the confirmed images later as labelled training data for species identification.
+6. Link the same animal across separate points. Merging only works within one 10-second stretch for now.
+7. Use the confirmed images later as labelled training data for species identification.

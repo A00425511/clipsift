@@ -54,6 +54,38 @@ def test_fixed_objects_marked_for_repeats_stillness_and_size():
     assert "too much" in reasons["p004_t0003"]
 
 
+def merged_input(*tracks_):
+    tracks = sb.read_tracks({"subsamples": [sample(60, list(tracks_))]})
+    for t in tracks:
+        t.update(fixed_reason=None, images={"crop": t["id"] + ".jpg"}, time_s=1.0, view_score=1.0)
+    return tracks
+
+
+def test_two_tracks_on_one_animal_become_one_item():
+    near = [[b[0] + 8, b[1], b[2] + 8, b[3]] for b in MOVING]
+    merged = sb.merge_views(merged_input(track(1, 0, MOVING), track(1, 1, near)))
+    assert len(merged) == 1 and len(merged[0]["other_views"]) == 1
+
+
+def test_a_track_that_picks_up_straight_after_another_is_merged():
+    first = [track(1, 0, MOVING[:4]), track(1, 1, MOVING[4:])]
+    first[1]["observations"] = [obs(i + 4, b) for i, b in enumerate(MOVING[4:])]
+    assert len(sb.merge_views(merged_input(*first))) == 1
+
+
+def test_fish_passing_each_other_stay_separate():
+    crossing = [[10 + 40 * (7 - i), 50, 70 + 40 * (7 - i), 80] for i in range(8)]
+    assert len(sb.merge_views(merged_input(track(1, 0, MOVING), track(1, 1, crossing)))) == 2
+
+
+def test_an_animal_is_not_hidden_because_one_track_touched_the_pipe():
+    near = [[b[0] + 8, b[1], b[2] + 8, b[3]] for b in MOVING]
+    tracks = merged_input(track(1, 0, MOVING), track(1, 1, near))
+    tracks[0]["fixed_reason"] = "Same place at 5 separate points"
+    merged = sb.merge_views(tracks)
+    assert len(merged) == 1 and merged[0]["fixed_reason"] is None
+
+
 def test_something_new_at_a_usual_spot_is_kept():
     tracks = sb.read_tracks({"subsamples": [sample(60, [track(1, 0, STILL)])]})
     tracks[0]["background_match"] = 0.1   # for example a crab resting where the seabed is normally bare
@@ -122,7 +154,8 @@ R = "/api/runs/_fixture/species_bank"
 def test_build_writes_images_and_no_tracks_data(env):
     _, run, bank = env
     item = bank["items"][0]
-    assert bank["counts"] == {"tracks": 1, "to_review": 1, "fixed_objects": 0}
+    assert bank["counts"] == {"tracks": 1, "candidates": 1, "to_review": 1, "fixed_objects": 0}
+    assert "clip" in item["images"] and 0 <= item["clip_offset_s"] <= 2.5
     assert "observations" not in item
     for name in item["images"].values():
         assert (run / "species_bank" / "files" / name).is_file()
@@ -145,7 +178,10 @@ def test_run_without_bank_says_so(tmp_path):
 def test_page_and_images_are_served(env):
     client, _, bank = env
     assert client.get("/species_bank.html").status_code == 200
-    assert client.get(f"{R}/files/{bank['items'][0]['images']['crop']}").mimetype == "image/jpeg"
+    images = bank["items"][0]["images"]
+    assert client.get(f"{R}/files/{images['crop']}").mimetype == "image/jpeg"
+    clip = client.get(f"{R}/files/{images['clip']}", headers={"Range": "bytes=0-99"})
+    assert clip.status_code == 206 and clip.mimetype == "video/mp4"
     for bad in ("..%2Fbank.json", "bank.json", "x.jpg"):
         assert client.get(f"{R}/files/{bad}").status_code == 404
 

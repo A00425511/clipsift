@@ -80,6 +80,90 @@
     }
   }
 
+  function otherView(view) {
+    const b = el("button");
+    b.type = "button";
+    b.title = `View at ${clock(view.time_s)}`;
+    const img = el("img");
+    img.alt = b.title;
+    img.src = fileUrl(view.crop);
+    b.append(img);
+    b.addEventListener("click", () => { $("d-crop").src = fileUrl(view.crop); });
+    return b;
+  }
+
+  function setClip(item) {
+    stopClip();
+    const clip = $("d-clip"), name = item.images.clip;
+    clip.removeAttribute("src");
+    if (name) { clip.src = fileUrl(name); clip.load(); }
+    $("d-player").disabled = !name;
+    $("d-hold").textContent = name
+      ? "Click and hold, or hold Space, to play from 2.5 seconds before to 2.5 seconds after."
+      : "No clip for this candidate.";
+    const { width, height } = S.bank.source, [x1, y1, x2, y2] = item.bbox, box = $("d-box");
+    box.style.left = (100 * x1 / width) + "%";
+    box.style.top = (100 * y1 / height) + "%";
+    box.style.width = (100 * (x2 - x1) / width) + "%";
+    box.style.height = (100 * (y2 - y1) / height) + "%";
+  }
+
+  function playClip() {
+    const clip = $("d-clip");
+    if (!clip.src) return;
+    clip.currentTime = 0;
+    clip.hidden = false;
+    $("d-box").hidden = false;
+    clip.play().catch(() => {});
+  }
+
+  function stopClip() {
+    const clip = $("d-clip");
+    clip.pause();
+    clip.hidden = true;
+    $("d-box").hidden = true;
+  }
+
+  function setupPlayer() {
+    const p = $("d-player");
+    p.addEventListener("pointerdown", (e) => { p.setPointerCapture(e.pointerId); playClip(); });
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) p.addEventListener(name, stopClip);
+    p.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter") { e.preventDefault(); if (!e.repeat) playClip(); }
+    });
+    p.addEventListener("keyup", stopClip);
+    p.addEventListener("blur", stopClip);
+    p.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  function setupSplitter() {
+    const bank = $("bank"), bar = $("splitter");
+    const limit = (w) => Math.round(Math.min(Math.max(w, 320), bank.clientWidth - 280));
+    const apply = (w) => {
+      const size = limit(w);
+      bank.style.setProperty("--pane", size + "px");
+      store.set("bank-pane", String(size));
+    };
+    const saved = Number(store.get("bank-pane"));
+    if (saved) bank.style.setProperty("--pane", saved + "px");
+    bar.addEventListener("pointerdown", (e) => {
+      bar.setPointerCapture(e.pointerId);
+      bar.classList.add("dragging");
+      bank.classList.add("dragging");
+    });
+    bar.addEventListener("pointermove", (e) => {
+      if (bar.classList.contains("dragging")) apply(bank.getBoundingClientRect().right - 12 - e.clientX);
+    });
+    const end = () => { bar.classList.remove("dragging"); bank.classList.remove("dragging"); };
+    bar.addEventListener("pointerup", end);
+    bar.addEventListener("pointercancel", end);
+    bar.addEventListener("dblclick", () => apply(380));
+    bar.addEventListener("keydown", (e) => {
+      const step = { ArrowLeft: 40, ArrowRight: -40 }[e.key];
+      if (step) { e.preventDefault(); apply($("detail").offsetWidth + step); }
+    });
+  }
+
   function select(item) {
     S.item = item;
     const d = S.decisions[item.id] || {};
@@ -88,9 +172,10 @@
     $("d-title").textContent = `Candidate at ${clock(item.time_s)}`;
     $("d-reasons").replaceChildren(...(item.reasons || []).map((r) => el("li", "", r)));
     $("d-crop").src = fileUrl(item.images.crop);
-    $("d-strip").hidden = !item.images.strip;
-    if (item.images.strip) $("d-strip").src = fileUrl(item.images.strip);
+    $("d-others").replaceChildren(...(item.other_views || []).map(otherView).concat(
+      (item.other_views || []).length ? [otherView({ crop: item.images.crop, time_s: item.time_s })] : []));
     $("d-frame").src = fileUrl(item.images.frame);
+    setClip(item);
     for (const r of document.querySelectorAll("input[name=outcome]")) r.checked = r.value === d.outcome;
     $("d-species").value = d.species || "";
     $("d-stage").value = d.life_stage || "unknown";
@@ -161,6 +246,8 @@
     sel.addEventListener("change", (e) => loadRun(e.target.value));
     $("d-species").addEventListener("input", checkAlert);
     $("d-form").addEventListener("submit", save);
+    setupPlayer();
+    setupSplitter();
     $("gate-ok").addEventListener("click", () => { store.set("bank-open-" + S.run, "1"); loadRun(S.run); });
     if (sel.value) await loadRun(sel.value);
   }

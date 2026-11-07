@@ -25,7 +25,8 @@ def main() -> int:
         p.error(f"run folder not found: {a.run}")
     bank = build_bank(a.v6_json, a.run / "species_bank", a.video)
     c = bank["counts"]
-    print(f"{c['tracks']} candidates: {c['to_review']} to review, {c['fixed_objects']} likely fixed objects")
+    print(f"{c['tracks']} tracks merged into {c['candidates']} candidates: "
+          f"{c['to_review']} to review, {c['fixed_objects']} likely fixed objects")
     print(f"Wrote {a.run / 'species_bank' / 'bank.json'}")
     return 0
 

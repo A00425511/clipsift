@@ -20,6 +20,8 @@ The thresholds are starting values, set by looking at one Coastal video. They ar
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,9 +41,12 @@ SETTINGS = {
     "small_share": 0.25,        # smallest quarter of moving candidates
     "unusual_share": 0.15,      # most different 15% of moving candidates
     "look_group_distance": 1.6,  # distance in standardised features that starts a new look group
+    "same_iou": 0.25,           # two tracks seen together this alike are one animal
+    "same_gap_s": 2.0,          # one track picks up this soon after another ends
     "views_to_try": 4,
-    "strip_frames": 5,
     "crop_px": 480,
+    "clip_half_s": 2.5,         # seconds of footage either side of the chosen view
+    "clip_width": 1280,
 }
 
 
@@ -107,6 +112,77 @@ def mark_fixed(tracks: list, width: int, height: int, cfg: dict = SETTINGS) -> N
         elif usual_spot and moved < cfg["still_move_ratio"] and len(track["observations"]) >= cfg["still_min_frames"]:
             reason = "Barely moved during the clip"
         track["fixed_reason"] = reason
+
+
+def same_animal(a: dict, b: dict, cfg: dict = SETTINGS) -> bool:
+    """True when two tracks at one point look like one animal followed twice.
+
+    Fish in a school pass close to each other, so seen-together tracks must overlap for most of the
+    time they share, not just once.
+    """
+    if a["point_index"] != b["point_index"]:
+        return False
+    boxes_a = {o["frame_index"]: o["bbox"] for o in a["observations"]}
+    boxes_b = {o["frame_index"]: o["bbox"] for o in b["observations"]}
+    shared = boxes_a.keys() & boxes_b.keys()
+    if shared:
+        return float(np.median([_iou(boxes_a[f], boxes_b[f]) for f in shared])) >= cfg["same_iou"]
+    first, second = sorted((a, b), key=lambda t: t["observations"][0]["timestamp"])
+    end, start = first["observations"][-1], second["observations"][0]
+    if start["timestamp"] - end["timestamp"] > cfg["same_gap_s"]:
+        return False
+    big, small = sorted((_size(end["bbox"]), _size(start["bbox"])), reverse=True)
+    (x1, y1), (x2, y2) = _centre(end["bbox"]), _centre(start["bbox"])
+    return small >= 0.5 * big and float(np.hypot(x2 - x1, y2 - y1)) <= big
+
+
+def merge_views(items: list, cfg: dict = SETTINGS) -> list:
+    """Return one item per animal. The clearest track leads and the others become `other_views`.
+
+    A merged item only counts as a fixed object when every track in it does, so an animal is never
+    hidden because one of its tracks touched the pipe.
+    """
+    parent = list(range(len(items)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            if same_animal(items[i], items[j], cfg):
+                parent[root(j)] = root(i)
+    groups = {}
+    for i, item in enumerate(items):
+        groups.setdefault(root(i), []).append(item)
+    merged = []
+    for group in groups.values():
+        live = [t for t in group if not t["fixed_reason"]] or group
+        lead = max(live, key=lambda t: t.get("view_score", 0.0))
+        lead["other_views"] = [{"id": t["id"], "crop": t["images"]["crop"], "time_s": t["time_s"]}
+                               for t in group if t is not lead]
+        merged.append(lead)
+    return merged
+
+
+def write_clip(video: Path, item: dict, out_dir: Path, cfg: dict) -> None:
+    """Save a short clip around the chosen view. Skipped without ffmpeg: the frame still works."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return
+    half = cfg["clip_half_s"]
+    start = max(0.0, item["time_s"] - half)
+    name = f"{item['id']}_clip.mp4"
+    done = subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-ss", f"{start:.2f}", "-t", f"{item['time_s'] - start + half:.2f}",
+         "-i", str(video), "-an", "-vf", f"scale={cfg['clip_width']}:-2", "-c:v", "libx264", "-preset", "veryfast",
+         "-crf", "26", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out_dir / name)],
+        capture_output=True, check=False)
+    if done.returncode == 0:
+        item["images"]["clip"] = name
+        item["clip_offset_s"] = round(item["time_s"] - start, 2)
 
 
 def video_background(cap, times_s, width: int = 960):
@@ -211,7 +287,7 @@ def assign_flags(items: list, height: int, cfg: dict = SETTINGS) -> None:
 
 
 def _write_views(cap, track, out_dir: Path, cfg: dict, background=None) -> dict:
-    """Pick the clearest view of a track and save a crop, a marked frame and a film strip."""
+    """Pick the clearest view of a track and save a close crop and a marked frame."""
     obs = track["observations"]
     best_first = sorted(obs, key=lambda o: -o["confidence"] * (_size(o["bbox"]) ** 0.5))
     tried = []
@@ -237,26 +313,9 @@ def _write_views(cap, track, out_dir: Path, cfg: dict, background=None) -> dict:
     marked = frame.copy()
     cv2.rectangle(marked, (box[0], box[1]), (box[2], box[3]), (0, 220, 255), max(2, w // 800))
     marked = cv2.resize(marked, (1280, int(1280 * h / w)), interpolation=cv2.INTER_AREA)
-    names = {"crop": f"{track['id']}_crop.jpg", "frame": f"{track['id']}_frame.jpg", "strip": f"{track['id']}_strip.jpg"}
+    names = {"crop": f"{track['id']}_crop.jpg", "frame": f"{track['id']}_frame.jpg"}
     cv2.imwrite(str(out_dir / names["crop"]), crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
     cv2.imwrite(str(out_dir / names["frame"]), marked, [cv2.IMWRITE_JPEG_QUALITY, 82])
-
-    picks = [obs[int(i)] for i in np.linspace(0, len(obs) - 1, min(cfg["strip_frames"], len(obs)))]
-    side = int(max(_size(o["bbox"]) for o in picks) * 1.5) + 2 * pad
-    tiles = []
-    for o in picks:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(o["frame_index"]))
-        ok, f = cap.read()
-        if not ok:
-            continue
-        cx, cy = _centre(o["bbox"])
-        x0 = int(min(max(0, cx - side / 2), max(0, w - side)))
-        y0 = int(min(max(0, cy - side / 2), max(0, h - side)))
-        tiles.append(cv2.resize(f[y0:y0 + side, x0:x0 + side], (220, 220), interpolation=cv2.INTER_AREA))
-    if tiles:
-        cv2.imwrite(str(out_dir / names["strip"]), np.hstack(tiles), [cv2.IMWRITE_JPEG_QUALITY, 82])
-    else:
-        names.pop("strip")
     track.update(bbox=box, time_s=round(float(best["timestamp"]), 2), frame_index=int(best["frame_index"]),
                  view_score=round(score, 3), features=appearance(frame, box).tolist(),
                  background_match=round(background_match(frame, box, background), 2))
@@ -293,9 +352,14 @@ def build_bank(v6_path, out_dir, video_path=None, cfg: dict = SETTINGS) -> dict:
     finally:
         cap.release()
     mark_fixed(items, width, height, cfg)
+    raw_tracks = len(items)
+    items = merge_views(items, cfg)
     assign_looks(items, cfg)
     assign_flags(items, height, cfg)
     for item in items:
+        write_clip(video, item, files_dir, cfg)
+        if item["other_views"]:
+            item["reasons"].append(f"{len(item['other_views']) + 1} overlapping tracks merged into this one")
         for key in ("observations", "features", "view_score", "fixed_reason", "point_index"):
             item.pop(key, None)
     items.sort(key=_sort_key)
@@ -305,7 +369,7 @@ def build_bank(v6_path, out_dir, video_path=None, cfg: dict = SETTINGS) -> dict:
         "source": {"type": "v6_subsamples", "file": v6_path.name, "video": video.name,
                    "points": len(v6.get("subsamples") or []), "width": width, "height": height},
         "note": "Candidates for a person to identify. Nothing here is a species, life stage or count.",
-        "counts": {"tracks": len(items),
+        "counts": {"tracks": raw_tracks, "candidates": len(items),
                    "to_review": sum("fixed_object" not in i["flags"] for i in items),
                    "fixed_objects": sum("fixed_object" in i["flags"] for i in items)},
         "items": items,

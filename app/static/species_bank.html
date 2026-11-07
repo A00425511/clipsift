@@ -31,16 +31,21 @@
     <div id="filters" class="bank-filters" role="group" aria-label="Filter candidates"></div>
     <div id="grid" class="bank-grid"></div>
   </div>
+  <div id="splitter" class="bank-splitter" role="separator" aria-orientation="vertical" aria-label="Resize the review pane" tabindex="0" title="Drag to resize. Double-click to reset."></div>
   <aside id="detail" class="bank-detail" aria-label="Selected candidate">
     <p class="hint" id="pick-hint">Pick a candidate to review it.</p>
     <div id="detail-body" hidden>
       <h2 id="d-title"></h2>
       <ul id="d-reasons" class="bank-reasons"></ul>
       <img id="d-crop" alt="Close view of the candidate">
-      <h3>Movement across the clip</h3>
-      <img id="d-strip" alt="Five views of the candidate over time">
+      <div id="d-others" class="bank-others" aria-label="Other views of this animal"></div>
       <h3>Where it was in the frame</h3>
-      <img id="d-frame" alt="Full frame with the candidate boxed">
+      <button type="button" id="d-player" class="bank-player" aria-describedby="d-hold">
+        <img id="d-frame" alt="Full frame with the candidate boxed">
+        <video id="d-clip" muted loop playsinline preload="auto" hidden></video>
+        <span id="d-box" class="bank-box" hidden></span>
+      </button>
+      <p id="d-hold" class="hint"></p>
       <form id="d-form">
         <fieldset class="bank-outcomes">
           <legend>What is it?</legend>

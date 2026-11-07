@@ -64,7 +64,7 @@ LABEL_SPECIES_MAX = 80
 LABEL_PRESET_NAMES = ("Jacob", "Ali", "Gina", "Wang", "Adrien")
 BANK_OUTCOMES = ("species", "not_animal", "cant_tell", "needs_expert")
 BANK_LIFE_STAGES = ("adult", "juvenile", "unknown")
-BANK_FILE_RE = re.compile(r"^[A-Za-z0-9_\-]{1,80}\.jpg$")
+BANK_FILE_RE = re.compile(r"^[A-Za-z0-9_\-]{1,80}\.(jpg|mp4)$")
 FEEDBACK_AREAS = ("Counting", "Video", "Timeline", "Help", "Layout", "Other")
 FEEDBACK_TYPES = ("Bug", "Confusing", "Idea", "Like")
 
@@ -807,7 +807,10 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         path = (run_dir / "species_bank" / "files" / name).resolve()
         if not BANK_FILE_RE.match(name) or run_dir not in path.parents or not path.is_file():
             abort(404, "File not found")
-        return send_file(path, mimetype="image/jpeg", max_age=0)
+        kind = "video/mp4" if name.endswith(".mp4") else "image/jpeg"
+        resp = send_file(path, mimetype=kind, conditional=True, max_age=0)
+        resp.headers["Accept-Ranges"] = "bytes"
+        return resp
 
     @app.post("/api/runs/<run_id>/species_bank/decisions")
     def post_species_bank_decision(run_id):

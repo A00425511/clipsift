@@ -15,6 +15,9 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.0.2 (2026-11-07)
+- Count points: after scrubbing or stepping with `,` and `.`, the frame stays paused. Space goes back to the count frame, and the next press plays.
+
 ### 1.0.1 (2026-11-07)
 - Team site: the Label fish link stays visible. In the local app it sits behind More tools.
 - Team site: step 6 no longer calls a server route the site doesn't have.

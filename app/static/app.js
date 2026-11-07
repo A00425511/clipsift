@@ -19,7 +19,7 @@
     diff: false, grid: false, watch: { species: [], points: false },
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
-    markHistory: [], motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, stopAfterDrag: false, loopWasPlaying: false, hudRaf: 0, names: "common",
+    markHistory: [], motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, held: false, hudRaf: 0, names: "common",
     zoom: { k: 1, x: 0, y: 0 }, tool: "pan", drag: null,
     more: localStorage.getItem("clipsift.moretools") === "1",   // "More tools" toggle, remembered
   };
@@ -627,6 +627,7 @@
   function setMotion(on) {
     const v = $("stage-clip");
     on = !!on && !!S.selId && v.dataset.ok === "1";
+    S.held = false;
     if (on === S.motion) return;
     S.motion = on;
     $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on); setPressed("motion-btn", on);
@@ -658,7 +659,7 @@
     S.spaceDown = false;
     if (!S.spaceStarted) return;
     S.spaceStarted = false;
-    if (S.clip.dragging()) S.stopAfterDrag = true; else setMotion(false);   // let go mid-drag: stop when the mouse lets go too
+    if (!S.clip.dragging() && !S.held) setMotion(false);   // a scrubbed or stepped frame stays put until Space is pressed again
   }
 
   // ---------- species names: shown as common or scientific, always saved as scientific ----------
@@ -1194,6 +1195,7 @@
     v.pause();
     const fps = (S.results.recording && S.results.recording.fps) || 30;
     v.currentTime = Math.max(0, Math.min(v.duration || 1e9, v.currentTime + dir / fps));
+    S.held = true;
   }
   const currentSpeed = () => { const b = document.querySelector("[data-speed][aria-pressed=true]"); return b ? parseFloat(b.dataset.speed) : 1; };
   function countOffset() { const u = unit(S.selId, "sub"); return u && u.t_s != null && u.context_start_s != null ? Math.max(0, u.t_s - u.context_start_s) : null; }
@@ -1231,7 +1233,11 @@
     else if (k === "c") { S.enhance = D.nextEnhance(S.enhance); applyFilters(); }
     else if (k === " " && !e.target.closest("button, a, input[type=checkbox], input[type=radio]")) {   // a control reached with Tab keeps its own Space
       e.preventDefault();
-      if (!e.repeat && !S.spaceDown) { S.spaceDown = true; if (!S.motion) { S.spaceStarted = true; setMotion(true); } }
+      if (!e.repeat && !S.spaceDown) {
+        S.spaceDown = true;
+        if (S.held) setMotion(false);   // paused on a scrubbed frame: back to the count frame, and the next press plays
+        else if (!S.motion) { S.spaceStarted = true; setMotion(true); }
+      }
     }
   }
 
@@ -1844,7 +1850,7 @@
     $("motion-btn").addEventListener("click", () => { S.spaceStarted = false; setMotion(!S.motion); });
     setPressed("count-only", S.countOnly);
     S.clip = D.clipControl({ video: $("stage-clip"), track: document.querySelector("#clip-hud .lb-track"), range: clipRange, active: () => S.motion, paint: paintHud,
-      release: () => { if (S.stopAfterDrag) { S.stopAfterDrag = false; setMotion(false); } else $("stage-clip").play().catch(() => {}); } });
+      release: () => { S.held = true; } });   // stays paused where it was dropped
     document.addEventListener("keyup", (e) => { if (e.key === " " && S.spaceDown) { e.preventDefault(); spaceUp(); } });
     window.addEventListener("blur", spaceUp);
     // After a mouse click, hand the keyboard back to the page, so Space plays the clip instead of pressing that control again.

@@ -144,6 +144,17 @@ def copy_label_set(root: Path, sid: str, out: Path) -> dict:
             raise BuildError(f"Label set '{sid}' has an unreadable calibration.json.") from None
         if isinstance(cal, dict) and cal.get("calibration_only") is True:
             manifest["calibration_only"] = True     # the label page offers only these frames until this is turned off
+        if isinstance(cal, dict) and cal.get("archived"):
+            archived = cal["archived"]              # frames shown in a team demo: never labelled again, left out of the results
+            if not isinstance(archived, list) or not set(archived) <= {f["frame_id"] for f in manifest["frames"]}:
+                raise BuildError(f"Label set '{sid}': calibration.json archived must be a list of frame ids that are in the manifest.")
+            manifest["archived"] = list(dict.fromkeys(archived))
+        if isinstance(cal, dict) and cal.get("personal"):
+            personal = cal["personal"]              # {"name": [frame ids]}: extra frames for one person, held back from everyone else
+            known = {f["frame_id"] for f in manifest["frames"]}
+            if not isinstance(personal, dict) or any(not isinstance(v, list) or not set(v) <= known for v in personal.values()):
+                raise BuildError(f"Label set '{sid}': calibration.json personal must map names to lists of frame ids that are in the manifest.")
+            manifest["personal"] = {k.lower(): list(dict.fromkeys(v)) for k, v in personal.items()}
         cal = cal.get("calibration") if isinstance(cal, dict) else cal
         known = {f.get("frame_id") for f in manifest["frames"] if isinstance(f, dict)}
         if not isinstance(cal, list) or any(not isinstance(i, str) or i not in known for i in cal):

@@ -240,6 +240,19 @@ t("calibration: not assigned again as normal frames, and an empty list changes n
   const skipThis = L.pickNext(frames, {}, {}, "Ali", "f2", ["f2", "f4"]);
   assert.equal(skipThis.frame_id, "f4");               // the exclude rule still works for the prefetch
 });
+t("personal frames: only that person gets them, after the shared frames, and nobody gets them as normal frames", () => {
+  const fr = ["a", "b", "c", "d"].map((id, i) => ({ frame_id: id, time_s: i }));
+  const personal = { jacob: ["c", "d"] }, held = L.heldFrames(personal);
+  assert.deepEqual(L.calibrationFor(["a"], personal, "Jacob"), ["a", "c", "d"]);
+  assert.deepEqual(L.calibrationFor(["a"], personal, "Ali"), ["a"]);
+  assert.deepEqual(L.calibrationFor(["a"], undefined, "Jacob"), ["a"]);
+  const done = { a: { state: "done" } };
+  assert.equal(L.pickNext(fr, {}, done, "Jacob", null, L.calibrationFor(["a"], personal, "Jacob"), true, held).frame_id, "c");
+  assert.equal(L.pickNext(fr, {}, done, "Ali", null, L.calibrationFor(["a"], personal, "Ali"), true, held), null);
+  const seen = new Set(), mine = { a: { state: "done" } };   // frames reopened: still never offered to Ali
+  for (let i = 0; i < 10; i++) { const f = L.pickNext(fr, {}, mine, "Ali", null, ["a"], false, held); if (!f) break; seen.add(f.frame_id); mine[f.frame_id] = { state: "done" }; }
+  assert.deepEqual([...seen], ["b"]);
+});
 t("calibration only: every other frame is held back, and finished people get nothing new", () => {
   const fr = [{ frame_id: "a" }, { frame_id: "b" }, { frame_id: "c" }, { frame_id: "d" }];
   assert.equal(L.pickNext(fr, {}, {}, "Sam", null, ["c", "a"], true).frame_id, "c");

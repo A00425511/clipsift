@@ -805,6 +805,11 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                 abort(422, "calibration.json could not be read")
             if isinstance(cal, dict) and cal.get("calibration_only") is True:
                 data["calibration_only"] = True
+            if isinstance(cal, dict) and isinstance(cal.get("archived"), list):
+                data["archived"] = [i for i in cal["archived"] if i in {f.get("frame_id") for f in data.get("frames", [])}]
+            if isinstance(cal, dict) and isinstance(cal.get("personal"), dict):
+                ids = {f.get("frame_id") for f in data.get("frames", [])}
+                data["personal"] = {k.lower(): [i for i in v if i in ids] for k, v in cal["personal"].items() if isinstance(v, list)}
             cal = cal.get("calibration") if isinstance(cal, dict) else cal
             known = {f.get("frame_id") for f in data.get("frames") or [] if isinstance(f, dict)}
             if isinstance(cal, list):

@@ -15,6 +15,12 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 0.9.0 (2026-11-06)
+- Label page: a label set can give one named person extra frames, through `personal` in `calibration.json`. Nobody else is offered those frames, even after the set reopens, so a recorded demo cannot unblind a label.
+- Label page and label results: frames listed under `archived` in `calibration.json` are held back from everyone, leave My frames, and are left out of everything `tools/pull_labels.py` writes. Saved labels stay in the database.
+- Label page: help text matches the team tagging rules (movement alone is not enough, Unsure means exactly one characteristic, click the middle of the body, do not mark what never moves).
+- Label results: `tools/pull_labels.py` takes the calibration list from `calibration.json` when there is one, so added practice frames are included.
+
 ### 0.8.0 (2026-11-06)
 - Review app: Unsure marks (never counted), and `F`, `I` and `U` keys.
 - Review app: Undo also brings back a removed mark.

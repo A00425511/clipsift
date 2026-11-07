@@ -46,8 +46,10 @@
   // that depends on their name so five people do not all land on the same frame.
   // Calibration frames (a list of frame ids) come first, in that order, for everyone, whatever the two-label cap
   // says. They are never offered again as normal frames. After them, normal assignment.
-  function pickNext(frames, counts, mine, name, exclude, calibration, calibrationOnly) {
+  // `held` frames are never offered as normal frames, to anyone (see heldFrames).
+  function pickNext(frames, counts, mine, name, exclude, calibration, calibrationOnly, held) {
     const cal = Array.isArray(calibration) ? calibration : [];
+    const hold = Array.isArray(held) ? held : [];
     for (const id of cal) {
       if (id === exclude || mine[id]) continue;
       const f = frames.find((x) => x.frame_id === id);
@@ -57,13 +59,23 @@
     let best = null, bestKey = null;
     for (const f of frames) {
       const id = f.frame_id;
-      if (id === exclude || mine[id] || cal.includes(id)) continue;
+      if (id === exclude || mine[id] || cal.includes(id) || hold.includes(id)) continue;
       const n = counts[id] || 0;
       if (n >= NEEDED) continue;
       const key = [n, hash32(name.toLowerCase() + "|" + id)];
       if (!bestKey || key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] < bestKey[1])) { best = f; bestKey = key; }
     }
     return best;
+  }
+  // Extra frames for one named person, such as demo frames recorded for the team. `personal` is { "lower case name": [frame ids] }.
+  // That person gets them after the shared calibration frames. Nobody else is offered them, so a recording cannot unblind a label.
+  function calibrationFor(calibration, personal, name) {
+    const extra = personal && typeof personal === "object" ? personal[String(name || "").toLowerCase()] : null;
+    const list = Array.isArray(calibration) ? calibration : [];
+    return Array.isArray(extra) ? list.concat(extra.filter((id) => !list.includes(id))) : list;
+  }
+  function heldFrames(personal) {
+    return personal && typeof personal === "object" ? Object.values(personal).filter(Array.isArray).flat() : [];
   }
   function fitScale(sw, sh, w, h) { return Math.min(sw / w, sh / h); }
   // Keep the picture on screen: centred when smaller than the stage, no empty edge when larger.
@@ -183,7 +195,7 @@
   function noConfidentAnimals(points) { return !!points && points.length > 0 && points.every((p) => p.kind === "not_fish" || p.kind === "unsure"); }
   function orderedViews(list) { return VIEWS.filter((v) => Array.isArray(list) && list.includes(v)); }
 
-  const api = { missingChecks, calibrationProgressText, KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
+  const api = { calibrationFor, heldFrames, missingChecks, calibrationProgressText, KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document === "undefined") return;
 
@@ -239,7 +251,7 @@
   }
   function paintProgress() {
     const myDone = Object.values(S.mine).filter((m) => m.state === "done").length;
-    $("progress").textContent = S.calibrationOnly ? calibrationProgressText(S.calibration, S.mine) : progressText(myDone, S.team.frames_with_two || 0, S.total);
+    $("progress").textContent = S.calibrationOnly ? calibrationProgressText(calList(), S.mine) : progressText(myDone, S.team.frames_with_two || 0, S.total);
   }
 
   // ---------- name ----------
@@ -263,6 +275,8 @@
   }
 
   // ---------- drafts: autosave in this browser, so a refresh or a failed save loses nothing ----------
+  const calList = () => calibrationFor(S.calibration, S.personal, S.name);
+  const heldNow = () => heldFrames(S.personal).concat(S.archived || []);   // archived frames are finished with: nobody gets them, and they leave My frames
   const draftKey = (fid) => "clipsift.label.draft." + S.set + "." + S.name.toLowerCase() + "." + fid;
   const curKey = () => "clipsift.label.current." + S.set + "." + S.name.toLowerCase();
   function saveDraftSoon() {
@@ -290,7 +304,7 @@
     S.cur = frame; S.points = []; S.noAnimals = false; S.seconds = 0; S.undo = []; S.views = [];
     $("done-panel").hidden = true; $("loading").hidden = false; setMotion(false); closeMenu(false);
     LS.set(curKey(), frame.frame_id);
-    const calText = calibrationText(S.calibration, frame.frame_id);
+    const calText = calibrationText(calList(), frame.frame_id);
     $("frame-info").textContent = (calText ? calText + ". " : "") + "Frame at " + fmtTime(frame.time_s) + " in the video";
     const note = [];
     const draft = readDraft(frame.frame_id);
@@ -330,13 +344,13 @@
     prefetchNext();
   }
   function prefetchNext() {
-    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, S.cur && S.cur.frame_id, S.calibration, S.calibrationOnly);
+    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, S.cur && S.cur.frame_id, calList(), S.calibrationOnly, heldNow());
     if (nxt) { const i = new Image(); i.src = nxt.frame_url; }
   }
 
   async function goNext() {
     try { await refreshStatus(); } catch (e) { /* use what we have */ }
-    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, null, S.calibration, S.calibrationOnly);
+    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, null, calList(), S.calibrationOnly, heldNow());
     if (nxt) { await openFrame(nxt); return; }
     showDone();
   }
@@ -831,7 +845,7 @@
   // ---------- my frames ----------
   function showMine() {
     const list = $("mine-list"); list.textContent = "";
-    const rows = S.frames.filter((f) => S.mine[f.frame_id] && (!S.calibrationOnly || S.calibration.includes(f.frame_id)));
+    const rows = S.frames.filter((f) => S.mine[f.frame_id] && !(S.archived || []).includes(f.frame_id) && (!S.calibrationOnly || calList().includes(f.frame_id)));
     if (!rows.length) { const li = document.createElement("li"); li.className = "hint"; li.textContent = "You have not saved any frames yet."; list.append(li); }
     for (const f of rows) {
       const m = S.mine[f.frame_id], li = document.createElement("li"), b = document.createElement("button");
@@ -903,6 +917,9 @@
     S.byId = {}; for (const f of S.frames) S.byId[f.frame_id] = f;
     const seen = new Set();
     S.calibrationOnly = mf.calibration_only === true;
+    S.archived = (Array.isArray(mf.archived) ? mf.archived : []).filter((id) => S.byId[id]);
+    S.personal = {};
+    for (const [who, ids] of Object.entries(mf.personal || {})) if (Array.isArray(ids)) S.personal[who.toLowerCase()] = ids.filter((id) => S.byId[id]);
     S.calibration = (Array.isArray(mf.calibration) ? mf.calibration : []).filter((id) => typeof id === "string" && S.byId[id] && !seen.has(id) && seen.add(id));
   }
   async function start() {
@@ -911,7 +928,7 @@
       await refreshStatus();
     } catch (e) { msg("Could not start: " + e.message, "error", { label: "Try again", fn: () => start() }); $("progress").textContent = ""; return; }
     const saved = LS.get(curKey()), f = saved && S.byId[saved];
-    const allowed = f && (!S.calibrationOnly || S.calibration.includes(f.frame_id));
+    const allowed = f && !(S.archived || []).includes(f.frame_id) && (!S.calibrationOnly || calList().includes(f.frame_id));
     if (allowed && (!S.mine[f.frame_id] || readDraft(f.frame_id))) { await openFrame(f); return; }
     await goNext();
   }

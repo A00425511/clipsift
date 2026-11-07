@@ -607,7 +607,15 @@ def test_pull_labels_calibration_csv(tmp_path):
 def test_label_page_has_the_new_controls_and_plain_text():
     html = (ROOT / "app" / "static" / "label.html").read_text()
     js = (ROOT / "app" / "static" / "label.js").read_text()
-    for needle in ('id="k-uns"', 'id="cm-to-uns"', 'id="nf-hint"', "Look at the frame", "Play the clip", "Movement view", "hard to see in the still",
+    for needle in ('id="k-uns"', 'id="cm-to-uns"', 'id="nf-hint"', "Look at the frame", "Play the clip", "Movement view", "Find a body in the frame or clip",
                    "Stick to your own name", "at most 3 per frame", "only after you have checked both the clip"):
         assert needle in html, needle
     assert "\u2014" not in html and "\u2014" not in js
+
+
+def test_archived_frames_come_from_calibration_json(tmp_path):
+    from tools.pull_labels import archived_frames
+    (tmp_path / "s1").mkdir()
+    (tmp_path / "s1" / "calibration.json").write_text('{"calibration": ["a"], "archived": ["b", "c"]}', encoding="utf-8")
+    (tmp_path / "s2").mkdir()
+    assert archived_frames(tmp_path, ["s1", "s2", "s3"]) == {("s1", "b"), ("s1", "c")}

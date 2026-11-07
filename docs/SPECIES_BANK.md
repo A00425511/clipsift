@@ -2,6 +2,8 @@
 
 A second look for species, after counting. ClipSift pulls clear images of moving candidates into one place so a person can identify them, flag juveniles and catch invasive or unexpected species. The model never names a species. A person does.
 
+Since 1.0.0 the app's step 6 builds a separate review set (`clipsift/verify.py`, `review_set/` in the run folder) on the same page, opened with `?set=review`. It mixes model and counter sources for training data. The V6 species bank below stays available for runs that have V6 output.
+
 ## Where it fits the protocol
 
 Coastal's protocol asks reviewers to watch the window, record all species at the lowest practicable level, and note whether juveniles are present. That step depends on spotting a short, rare appearance in real time. The bank backs it up with images that can be paused and compared.

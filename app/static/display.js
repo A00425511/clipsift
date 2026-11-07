@@ -92,18 +92,79 @@
     };
     return [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
   }
+  // Blind counts, the same rules as clipsift/qc.py (the static demo has no server to ask). See that file for the assumptions.
+  function percentDiff(a, b) {
+    if (a == null || b == null) return null;
+    return a === 0 && b === 0 ? 0 : Math.abs(a - b) / ((a + b) / 2) * 100;
+  }
+  function assessPoint(rows, limit, smallGap) {
+    smallGap = smallGap == null ? 1 : smallGap;
+    let best = null;
+    const fish = (r) => r.total_fish_count || 0, inv = (r) => r.invertebrate_count || 0;
+    for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {
+      const fd = percentDiff(fish(rows[i]), fish(rows[j])), id = percentDiff(inv(rows[i]), inv(rows[j])), worst = Math.max(fd, id);
+      if (!best || worst <= best.worst) best = { worst, fd, id, a: rows[i], b: rows[j] };
+    }
+    const { a, b } = best, gap = Math.max(Math.abs(fish(a) - fish(b)), Math.abs(inv(a) - inv(b))), over = best.worst > limit;
+    return { gap, small_gap: over && gap <= smallGap, fish_diff: best.fd, inv_diff: best.id, percent_diff: best.worst, first_counter: a.counter, second_counter: b.counter,
+      first_fish: fish(a), second_fish: fish(b), first_inv: inv(a), second_inv: inv(b), first_total: fish(a) + inv(a), second_total: fish(b) + inv(b),
+      average_fish: (fish(a) + fish(b)) / 2, average_inv: (inv(a) + inv(b)) / 2, n_counts: rows.length, counters: rows.map((r) => r.counter), recount_needed: over && gap > smallGap };
+  }
+  function qcVerdict(sample, primaryIds, points, limit, target) {
+    const done = sample.filter((s) => points[s]), diffs = done.map((s) => points[s].percent_diff);
+    const agreement = diffs.length ? Math.round(Math.max(0, 100 - diffs.reduce((x, y) => x + y, 0) / diffs.length) * 10) / 10 : null;
+    const recount = done.filter((s) => points[s].recount_needed);
+    let status = "pass";
+    if (!sample.length) status = "no_sample";
+    else if (sample.some((s) => !primaryIds.has(s))) status = "counting";
+    else if (done.length < sample.length) status = "waiting_second";
+    else if (recount.length) status = "review";
+    return { sample: sample.slice(), n_sample: sample.length, n_done: done.length, recount, n_within: done.length - recount.length, agreement, limit, target, status };
+  }
+  // The wording for a recommendation. One place, so the step and the report say the same thing.
+  function qcMessage(c) {
+    const left = c.n_sample - c.n_done;
+    return {
+      no_sample: ["No frames to check", "This video has no count points yet."],
+      counting: ["Waiting for the first count", c.n_sample + " frames have been picked at random. They stay hidden until the first count is finished."],
+      waiting_second: ["Waiting for a second person", left + " of " + c.n_sample + " frames still need a blind second count."],
+      review: ["Worth a second look", c.recount.length + " of " + c.n_done + " frames differ by more than " + c.limit + "% and by more than one animal. A recount is optional, preferably with a different person. Agreement is " + c.agreement + "%, and the protocol's target is " + c.target + "%."],
+      pass: ["Counts are close", c.agreement >= c.target ? "Agreement is " + c.agreement + "%, and no frame needs another look." : "Agreement is " + c.agreement + "%, under the protocol's " + c.target + "% target, but no frame differs by more than a small gap. This is common when frames have few fish."],
+    }[c.status];
+  }
+  // Marks two people placed on one frame, paired by distance. Shows why two counts differ, and never changes them.
+  function matchMarks(a, b, radius) {
+    const at = (m) => (m.w != null ? [m.x + m.w / 2, m.y + m.h / 2] : [m.x, m.y]), left = b.slice(), both = [], onlyA = [];
+    for (const m of a) {
+      const [x, y] = at(m);
+      let hit = -1, best = radius;
+      left.forEach((o, i) => { const [ox, oy] = at(o), d = Math.hypot(ox - x, oy - y); if (d <= best) { best = d; hit = i; } });
+      if (hit < 0) onlyA.push(m); else both.push([m, left.splice(hit, 1)[0]]);
+    }
+    return { both, onlyA, onlyB: left };
+  }
+  const VIS_ORDER = ["<0.5 m", "0.5-1.0 m", "1.0-1.5 m", ">1.5 m"];
+  // Whether the people who rated visibility agree. Categories apart counts the steps between lowest and highest.
+  function visibilitySummary(rows) {
+    const ranks = rows.map((r) => VIS_ORDER.indexOf(r.category)).filter((i) => i >= 0);
+    if (!ranks.length) return { n: 0, spread: 0, low: null, usual: null };
+    const tally = {}; for (const i of ranks) tally[i] = (tally[i] || 0) + 1;
+    const usual = Number(Object.keys(tally).sort((x, y) => tally[y] - tally[x] || x - y)[0]);
+    return { n: ranks.length, spread: Math.max(...ranks) - Math.min(...ranks), low: Math.min(...ranks) === 0, usual: VIS_ORDER[usual] };
+  }
   // Everything the summary report shows, from the run and the saved primary counts. Model numbers are left out on purpose.
   function buildReport(results, saved) {
     const rec = results.recording || {}, run = results.run || {}, proto = results.protocol || {};
     const latest = saved.latest_primary || {}, qc = Object.values(saved.qc || {});
     const points = (results.subsamples || []).filter((s) => s && s.subsample_id).slice().sort((a, b) => (a.t_s || 0) - (b.t_s || 0)).map((s) => {
       const r = latest[s.subsample_id];
-      return { id: s.subsample_id, t: s.t_s, counted: !!r, fish: r ? r.total_fish_count : null, inv: r ? r.invertebrate_count : null, unknown: r ? r.unknown_count || 0 : null,
-        species: r ? r.species_counts || {} : {}, visibility: r ? r.visibility_category : null, counter: r ? r.counter : null, notes: r ? r.notes || "" : "" };
+      const finalFish = (saved.final_fish || {})[s.subsample_id];
+      return { id: s.subsample_id, t: s.t_s, counted: !!r, fish: r ? r.total_fish_count : null, finalFish: finalFish == null ? (r ? r.total_fish_count : null) : finalFish, inv: r ? r.invertebrate_count : null, unknown: r ? r.unknown_count || 0 : null,
+        species: r ? r.species_counts || {} : {}, visibility: r ? r.visibility_category : null, visibilityDirection: r ? r.visibility_direction || null : null, counter: r ? r.counter : null, notes: r ? r.notes || "" : "" };
     });
     const counted = points.filter((p) => p.counted), sum = (k) => counted.reduce((a, p) => a + (p[k] || 0), 0), bySpecies = {};
-    const n = counted.length, mean = n ? sum("fish") / n : null;
-    const sd = n > 1 ? Math.sqrt(counted.reduce((a, p) => a + ((p.fish || 0) - mean) ** 2, 0) / (n - 1)) : null;
+    const n = counted.length, mean = n ? sum("finalFish") / n : null;
+    const sd = n > 1 ? Math.sqrt(counted.reduce((a, p) => a + ((p.finalFish || 0) - mean) ** 2, 0) / (n - 1)) : null;
     const notes = saved.latest_recording_notes || {};
     for (const p of counted) for (const [name, n] of Object.entries(p.species)) {
       const row = bySpecies[name] || (bySpecies[name] = { name, total: 0, points: 0 });
@@ -111,11 +172,13 @@
     }
     return { video: rec.video_id || rec.recording_id || "", transect: rec.transect, stat: rec.stat, year: rec.year, season: rec.season,
       windowStart: proto.window_start_s, windowEnd: proto.window_end_s, modelVersion: run.model_version || null, layer: run.layer,
-      planned: points.length, counted: counted.length, meanCount: saved.mean_count_reviewed == null ? null : saved.mean_count_reviewed,
+      planned: points.length, counted: counted.length, meanCount: saved.mean_count_final != null ? saved.mean_count_final : (saved.mean_count_reviewed == null ? null : saved.mean_count_reviewed),
+      meanFirst: saved.mean_count_reviewed == null ? null : saved.mean_count_reviewed, qcCheck: saved.qc_check || null, qcPoints: saved.qc || {}, noneSeen: !!notes.none_seen,
+      visibilityChanges: points.filter((p) => p.visibilityDirection).map((p) => ({ id: p.id, t: p.t, direction: p.visibilityDirection, category: p.visibility })), reviewSet: saved.review_set || null,
       totalFish: sum("fish"), totalInv: sum("inv"), totalUnknown: sum("unknown"), points,
       sd, se: sd == null ? null : sd / Math.sqrt(n), zeroPoints: counted.filter((p) => !p.fish).length,
       interval: proto.interval_s, speciesObserved: [...new Set([...(notes.species_observed || []), ...Object.keys(bySpecies)])], juveniles: notes.juveniles == null ? null : notes.juveniles,
-      visibility: notes.visibility_by_observer || [],
+      visibility: saved.visibility || notes.visibility_by_observer || [],
       species: Object.values(bySpecies).map((s) => ({ ...s, meanCount: s.total / n })).sort((a, b) => b.total - a.total || (a.name < b.name ? -1 : 1)),
       qcPairs: qc.length, qcRecounts: qc.filter((q) => q.recount_needed).length, qcAgreement: saved.qc_agreement == null ? null : saved.qc_agreement };
   }
@@ -125,7 +188,7 @@
     const rows = rep.points.map((p) => [rep.video, p.id, fmtTime(p.t), p.t, p.counted ? "yes" : "no", p.fish, p.inv, p.unknown, p.visibility, p.counter, p.notes].concat(names.map((n) => (n in p.species ? p.species[n] : ""))));
     return csvText(header, rows);
   }
-  const api = { inCount, countBands, csvText, buildReport, reportCsv, clipRange, scrubTime, clipControl, ENHANCE_PRESETS, enhanceFilter, cleanEnhance, nextEnhance, forKind, speciesName, speciesLabel, cleanNameMode, relTime };
+  const api = { percentDiff, assessPoint, qcVerdict, qcMessage, matchMarks, visibilitySummary, VIS_ORDER, inCount, countBands, csvText, buildReport, reportCsv, clipRange, scrubTime, clipControl, ENHANCE_PRESETS, enhanceFilter, cleanEnhance, nextEnhance, forKind, speciesName, speciesLabel, cleanNameMode, relTime };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ClipSiftDisplay = api;
 })(typeof window !== "undefined" ? window : globalThis);

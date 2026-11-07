@@ -59,6 +59,30 @@ t("report: totals come from saved primary counts, and points with no count are l
   assert.match(csv, /'=Sam/);          // typed text cannot become a formula
   assert.match(csv.split("\r\n")[3], /,no,/);
 });
+t("blind check: the demo's copy of the rules gives the same answers as clipsift/qc.py", () => {
+  const row = (counter, f, i) => ({ counter, total_fish_count: f, invertebrate_count: i });
+  const p = D.assessPoint([row("a", 100, 0), row("b", 120, 0), row("c", 118, 0)], 6);
+  assert.deepEqual([p.first_counter, p.second_counter, p.average_fish, p.recount_needed], ["b", "c", 119, false]);
+  const pt = (d) => ({ percent_diff: d, recount_needed: d > 6 });
+  const v = (ids, pts) => D.qcVerdict(["a", "b"], new Set(ids), pts, 6, 95).status;
+  assert.equal(v(["a"], {}), "counting");
+  assert.equal(v(["a", "b"], { a: pt(0) }), "waiting_second");
+  assert.equal(v(["a", "b"], { a: pt(0), b: pt(40) }), "review");
+  assert.equal(v(["a", "b"], { a: pt(5.5), b: pt(5.5) }), "pass");
+  const small = D.assessPoint([row("a", 2, 0), row("b", 3, 0)], 6);
+  assert.deepEqual([small.percent_diff, small.recount_needed, small.small_gap], [40, false, true]);
+  assert.equal(v(["a", "b"], { a: pt(0), b: pt(2) }), "pass");
+  assert.equal(D.qcMessage(D.qcVerdict(["a"], new Set(["a"]), { a: pt(0) }, 6, 95))[0], "Counts are close");
+});
+t("marks: two people's marks pair up by distance, each mark used once", () => {
+  const m = D.matchMarks([{ x: 0, y: 0 }, { x: 100, y: 0 }], [{ x: 5, y: 0 }, { x: 500, y: 0 }], 20);
+  assert.deepEqual([m.both.length, m.onlyA.length, m.onlyB.length], [1, 1, 1]);
+});
+t("visibility: spread counts the categories between the lowest and highest rating", () => {
+  const s = D.visibilitySummary([{ category: "<0.5 m" }, { category: "1.0-1.5 m" }, { category: "1.0-1.5 m" }]);
+  assert.deepEqual([s.n, s.spread, s.low, s.usual], [3, 2, true, "1.0-1.5 m"]);
+  assert.equal(D.visibilitySummary([]).n, 0);
+});
 t("species: the list follows the mark kind, and names switch without changing what is saved", () => {
   const idx = L.buildSpeciesIndex([{ scientific_name: "Gadus morhua", common_names: ["Atlantic cod"], kind: "fish" }, { scientific_name: "Carcinus maenas", common_names: ["European green crab"], kind: "invertebrate" }, { scientific_name: "Mystery", common_names: [] }]);
   assert.deepEqual(D.forKind(idx, "fish").map((i) => i.sci), ["Gadus morhua", "Mystery"]);

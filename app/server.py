@@ -15,6 +15,8 @@ import math
 import hashlib
 import re
 import shutil
+import subprocess
+import sys
 import uuid
 import threading
 import importlib.util
@@ -24,7 +26,9 @@ from pathlib import Path
 from flask import Flask, Response, abort, jsonify, request, send_file, send_from_directory
 
 from clipsift import protocol as proto
+from clipsift import qc as qcm
 from clipsift.cli import VIDEO_EXT, _expand
+from clipsift.qc import percent_difference
 
 from .jobs import JobQueue, safe_run_name
 
@@ -46,10 +50,11 @@ LONG_VIDEO_MINUTES = ((25 * 60, (7.5, 10)), (30 * 60, (12.5, 15)))   # comments 
 SUB_FILES = {"still": "still.jpg", "diff": "diff.jpg", "context": "context.mp4"}
 SUB_MIME = {"still": "image/jpeg", "diff": "image/jpeg", "context": "video/mp4"}
 PASSES = {"primary", "qc_blind", "recount"}
+VISIBILITY_DIRECTIONS = ("increasing", "decreasing")
 CHARACTERISTICS = ("shape", "anatomical_features", "colouration_or_flashes", "swimming_behaviour")
 VISIBILITY = ("<0.5 m", "0.5-1.0 m", "1.0-1.5 m", ">1.5 m")
 # Defaults only. The run's own results.json "protocol" block wins. Draft protocol, so all configurable.
-QC_DEFAULTS = {"qc_max_percent_diff": 6, "qc_agreement": 95}
+QC_DEFAULTS = {"qc_max_percent_diff": 6, "qc_agreement": 95, "qc_small_gap": 1, "qc_share": 0.10, "qc_min": 6, "qc_max": 12, "qc_seed": 4321}
 # Blind label mode. Same rules as deploy/src/worker.js: keep the two in step.
 LABEL_SET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]{0,39}$")
 LABEL_FRAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
@@ -63,6 +68,13 @@ LABEL_VIEWS = ("frame", "movement", "clip")   # views used on a frame, kept for 
 LABEL_SPECIES_MAX = 80
 LABEL_PRESET_NAMES = ("Jacob", "Ali", "Gina", "Wang", "Adrien")
 BANK_OUTCOMES = ("species", "not_animal", "cant_tell", "needs_expert")
+REVIEW_OUTCOMES = ("fish", "invertebrate", "equipment", "background", "cant_tell", "needs_expert")
+BANK_NAMED = ("species", "fish", "invertebrate")   # outcomes that can carry a species name
+BANK_SETS = {"species_bank": "species_bank", "review": "review_set"}
+TRAINING_LABEL = {"species": "fish_or_invertebrate", "fish": "fish", "invertebrate": "invertebrate",
+                  "equipment": "not_animal", "background": "not_animal", "not_animal": "not_animal"}
+PROFILE_NAME_MAX = 60
+REVIEW_SET_SIZES = (30, 36, 40)
 BANK_LIFE_STAGES = ("adult", "juvenile", "unknown")
 BANK_FILE_RE = re.compile(r"^[A-Za-z0-9_\-]{1,80}\.(jpg|mp4)$")
 FEEDBACK_AREAS = ("Counting", "Video", "Timeline", "Help", "Layout", "Other")
@@ -81,19 +93,6 @@ def active_point_labels(rows):
             order.append(lid)
     return [live[i] for i in order if i in live]
 
-
-def percent_difference(a, b):
-    """Percent difference between two counts of the same frame.
-
-    ASSUMPTION: the protocol PDF does not give its formula. This uses the difference
-    divided by the mean of the two counts, times 100 (0 when both are 0). Swap it here
-    once Coastal Action confirm the formula.
-    """
-    if a is None or b is None:
-        return None
-    if a == 0 and b == 0:
-        return 0.0
-    return abs(a - b) / ((a + b) / 2) * 100
 
 CSV_COLUMNS = [
     ("recording_id", "Recording folder name."),
@@ -412,6 +411,11 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         pass_ = data.get("pass", "primary")
         if pass_ not in PASSES:
             raise BadInput("pass must be one of: " + ", ".join(sorted(PASSES)))
+        if pass_ == "qc_blind":
+            earlier = {(r.get("counter") or "").lower() for r in read_jsonl(run_dir / "subsample_reviews.jsonl")
+                       if r.get("subsample_id") == data["subsample_id"] and r.get("pass") == "primary"}
+            if counter.lower() in earlier:
+                raise BadInput("A blind second count has to come from a different person.")
         species_counts = data.get("species_counts") or {}
         if not isinstance(species_counts, dict) or len(species_counts) > 200:
             raise BadInput("species_counts must be an object of name: count")
@@ -425,6 +429,9 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         vchange = data.get("visibility_change")
         if vchange is not None and not isinstance(vchange, bool):
             raise BadInput("visibility_change must be true, false or empty")
+        direction = data.get("visibility_direction")
+        if direction is not None and direction not in VISIBILITY_DIRECTIONS:
+            raise BadInput("visibility_direction must be increasing, decreasing or empty")
         chars = data.get("characteristics") or []
         if not isinstance(chars, list) or any(c not in CHARACTERISTICS for c in chars):
             raise BadInput("characteristics must be from: " + ", ".join(CHARACTERISTICS))
@@ -443,6 +450,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             "total_species": clean_int(data.get("total_species", len(clean_species)), "total_species", 0, 1000),
             "visibility_category": vis,
             "visibility_change": vchange,
+            "visibility_direction": direction,
             "characteristics": sorted(set(chars)),
             "free_text_species": free,
             "notes": clean_str(data.get("notes"), "notes", 2000) or "",
@@ -484,6 +492,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             "window_end_s": secs("window_end_s"),
             "species_observed": [clean_str(x, "species", 200, allow_empty=False) for x in species],
             "juveniles": juv,
+            "none_seen": data.get("none_seen") is True,
             "visibility_by_observer": vis_rows,
             "notes": clean_str(data.get("notes"), "notes", 2000) or "",
             "reviewer": clean_str(data.get("reviewer"), "reviewer", 100) or "",
@@ -494,6 +503,28 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             raise BadInput("window end must be after window start")
         append_jsonl(run_dir / "recording_notes.jsonl", record)
         return jsonify(record), 201
+
+    @app.post("/api/runs/<run_id>/visibility")
+    def post_visibility(run_id):
+        """One observer's visibility category for the video. Each person rates on their own."""
+        run_dir = run_dir_for(run_id)
+        load_results(run_dir)
+        data = json_body()
+        if data.get("category") not in VISIBILITY:
+            raise BadInput("category must be one of: " + ", ".join(VISIBILITY))
+        record = {"observer": clean_str(data.get("observer"), "observer", 100, allow_empty=False), "category": data["category"],
+                  "notes": clean_str(data.get("notes"), "notes", 500) or "", "at": now_iso()}
+        append_jsonl(run_dir / "visibility.jsonl", record)
+        return jsonify(record), 201
+
+    def visibility_rows(run_dir, notes):
+        """The latest rating per observer, including any typed in by older versions of the app."""
+        latest = {}
+        for row in (notes[-1].get("visibility_by_observer") or [] if notes else []):
+            latest[row.get("observer")] = {"observer": row.get("observer"), "category": row.get("category")}
+        for row in read_jsonl(run_dir / "visibility.jsonl"):
+            latest[row.get("observer")] = row
+        return list(latest.values())
 
     def finite(v, field, lo, hi):
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
@@ -537,39 +568,44 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         append_jsonl(path, record)
         return jsonify(record), 201
 
+    def qc_sample_ids(results):
+        """The frames picked for the blind check. Runs made before the pick was recorded get one now."""
+        subs = sorted([x for x in results.get("subsamples") or [] if isinstance(x, dict)], key=lambda x: x.get("t_s") or 0)
+        marked = [x["subsample_id"] for x in subs if x.get("qc_sample")]
+        if marked:
+            return marked
+        pc = {**QC_DEFAULTS, **(results.get("protocol") or {})}
+        picks = proto.pick_qc(len(subs), pc, (results.get("recording") or {}).get("recording_id") or "")
+        return [x["subsample_id"] for i, x in enumerate(subs) if i in picks]
+
     def qc_and_means(results, sub_reviews):
-        """Latest primary count per subsample, QC differences, live MeanCount."""
-        proto = {**QC_DEFAULTS, **(results.get("protocol") or {})}
-        latest = {"primary": {}, "second": {}}
+        """Latest first count per point, every blind comparison, the app's recommendation, and MeanCount."""
+        pc = {**QC_DEFAULTS, **(results.get("protocol") or {})}
+        limit, target = pc["qc_max_percent_diff"], pc["qc_agreement"]
+        primary, seconds = {}, {}
         for r in sub_reviews:
             sid = r.get("subsample_id")
             if r.get("pass") == "primary":
-                latest["primary"][sid] = r
+                primary[sid] = r
             elif r.get("pass") in ("qc_blind", "recount"):
-                latest["second"][sid] = r
-        qc = {}
-        for sid, second in latest["second"].items():
-            first = latest["primary"].get(sid)
-            if not first:
-                continue
-            a = (first.get("total_fish_count") or 0) + (first.get("invertebrate_count") or 0)
-            b = (second.get("total_fish_count") or 0) + (second.get("invertebrate_count") or 0)
-            diff = percent_difference(a, b)
-            qc[sid] = {"first_total": a, "second_total": b, "percent_diff": diff,
-                       "first_counter": first.get("counter"), "second_counter": second.get("counter"),
-                       "recount_needed": diff is not None and diff > proto["qc_max_percent_diff"]}
-        diffs = [q["percent_diff"] for q in qc.values() if q["percent_diff"] is not None]
-        agreement = round(100 - sum(diffs) / len(diffs), 1) if diffs else None
-        fish = [r.get("total_fish_count") for r in latest["primary"].values() if r.get("total_fish_count") is not None]
-        n_total = len(results.get("subsamples") or [])
+                seconds.setdefault(sid, {})[(r.get("counter") or "").lower()] = r   # the latest row per person
+        qc = {sid: qcm.assess_point([primary[sid], *rows.values()], limit, pc["qc_small_gap"]) for sid, rows in seconds.items() if sid in primary}
+        check = qcm.verdict(qc_sample_ids(results), set(primary), qc, limit, target)
+        fish = [r.get("total_fish_count") for r in primary.values() if r.get("total_fish_count") is not None]
+        final = {sid: (qc[sid]["average_fish"] if sid in qc else r.get("total_fish_count"))
+                 for sid, r in primary.items()}   # the protocol averages the two blind counts of a checked frame
+        final = {k: v for k, v in final.items() if v is not None}
         return {
-            "latest_primary": latest["primary"],
+            "latest_primary": primary,
             "qc": qc,
-            "qc_agreement": agreement,
-            "qc_agreement_target": proto["qc_agreement"],
-            "n_counted": len(latest["primary"]),
-            "n_subsamples": n_total,
+            "qc_check": check,
+            "qc_agreement": check["agreement"],
+            "qc_agreement_target": target,
+            "n_counted": len(primary),
+            "n_subsamples": len(results.get("subsamples") or []),
             "mean_count_reviewed": round(sum(fish) / len(fish), 3) if fish else None,
+            "final_fish": final,
+            "mean_count_final": round(sum(final.values()) / len(final), 3) if final else None,
         }
 
     @app.get("/api/runs/<run_id>/saved")
@@ -588,7 +624,69 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                        subsample_reviews=sub_reviews,
                        point_labels=active_point_labels(read_jsonl(run_dir / "point_labels.jsonl")), recording_notes=notes,
                        latest_recording_notes=notes[-1] if notes else None,
+                       visibility=visibility_rows(run_dir, notes), review_set=review_set_state(run_dir),
                        **qc_and_means(results, sub_reviews))
+
+    def review_set_state(run_dir):
+        """How far the end-of-run review has got. Sources stay out of this until a person has decided."""
+        bank = load_bank(run_dir, "review_set")
+        if bank is None:
+            return None
+        decided = bank_decisions(run_dir, "review_set")
+        done = {i: d for i, d in decided.items() if any(x.get("id") == i for x in bank["items"])}
+        by_source = {}
+        for item in bank["items"]:
+            d = done.get(item.get("id"))
+            if d:
+                row = by_source.setdefault(item.get("source"), {"animal": 0, "not_animal": 0, "unclear": 0})
+                label = TRAINING_LABEL.get(d.get("outcome"))
+                row["not_animal" if label == "not_animal" else "animal" if label else "unclear"] += 1
+        return {"total": len(bank["items"]), "done": len(done), "by_source": by_source, "created_at": bank.get("created_at"),
+                "model": (bank.get("source") or {}).get("model")}
+
+    # ---- people: profiles, and how closely they agree across videos ----------
+    profiles_file = runs_root / "profiles.jsonl"
+
+    @app.get("/api/profiles")
+    def get_profiles():
+        names = {}
+        for row in read_jsonl(profiles_file):
+            names[str(row.get("name")).lower()] = row.get("name")
+        return jsonify(profiles=sorted(names.values(), key=str.lower))
+
+    @app.post("/api/profiles")
+    def add_profile():
+        name = clean_str(json_body().get("name"), "name", PROFILE_NAME_MAX, allow_empty=False)
+        name = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", name)).strip()
+        if not any(str(r.get("name")).lower() == name.lower() for r in read_jsonl(profiles_file)):
+            append_jsonl(profiles_file, {"name": name, "at": now_iso()})
+        return jsonify(name=name), 201
+
+    def each_run():
+        if runs_root.is_dir():
+            for d in sorted(runs_root.iterdir(), key=lambda p: p.name):
+                if d.is_dir() and NAME_RE.match(d.name) and (d / "results.json").is_file():
+                    yield d
+
+    @app.get("/api/interrater")
+    def get_interrater():
+        return jsonify(qcm.interrater([read_jsonl(d / "subsample_reviews.jsonl") for d in each_run()], QC_DEFAULTS["qc_max_percent_diff"]))
+
+    @app.get("/api/progress")
+    def get_progress():
+        """A line per video for the home screen."""
+        out = []
+        for d in each_run():
+            try:
+                results = json.loads((d / "results.json").read_text(encoding="utf-8"))
+                info = qc_and_means(results, read_jsonl(d / "subsample_reviews.jsonl"))
+            except (OSError, ValueError, AttributeError, TypeError):
+                continue
+            rec = results.get("recording") or {}
+            out.append({"run_id": d.name, "video_id": rec.get("video_id") or d.name, "fixture": bool(results.get("fixture")) or (d / "FIXTURE.txt").is_file(),
+                        "created_at": (results.get("run") or {}).get("created_at"), "n_counted": info["n_counted"], "n_subsamples": info["n_subsamples"],
+                        "qc_status": info["qc_check"]["status"], "mean_count": info["mean_count_final"]})
+        return jsonify(videos=out)
 
     # ---- new videos: pick or add a video, then process it in the background ----
     def inbox_entries():
@@ -618,6 +716,9 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         files = _expand([target])
         if not files or any(f.suffix.lower() not in VIDEO_EXT for f in files):
             raise BadInput("That path is not a video, or a folder holding videos.")
+        number = proto.video_number(target) if target.is_file() else None
+        if number:   # the other parts of a split GoPro video sit beside it
+            return [f for f in sorted(target.parent.iterdir()) if f.suffix.lower() in VIDEO_EXT and proto.video_number(f) == number]
         groups = proto.group_chapters(files)
         if target.is_dir() and (len(groups) > 1 or len(groups.get("_other", [])) > 1):
             raise BadInput("That folder holds more than one video. Give the path to one video.")
@@ -625,6 +726,24 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
 
     def detector_ready():
         return importlib.util.find_spec("rfdetr") is not None and any((PROJECT_ROOT / "models").glob("cfd-rf-detr-*.pth"))
+
+    @app.post("/api/videos/browse")
+    def browse_for_video():
+        """Open this computer's own file picker, so a large video can be used where it sits, without copying it."""
+        json_body()
+        if sys.platform == "darwin":
+            cmd = ["osascript", "-e", 'POSIX path of (choose file with prompt "Open a video" of type {"public.movie"})']
+        else:
+            cmd = [sys.executable, "-c", "import tkinter as t;from tkinter import filedialog as f;r=t.Tk();r.withdraw();r.attributes('-topmost',True);"
+                   "print(f.askopenfilename(title='Open a video',filetypes=[('Video','*.mp4 *.MP4 *.mov *.MOV *.m4v *.avi *.mkv')]))"]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        except (OSError, subprocess.TimeoutExpired):
+            return jsonify(path=None, unavailable=True)
+        path = done.stdout.strip()
+        if done.returncode and "-128" not in done.stderr and sys.platform == "darwin":   # -128 means the person pressed Cancel
+            return jsonify(path=None, unavailable=True)
+        return jsonify(path=path or None)
 
     @app.get("/api/videos")
     def list_videos():
@@ -683,7 +802,9 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                     continue
                 cv2.imwrite(str(out), resize_to_width(frame, 480), [cv2.IMWRITE_JPEG_QUALITY, 80])
             frames.append({"t_s": t, "url": f"/api/videos/preview/{key}/{int(t)}.jpg"})
-        return jsonify(duration_s=line.duration_s, frames=frames)
+        names = proto.parse_names([str(p) for p in paths])
+        return jsonify(duration_s=line.duration_s, frames=frames, names=names, parts=[p.name for p in paths],
+                       suggested_name=safe_run_name(paths[0].stem))
 
     @app.get("/api/videos/preview/<key>/<name>")
     def video_preview_image(key, name):
@@ -733,7 +854,10 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         if interval is not None and not 5 <= interval <= 600:
             raise BadInput("interval must be between 5 and 600 seconds")
         video_id = clean_str(data.get("video_id"), "video_id", 100) or None
-        return jsonify(jobs.add(name, paths, layer, ws, we, video_id, interval)), 201
+        year = clean_int(data.get("year"), "year", 1990, 2100)
+        meta = {"transect": clean_str(data.get("transect"), "transect", 40), "stat": clean_str(data.get("stat"), "stat", 40),
+                "year": year, "season": clean_str(data.get("season"), "season", 40)}
+        return jsonify(jobs.add(name, paths, layer, ws, we, video_id, interval, meta)), 201
 
     @app.post("/api/jobs/<job_id>/cancel")
     def cancel_job(job_id):
@@ -764,8 +888,15 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         return jsonify(record), 201
 
     # ---- species bank: images for a person to identify. Never touches counts. ----
-    def load_bank(run_dir):
-        path = run_dir / "species_bank" / "bank.json"
+    def bank_folder():
+        """Which set a request means: the V6 species bank, or the end-of-run review set."""
+        name = request.args.get("set") or "species_bank"
+        if name not in BANK_SETS:
+            abort(404, "No such set")
+        return BANK_SETS[name]
+
+    def load_bank(run_dir, folder="species_bank"):
+        path = run_dir / folder / "bank.json"
         if not path.is_file():
             return None
         try:
@@ -776,9 +907,9 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             abort(422, "bank.json is missing its items list")
         return data
 
-    def bank_decisions(run_dir):
+    def bank_decisions(run_dir, folder="species_bank"):
         latest = {}
-        for row in read_jsonl(run_dir / "species_bank" / "decisions.jsonl"):
+        for row in read_jsonl(run_dir / folder / "decisions.jsonl"):
             latest[row.get("item_id")] = row   # the last decision on an item wins
         return latest
 
@@ -796,15 +927,24 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
     @app.get("/api/runs/<run_id>/species_bank")
     def get_species_bank(run_id):
         run_dir = run_dir_for(run_id)
-        bank = load_bank(run_dir)
+        folder = bank_folder()
+        bank = load_bank(run_dir, folder)
         if bank is None:
             return jsonify(available=False)
-        return jsonify(available=True, bank=bank, decisions=bank_decisions(run_dir))
+        if folder == "review_set":   # the source stays hidden until the person has decided, so it can't sway them
+            decided = bank_decisions(run_dir, folder)
+            for item in bank["items"]:
+                if item.get("id") not in decided:
+                    for key in ("source", "max_confidence", "kind_marked", "species_marked"):
+                        item.pop(key, None)
+            bank.pop("counts", None)
+            bank.pop("pools", None)
+        return jsonify(available=True, bank=bank, decisions=bank_decisions(run_dir, folder))
 
     @app.get("/api/runs/<run_id>/species_bank/files/<name>")
     def species_bank_file(run_id, name):
         run_dir = run_dir_for(run_id)
-        path = (run_dir / "species_bank" / "files" / name).resolve()
+        path = (run_dir / bank_folder() / "files" / name).resolve()
         if not BANK_FILE_RE.match(name) or run_dir not in path.parents or not path.is_file():
             abort(404, "File not found")
         kind = "video/mp4" if name.endswith(".mp4") else "image/jpeg"
@@ -815,7 +955,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
     @app.post("/api/runs/<run_id>/species_bank/decisions")
     def post_species_bank_decision(run_id):
         run_dir = run_dir_for(run_id)
-        bank = load_bank(run_dir)
+        folder = bank_folder()
+        bank = load_bank(run_dir, folder)
         if bank is None:
             abort(404, "This run has no species bank")
         data = json_body()
@@ -823,7 +964,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         if not any(isinstance(i, dict) and i.get("id") == item_id for i in bank["items"]):
             raise BadInput("item_id is not in this bank")
         outcome = data.get("outcome")
-        if outcome not in BANK_OUTCOMES:
+        if outcome not in (REVIEW_OUTCOMES if folder == "review_set" else BANK_OUTCOMES):
             raise BadInput("outcome is not a known choice")
         stage = data.get("life_stage") or "unknown"
         if stage not in BANK_LIFE_STAGES:
@@ -831,18 +972,54 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         species = clean_str(data.get("species"), "species", 200) or ""
         if outcome == "species" and not species:
             raise BadInput("Choose a species, or pick another outcome")
-        flags, note = species_flags(species) if outcome == "species" else ([], "")
+        named = outcome in BANK_NAMED and species
+        flags, note = species_flags(species) if named else ([], "")
         record = {
             "item_id": item_id, "outcome": outcome,
-            "species": species if outcome == "species" else "",
-            "life_stage": stage if outcome in ("species", "needs_expert") else "unknown",
+            "species": species if named else "",
+            "life_stage": stage if outcome in BANK_NAMED + ("needs_expert",) else "unknown",
             "species_flags": flags, "status_note": note,
             "notes": clean_str(data.get("notes"), "notes", 2000) or "",
             "reviewer": clean_str(data.get("reviewer"), "reviewer", 100, allow_empty=False),
             "at": now_iso(),
         }
-        append_jsonl(run_dir / "species_bank" / "decisions.jsonl", record)
+        append_jsonl(run_dir / folder / "decisions.jsonl", record)
         return jsonify(record), 201
+
+    @app.post("/api/runs/<run_id>/review_set")
+    def start_review_set(run_id):
+        """Run the model over the finished video and pick the items for a person to check."""
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        count = json_body().get("count", 36)
+        if count not in REVIEW_SET_SIZES:
+            raise BadInput("count must be one of: " + ", ".join(map(str, REVIEW_SET_SIZES)))
+        if not detector_ready():
+            raise BadInput("The fish detector is not installed on this computer, so this step isn't available.")
+        if qc_and_means(results, read_jsonl(run_dir / "subsample_reviews.jsonl"))["n_counted"] == 0:
+            raise BadInput("Count the points first. Model flags can sway a count.")
+        if jobs.busy_with(run_id):
+            raise BadInput("This video is already being processed.")
+        return jsonify(jobs.add_review_set(run_id, run_dir, count)), 201
+
+    @app.get("/api/runs/<run_id>/review_set.csv")
+    def export_review_set_csv(run_id):
+        """Everything needed to reuse a checked item as training data. Boxes are in the recording's pixels."""
+        run_dir = run_dir_for(run_id)
+        bank = load_bank(run_dir, "review_set")
+        if bank is None:
+            abort(404, "This run has no review set")
+        decisions = bank_decisions(run_dir, "review_set")
+        header = ["item_id", "source", "subsample_id", "time_s", "x1", "y1", "x2", "y2", "model_score", "model", "kind_marked",
+                  "outcome", "training_label", "species", "life_stage", "notes", "reviewer", "decided_at", "frame_file", "crop_file"]
+        rows = []
+        for item in bank["items"]:
+            d = decisions.get(item.get("id")) or {}
+            box, img = item.get("bbox") or [None] * 4, item.get("images") or {}
+            rows.append([item.get("id"), item.get("source"), item.get("subsample_id"), item.get("time_s"), *box, item.get("max_confidence"),
+                         (bank.get("source") or {}).get("model"), item.get("kind_marked"), d.get("outcome"), TRAINING_LABEL.get(d.get("outcome")),
+                         d.get("species") or None, d.get("life_stage"), d.get("notes") or None, d.get("reviewer"), d.get("at"), img.get("frame"), img.get("crop")])
+        return csv_response(rows, header, f"{run_id}_review_set.csv")
 
     @app.get("/api/runs/<run_id>/species_bank.csv")
     def export_species_bank_csv(run_id):
@@ -1085,7 +1262,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         w.writerow(header)
         for row in rows:
             # Stop spreadsheet programs treating typed text as a formula.
-            w.writerow([("'" + c) if isinstance(c, str) and c[:1] in "=+-@\t\r" else c for c in row])
+            w.writerow([("'" + c) if isinstance(c, str) and c and c[0] in "=+-@\t\r" else c for c in row])
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
@@ -1138,11 +1315,12 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         ("Unknown/Unable to ID due to visibility", "Count that could not be identified because of visibility."),
         ("Visibility category", "Water clarity category for this point."),
         ("Visibility change >= 0.5 m", "yes if visibility changed by 0.5 m or more."),
+        ("Visibility direction", "increasing or decreasing, when it changed."),
         ("Characteristics ticked", "Of shape, anatomical features, colour or flashes, swimming behaviour."),
         ("Notes", "Reviewer notes. Movement noted as unidentified is a note, never counted."),
         ("Saved at (UTC)", "When the count was saved."),
         ("QC percent difference", "Primary vs second count difference. Formula is provisional (see percent_difference in server.py)."),
-        ("QC recount needed", "yes if the difference is over the configured limit."),
+        ("QC recount suggested", "yes if the two counts are over the limit and more than a small gap apart. Advisory."),
     ]
     SPECIES_PREFIX = "Count: "
 
@@ -1164,7 +1342,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             rows.append([vid, r.get("subsample_id"), times.get(r.get("subsample_id")), r.get("counter"), r.get("pass"),
                          r.get("total_fish_count"), r.get("invertebrate_count"), r.get("total_species"),
                          r.get("unknown_count"), r.get("visibility_category"),
-                         "" if vc is None else ("yes" if vc else "no"),
+                         "" if vc is None else ("yes" if vc else "no"), r.get("visibility_direction"),
                          ";".join(r.get("characteristics") or []), r.get("notes"), r.get("at"),
                          q["percent_diff"] if q and q["percent_diff"] is not None else "",
                          ("yes" if q["recount_needed"] else "no") if q else ""] + [sc.get(n, "") for n in names])
@@ -1186,18 +1364,22 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         species = set(n.get("species_observed") or [])
         for r in info["latest_primary"].values():
             species.update((r.get("species_counts") or {}).keys())
-        vis = "; ".join(f"{v['observer']}: {v['category']}" for v in n.get("visibility_by_observer") or [])
+        vis = "; ".join(f"{v['observer']}: {v['category']}" for v in visibility_rows(run_dir, notes))
+        finals = list(info["final_fish"].values())
+        sd = math.sqrt(sum((v - sum(finals) / len(finals)) ** 2 for v in finals) / (len(finals) - 1)) if len(finals) > 1 else None
         header = ["Video ID", "Transect", "STAT", "Year", "Season", "Window start (s)", "Window end (s)",
                   "Subsamples counted", "Subsamples planned", "MeanCount (fish per subsample, reviewed)",
+                  "MeanCount with QC averages", "Standard deviation", "Standard error",
                   "Species observed", "Number of species", "Juveniles present (1/0)", "Visibility by observer",
-                  "QC pairs", "QC recounts needed", "QC agreement (%) (provisional)", "Note"]
+                  "QC pairs", "QC recounts suggested", "QC agreement (%) (provisional)", "QC result", "Note"]
         qcs = info["qc"].values()
         row = [rec.get("video_id") or rec.get("recording_id") or run_id, rec.get("transect"), rec.get("stat"),
                rec.get("year"), rec.get("season"),
                n.get("window_start_s", proto.get("window_start_s")), n.get("window_end_s", proto.get("window_end_s")),
-               info["n_counted"], info["n_subsamples"], info["mean_count_reviewed"],
+               info["n_counted"], info["n_subsamples"], info["mean_count_reviewed"], info["mean_count_final"],
+               None if sd is None else round(sd, 3), None if sd is None else round(sd / math.sqrt(len(finals)), 3),
                "; ".join(sorted(species)), len(species), n.get("juveniles"), vis,
-               len(info["qc"]), sum(1 for q in qcs if q["recount_needed"]), info["qc_agreement"],
+               len(info["qc"]), sum(1 for q in qcs if q["recount_needed"]), info["qc_agreement"], info["qc_check"]["status"],
                "Counts are a relative index, not abundance."]
         return csv_response([["" if c is None else c for c in row]], header, f"{run_id}_video_summary.csv")
 
@@ -1218,9 +1400,13 @@ def main(argv=None):
     p.add_argument("--label-sets", default=None, help="folder of label sets (default label_sets/)")
     p.add_argument("--labels", default=None, help="file the label page saves to (default app/local_labels.jsonl)")
     p.add_argument("--videos", default=None, help="folder of videos to process (default videos/)")
+    p.add_argument("--open", action="store_true", help="open the app in the web browser")
     args = p.parse_args(argv)
     app = create_app(args.runs, args.species, args.aliases, args.label_sets, args.labels, args.videos)
     print(f"ClipSift: http://127.0.0.1:{args.port}  (runs folder: {app.config['RUNS_ROOT']})")
+    if args.open:
+        import webbrowser
+        threading.Timer(1.0, webbrowser.open, [f"http://127.0.0.1:{args.port}"]).start()
     app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
 
 

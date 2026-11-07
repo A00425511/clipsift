@@ -18,6 +18,7 @@ PLAN_RE = re.compile(r"^plan: (\d+) points")
 POINT_RE = re.compile(r"^subsample ss_(\d+) ")
 SEGMENT_RE = re.compile(r"^motion scan: (\d+) segments")
 MEDIA_RE = re.compile(r"^segment media (\d+) of (\d+)")
+CHECK_RE = re.compile(r"^checking frame (\d+) of (\d+)")
 
 
 def safe_run_name(text: str) -> str:
@@ -27,7 +28,7 @@ def safe_run_name(text: str) -> str:
 
 
 def build_command(paths, runs_root, run_id, layer=0, window_start=None, window_end=None, python=None,
-                  video_id=None, interval=None) -> list:
+                  video_id=None, interval=None, meta=None) -> list:
     cmd = [python or sys.executable, "-u", "-m", "clipsift", "run", *[str(p) for p in paths],
            "--out", str(runs_root), "--id", run_id, "--layer", str(int(layer))]
     if window_start is not None:
@@ -38,6 +39,9 @@ def build_command(paths, runs_root, run_id, layer=0, window_start=None, window_e
         cmd += ["--video-id", video_id]
     if interval:
         cmd += ["--interval", str(interval)]
+    for key, value in (meta or {}).items():
+        if value not in (None, ""):
+            cmd += ["--" + key, str(value)]
     return cmd
 
 
@@ -72,6 +76,13 @@ def read_progress(lines) -> dict:
             continue
         if line.startswith("wrote "):
             text, pct = "Finishing", 99
+        m = CHECK_RE.match(line)
+        if m:
+            i, n = int(m.group(1)), int(m.group(2))
+            text, pct = f"Checking frame {i} of {n}", 5 + int(80 * i / n)
+            continue
+        if line == "saving images":
+            text, pct = "Saving images", 88
     return {"text": text, "percent": pct}
 
 
@@ -93,10 +104,18 @@ class JobQueue:
         self.proc = None
         self.thread = None
 
-    def add(self, name, paths, layer=0, window_start=None, window_end=None, video_id=None, interval=None) -> dict:
-        job = {"id": uuid.uuid4().hex[:12], "name": name, "videos": [Path(p).name for p in paths], "layer": int(layer),
-               "status": "queued", "added_at": time.time(), "started_at": None, "ended_at": None, "error": None,
-               "cmd": build_command(paths, self.runs_root, name, layer, window_start, window_end, video_id=video_id, interval=interval)}
+    def add(self, name, paths, layer=0, window_start=None, window_end=None, video_id=None, interval=None, meta=None) -> dict:
+        return self._queue(name, [Path(p).name for p in paths], int(layer), "video",
+                           build_command(paths, self.runs_root, name, layer, window_start, window_end, video_id=video_id, interval=interval, meta=meta))
+
+    def add_review_set(self, name, run_dir, count) -> dict:
+        """Run the model after counting, to pick the flags a person checks. One job at a time, like videos."""
+        return self._queue(name, [], 1, "review_set",
+                           [sys.executable, "-u", "-m", "clipsift", "verify", str(run_dir), "--count", str(count)])
+
+    def _queue(self, name, videos, layer, kind, cmd) -> dict:
+        job = {"id": uuid.uuid4().hex[:12], "name": name, "videos": videos, "layer": layer, "kind": kind,
+               "status": "queued", "added_at": time.time(), "started_at": None, "ended_at": None, "error": None, "cmd": cmd}
         with self.lock:
             self.jobs.append(job)
             if self.thread is None:

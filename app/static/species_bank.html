@@ -14,7 +14,7 @@
   <label class="who">Reviewer <input id="reviewer" type="text" maxlength="100" autocomplete="off" placeholder="Your name"></label>
   <span class="spacer"></span>
   <a id="csv" class="btn" href="#">Download CSV</a>
-  <a class="btn quiet" href="/">Back to counting</a>
+  <a id="back" class="btn quiet" href="/">Back to the video</a>
 </header>
 
 <section id="gate" class="bank-gate" hidden>
@@ -27,7 +27,7 @@
 
 <main id="bank" class="bank" hidden>
   <div class="bank-left">
-    <p class="hint">These are candidates to look at, not identifications. Flags only set the order. Nothing here changes a count, MeanCount or your watch window species list.</p>
+    <p class="hint" id="bank-intro">These are candidates to look at, not identifications. Flags only set the order. Nothing here changes a count, MeanCount or your watch window species list.</p>
     <div id="filters" class="bank-filters" role="group" aria-label="Filter candidates"></div>
     <div id="grid" class="bank-grid"></div>
   </div>

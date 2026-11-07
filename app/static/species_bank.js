@@ -2,7 +2,13 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const FILTERS = [
+  const REVIEW = new URLSearchParams(location.search).get("set") === "review";   // the end-of-run check of model flags
+  const SET_Q = REVIEW ? "?set=review" : "";
+  const FILTERS = REVIEW ? [
+    ["todo", "To check", (i, d) => !d],
+    ["done", "Checked", (i, d) => !!d],
+    ["expert", "Needs expert", (i, d) => d && d.outcome === "needs_expert"],
+  ] : [
     ["todo", "To review", (i, d) => !d && !has(i, "fixed_object")],
     ["unusual", "Unusual", (i) => has(i, "unusual")],
     ["near_seabed", "Near seabed", (i) => has(i, "near_seabed")],
@@ -18,7 +24,9 @@
   const has = (item, flag) => (item.flags || []).includes(flag);
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private window */ } } };
-  const fileUrl = (name) => `/api/runs/${encodeURIComponent(S.run)}/species_bank/files/${encodeURIComponent(name)}`;
+  const fileUrl = (name) => `/api/runs/${encodeURIComponent(S.run)}/species_bank/files/${encodeURIComponent(name)}${SET_Q}`;
+  const SOURCE_NOTE = { agree: "The model flagged this and the counter marked it.", model_only: "The model flagged this at a count point. The counter didn't mark it.",
+    elsewhere: "The model flagged this between count points, where nobody counted." };
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
@@ -56,7 +64,7 @@
     img.src = fileUrl(item.images.crop);
     const meta = el("span", "meta", clock(item.time_s) + " ");
     for (const f of item.flags) meta.append(el("span", "bank-tag", TAGS[f] || f));
-    if (d) meta.append(el("span", "bank-tag" + ((d.species_flags || []).length ? " alert" : ""), d.species || d.outcome.replace("_", " ")));
+    if (d) meta.append(el("span", "bank-tag" + ((d.species_flags || []).length ? " alert" : ""), d.species || d.outcome.replace(/_/g, " ")));
     b.append(img, meta);
     b.addEventListener("click", () => select(item));
     return b;
@@ -99,7 +107,7 @@
     if (name) { clip.src = fileUrl(name); clip.load(); }
     $("d-player").disabled = !name;
     $("d-hold").textContent = name
-      ? "Click and hold, or hold Space, to play from 2.5 seconds before to 2.5 seconds after."
+      ? "Click and hold, or hold Space, to play 2.5 seconds either side."
       : "No clip for this candidate.";
     const { width, height } = S.bank.source, [x1, y1, x2, y2] = item.bbox, box = $("d-box");
     box.style.left = (100 * x1 / width) + "%";
@@ -169,8 +177,9 @@
     const d = S.decisions[item.id] || {};
     $("pick-hint").hidden = true;
     $("detail-body").hidden = false;
-    $("d-title").textContent = `Candidate at ${clock(item.time_s)}`;
-    $("d-reasons").replaceChildren(...(item.reasons || []).map((r) => el("li", "", r)));
+    $("d-title").textContent = `${REVIEW ? "Item" : "Candidate"} at ${clock(item.time_s)}`;
+    const why = REVIEW && item.source ? [SOURCE_NOTE[item.source]] : item.reasons || [];
+    $("d-reasons").replaceChildren(...why.map((r) => el("li", "", r)));
     $("d-crop").src = fileUrl(item.images.crop);
     $("d-others").replaceChildren(...(item.other_views || []).map(otherView).concat(
       (item.other_views || []).length ? [otherView({ crop: item.images.crop, time_s: item.time_s })] : []));
@@ -195,11 +204,17 @@
     const rec = speciesRecord($("d-species").value);
     const body = { item_id: S.item.id, outcome, reviewer, life_stage: $("d-stage").value, notes: $("d-notes").value,
                    species: rec ? rec.scientific_name : $("d-species").value.trim() };
-    const res = await fetch(`/api/runs/${encodeURIComponent(S.run)}/species_bank/decisions`,
+    const res = await fetch(`/api/runs/${encodeURIComponent(S.run)}/species_bank/decisions${SET_Q}`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { status.textContent = data.error || "Could not save."; return; }
     S.decisions[S.item.id] = data;
+    if (REVIEW) {   // what was hidden about this item can show now
+      const fresh = await fetch(`/api/runs/${encodeURIComponent(S.run)}/species_bank${SET_Q}`).then((r) => r.json());
+      const id = S.item.id, order = new Map(fresh.bank.items.map((x) => [x.id, x]));
+      S.bank.items = S.bank.items.map((x) => order.get(x.id) || x);
+      S.item = S.bank.items.find((x) => x.id === id);
+    }
     const list = visible();
     if (list.length) select(list[0]);
     else { S.item = null; $("detail-body").hidden = true; $("pick-hint").hidden = false; draw(); }
@@ -210,17 +225,18 @@
     S.item = null;
     $("detail-body").hidden = true;
     $("pick-hint").hidden = false;
-    const res = await fetch(`/api/runs/${encodeURIComponent(id)}/species_bank`);
+    const res = await fetch(`/api/runs/${encodeURIComponent(id)}/species_bank${SET_Q}`);
     const data = await res.json();
     const ready = !!data.available;
     $("empty").hidden = ready;
-    $("empty").textContent = "This run has no species bank yet. Build one with tools/build_species_bank.py.";
+    $("empty").textContent = REVIEW ? "This video has no items to check yet. Start them from step 6." : "This run has no species bank yet. Build one with tools/build_species_bank.py.";
     $("csv").hidden = true;
     if (!ready) { $("bank").hidden = true; $("gate").hidden = true; return; }
     S.bank = data.bank;
     S.decisions = data.decisions || {};
-    $("csv").href = `/api/runs/${encodeURIComponent(id)}/species_bank.csv`;
-    const opened = store.get("bank-open-" + id) === "1";
+    $("csv").href = `/api/runs/${encodeURIComponent(id)}/${REVIEW ? "review_set" : "species_bank"}.csv`;
+    $("back").href = `/?run=${encodeURIComponent(id)}`;
+    const opened = REVIEW || store.get("bank-open-" + id) === "1";
     $("gate").hidden = opened;
     $("bank").hidden = !opened;
     $("csv").hidden = !opened;
@@ -248,6 +264,17 @@
     $("d-form").addEventListener("submit", save);
     setupPlayer();
     setupSplitter();
+    if (REVIEW) {
+      document.title = "ClipSift: check model flags";
+      document.querySelector(".topbar h1").textContent = "Check model flags";
+      $("bank-intro").textContent = "Look at each item and say what it is. You won't see where an item came from until you've decided. Nothing here changes a count.";
+      $("d-others").hidden = true;
+      const box = document.querySelector(".bank-outcomes");
+      box.replaceChildren(el("legend", "", "What is it?"), ...[["fish", "Fish"], ["invertebrate", "Invertebrate"], ["equipment", "Equipment"], ["background", "Background or sediment"], ["cant_tell", "Can't tell"], ["needs_expert", "Needs an expert"]].map(([v, t]) => {
+        const l = el("label"), r = el("input"); r.type = "radio"; r.name = "outcome"; r.value = v; l.append(r, " " + t); return l;
+      }));
+      $("reviewer").value = store.get("clipsift.reviewer") || $("reviewer").value;
+    }
     $("gate-ok").addEventListener("click", () => { store.set("bank-open-" + S.run, "1"); loadRun(S.run); });
     if (sel.value) await loadRun(sel.value);
   }

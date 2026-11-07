@@ -83,9 +83,9 @@ For short clips, use small protocol values in a config file, for example `trim_s
 python -m app.server --runs runs --port 8765   # then press New video in the app to add and process a video
 ```
 
-Then open the address it prints. In the review app, **Show model suggestions** (under Mark what you see) is off every time a recording opens, so the model does not sway the count. On shows the boxes and the Suggested counts with a short caution; it is never stored, and QC mode keeps it off and disabled. The app opens in a **Simple view**: one path for each point (1 Watch the clip, 2 Mark what you see, 3 Check your count, 4 Save and go to the next). The **More tools** button in the header shows everything else (motion segments tab, recording notes, QC mode, exports, grid settings, contrast sliders, ellipse and box tools). The choice is remembered in the browser.
+Then open the address it prints. The app opens on a home screen: drop or choose a video, set it up, and it opens when the count points are ready. Everyone picks their name when a video opens. The steps are 1 Visibility, 2 Watch window, 3 Count points, 4 Quality check, 5 Report and 6 Check model flags (optional). No model runs or shows while counting. The **More tools** button shows the grid settings, sliders and the Label fish page. See `docs/PROTOCOL_WORKFLOW.md`.
 
-- **?** in the header opens Help: what the tool does, a first count in 5 steps, what the timeline markers mean, keyboard shortcuts, the counting rules in brief, and what suggested counts are. It can also replay the short first-visit tour, which is shown once per browser.
+- **?** in the header opens Help: what the tool does, a first count in 5 steps, what the timeline markers mean, keyboard shortcuts, the counting rules in brief. It can also replay the short first-visit tour, which is shown once per browser.
 - **Feedback** in the header opens a small form (name, area, type, message). The current run, point and view are attached. In the local app, notes are appended to `runs/feedback.jsonl`. Treat the text as untrusted.
 - All calls in `app/static/app.js` go through one `Data` object with two implementations: the Flask API, and a static demo (below).
 

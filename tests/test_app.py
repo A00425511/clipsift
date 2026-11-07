@@ -289,14 +289,8 @@ def test_feedback_route(env, runs_root):
     fb.unlink(missing_ok=True)
 
 
-def test_model_suggestions_toggle_is_simple_view_and_off_by_default():
+def test_no_model_suggestions_while_counting():
     static = Path(__file__).resolve().parents[1] / "app" / "static"
     html, js = (static / "index.html").read_text(), (static / "app.js").read_text()
-    assert 'id="show-boxes"' not in html and "Detection boxes</label>" not in html          # replaced, not doubled
-    tag = html[html.index('id="suggest-toggle"') - 30: html.index('id="suggest-toggle"') + 200]
-    assert 'id="show-suggest"' in tag and "Show model suggestions" in tag and " adv" not in tag.split("id=\"show-suggest\"")[0]  # not hidden in More tools
-    assert "checked" not in html[html.index('id="show-suggest"'): html.index('id="show-suggest"') + 40]
-    assert "Rough suggestions. The model flags seafloor and the pipe, and isn't trained on this water." in html
-    assert "boxes: false" in js and "S.boxes = false; paintSuggestToggle();" in js           # off at every run load
-    assert "localStorage.setItem(\"clipsift.boxes\"" not in js and "clipsift.suggest" not in js   # never stored
-    assert "cb.disabled = blocked" in js                                                      # QC mode: toggle disabled
+    assert 'id="show-suggest"' not in html and "Suggested counts" not in html and 'id="suggest-panel"' not in html
+    assert "auto.fish_count" not in js and "drawBoxes" not in js

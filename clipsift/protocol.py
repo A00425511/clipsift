@@ -92,9 +92,10 @@ def subsample_times(start: float, end: float, pc: dict) -> list:
     return times
 
 
-def pick_qc(n: int, pc: dict) -> set:
-    """Indices for the random QC review sample (share of points, clamped to qc_min..qc_max)."""
+def pick_qc(n: int, pc: dict, salt: str = "") -> set:
+    """Indices for the random QC review sample (share of points, clamped to qc_min..qc_max).
+    salt is the recording's name, so each video gets its own frames and a rerun gets the same ones."""
     if n == 0:
         return set()
     k = min(n, max(pc["qc_min"], min(pc["qc_max"], round(pc["qc_share"] * n))))
-    return set(random.Random(pc["qc_seed"]).sample(range(n), k))
+    return set(random.Random(f"{pc['qc_seed']}:{salt}").sample(range(n), k))

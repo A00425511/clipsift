@@ -9,7 +9,7 @@ import csv
 import json
 from pathlib import Path
 
-from .qc import percent_difference, qc_flags
+from .qc import assess_point, compare_rows
 
 
 def read_jsonl(path) -> list:
@@ -49,7 +49,7 @@ SUBSAMPLE_COLS = [
     ("QC Sample", "True if this point is in the random quality-control sample."),
     ("QC Second Count (fish)", "Blind second counter's fish count, if recorded."),
     ("QC Percent Difference", "Placeholder formula |a-b|/mean(a,b)*100. The protocol PDF does not give its formula."),
-    ("QC Recount Needed", "True if percent difference is above the configured limit."),
+    ("QC Recount Needed", "True if a recount is suggested: over the limit and more than a small gap apart. Advisory."),
     ("Auto Fish Count (suggestion)", "Model or stand-in suggestion. Never a final count. Blank means not computed. If the detector is the motion_blob stand-in this is a moving-blob count, not a fish count."),
     ("Auto Invertebrate Count (suggestion)", "Model suggestion, usually blank."),
     ("Auto Detector Source", "Which backend made the suggestion, for example motion_blob or onnx:file."),
@@ -83,7 +83,7 @@ def export_run(run_dir, out_dir=None) -> list:
         a = ss["auto"]
         pct = None
         if fin and qcb:
-            pct = percent_difference(fin["total_fish_count"], qcb["total_fish_count"])
+            pct = compare_rows(fin, qcb)["percent_diff"]   # the same rule as the app: fish and invertebrates each checked
         src = sorted({d.get("source", "") for d in a.get("detections", [])})
         sc = (fin or {}).get("species_counts") or {}
         rows.append({
@@ -99,7 +99,7 @@ def export_run(run_dir, out_dir=None) -> list:
             "QC Sample": ss["qc_sample"],
             "QC Second Count (fish)": qcb["total_fish_count"] if qcb else "",
             "QC Percent Difference": round(pct, 2) if pct is not None else "",
-            "QC Recount Needed": qc_flags(pct, pc)["recount"] if pct is not None else "",
+            "QC Recount Needed": assess_point([fin, qcb], pc["qc_max_percent_diff"], pc.get("qc_small_gap", 1))["recount_needed"] if pct is not None else "",
             "Auto Fish Count (suggestion)": "" if a["fish_count"] is None else a["fish_count"],
             "Auto Invertebrate Count (suggestion)": "" if a["invertebrate_count"] is None else a["invertebrate_count"],
             "Auto Detector Source": ";".join(src), "Motion Near Point": a["motion_near_point"],
@@ -119,8 +119,8 @@ def export_run(run_dir, out_dir=None) -> list:
     juv = ""
     for n in notes:
         species |= set([n["species_observed"]] if isinstance(n.get("species_observed"), str) else n.get("species_observed", []))
-        if "juveniles_present" in n:
-            juv = n["juveniles_present"]
+        if n.get("juveniles") is not None:
+            juv = n["juveniles"]
     pcts = [r["QC Percent Difference"] for r in rows if r["QC Percent Difference"] != ""]
     summ = [{
         "Video ID": vid, "Recording": rid, "Transect": res["recording"].get("transect") or "",

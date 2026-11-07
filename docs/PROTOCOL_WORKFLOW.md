@@ -32,7 +32,19 @@ Movement view stays. It is a viewing aid for a person, like slowing the clip dow
 | QC: 6 to 12 random frames, blind second count, under 6%, recount, 95% agreement | Separate spreadsheet, by hand | Picks frames, hides first counts, calculates the difference, flags recounts | Counts blind |
 | Screenshots and report | Screenshots and a document | Report with metrics and marked frames, as PDF and CSV | Reads and signs off |
 
-The app's steps follow this order: New video, 1 Visibility, 2 Watch window, 3 Count points, 4 Quality check, 5 Report.
+The app's steps follow this order: Open video, choose your name, 1 Visibility, 2 Watch window, 3 Count points, 4 Quality check, 5 Report, 6 Check model flags (optional).
+
+### How each step reads the protocol (7 Nov 2026)
+
+| Step | What the protocol says | What the app does |
+|---|---|---|
+| 1 Visibility | Before analysing each video, 2 to 3 independent observers assign a category. Keep monitoring at each subsample, and record changes of 0.5 m or more, noting whether it's increasing or decreasing | One rating per person per video, hidden from others until they've rated. Step 3 asks at each point whether it got better or worse by 0.5 m |
+| 2 Watch window | Watch the window in real time and record all species. Note juveniles, 1 or 0, per video | Whole window player, plus the 10 seconds at each point. Species present, juveniles and notes only. No counts |
+| 3 Count points | Watch about 5 s either side, then count only the designated second. Record species counts if possible | The 10 second clip plays inside the picture, so people can check context while they mark. Without it the count would drift from the protocol, so it stays here rather than moving wholly to step 2 |
+| 4 Quality check | 6 to 12 random frames, blind count by a second person, average the two, under 6% or recount, preferably by someone else, 95% agreement or re-annotate | All automated except the counting. The team chose to make the 6% and 95% figures advisory: they always show and never block. A frame is flagged only if it's also more than `qc_small_gap` (1) apart, since one fish is over 6% on any frame under 17 fish. Formulas stay provisional, see Parked |
+| 6 Check model flags | Not in the protocol | Runs after everything else and never changes a count. Builds training data for a future detector |
+
+**The automated counter.** On our test frames no detector was good enough to count unaided (`Model Comparison/reports/final-comparison.md`), so nothing is shown while counting. It's a prototype whose value depends on tagged data and training resources. A bank of Coastal's earlier tagged video and frames with counts and species would be the most useful start. Step 6 is how new labels get made.
 
 ## What the literature supports
 
@@ -89,7 +101,7 @@ Direct contact with Coastal is not the priority this weekend. ClipSift uses the 
 ## Layers, restated
 
 - **Layer 0, protocol workflow:** everything in the table above. This is the baseline product.
-- **Layer 1, model suggestions:** the detector runs on the count points only and gives hidden-by-default suggestions. A person decides.
+- **Layer 1, model flags:** off while counting. The detector runs only in step 6, after the counts are finished.
 - **Layer 2, heavier models:** optional and contained.
 
 The motion scan remains in the code as `motion_scan: true`, for anyone who wants it. It is no longer part of the workflow.

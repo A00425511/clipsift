@@ -204,7 +204,7 @@ def segment_status(tracks, cc) -> str:
 
 # ---------------------------------------------------------------- main
 def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
-        window_start_s=None, window_end_s=None, log=print) -> Path:
+        window_start_s=None, window_end_s=None, log=print, meta=None) -> Path:
     """Run the pipeline on one recording (one or more chapter files, used in name order).
     Writes <out_dir>/<recording_id>/ and returns that folder."""
     cfg = copy.deepcopy(config)
@@ -218,6 +218,7 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
     t_run = time.perf_counter()
     timeline = Timeline(paths)
     info = proto.parse_names([str(p) for p in paths])
+    info.update({k: v for k, v in (meta or {}).items() if v not in (None, "")})   # typed by a person, so it beats the file name
     vid = video_id or cfg["recording"].get("video_id") or info["video_id"]
     rec_id = recording_id or vid or paths[0].stem
     run_dir = Path(out_dir) / rec_id
@@ -253,7 +254,7 @@ def run(video_paths, config: dict, out_dir, recording_id=None, video_id=None,
     sf_frames: list = []   # (t, [Detection]) for every full-resolution frame the detector saw
     sf_segs: dict = {}     # segment_id -> {t: [Detection]}
     times = proto.subsample_times(ws, we, pc)
-    qc = proto.pick_qc(len(times), pc)
+    qc = proto.pick_qc(len(times), pc, rec_id)
     subsamples = []
     log(f"plan: {len(times)} points")
     qcfg = copy.deepcopy(cfg)

@@ -47,6 +47,7 @@ protocol:
   qc_max: 12
   qc_max_percent_diff: 6
   qc_agreement: 95
+  qc_small_gap: 1        # frames differing by this many animals or fewer are not flagged. The limits are advisory
   qc_seed: 4321
 
 proposer:

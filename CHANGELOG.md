@@ -15,6 +15,29 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.0.0 (2026-11-07)
+Rebuilt the review app as a local workflow app. The automated counter is off, and is now a prototype for later. See `docs/PROTOCOL_WORKFLOW.md`.
+- Home screen: drop a video, choose one from this computer without copying it, or type a path. The parts of a split GoPro video are joined. Lists videos in progress.
+- Setup: Video ID, transect, STAT, year and season can be edited. New videos process with no model.
+- Profiles: everyone picks their name when a video opens, and counts, ratings and marks are saved under it.
+- Step 1: one visibility rating per person for the whole video, hidden from others until they've rated. Notes from the protocol's comments and Baker 2022.
+- Step 2: watch the whole window, or the 10 seconds at each point. Records species present, juveniles and notes only.
+- Step 3: the clip plays in the picture, so the separate video is gone. Suggested counts and model boxes are gone. Each point records whether visibility got better or worse.
+- Step 4: the app holds the random frames, locks first counts away from the second person, compares the counts and shows how close they are. Compare view shows both people's marks on a frame.
+- Quality check: the 6% and 95% figures are shown but advisory, so nothing blocks a video. A frame is only flagged if it's over 6% and more than one animal apart, because one fish is over 6% on any frame under 17 fish (`qc_small_gap`). A recount is optional.
+- Quality check: fish and invertebrates are checked separately, a recount that agrees with either count settles a frame, and MeanCount uses the average of checked frames, as the protocol says. Formulas are still provisional.
+- Quality check: the API refuses a blind count from the first counter. Each video now gets its own random frames.
+- Home screen: agreement between each pair of people across all videos.
+- Step 6: optional check of model flags after everything else. 30 to 40 items mix agreements with the counter, flags the counter didn't mark, and flags between count points. The source stays hidden until a person decides. Results export as CSV for training later and never change a count.
+- Report: visibility changes, quality check table and summary, and the MeanCount from first counts.
+- `Start ClipSift.bat` starts the app and opens the browser on Windows. Not yet tried on a Windows computer.
+- Fixes: empty CSV cells no longer export as an apostrophe. The command line export reads juveniles and uses the same quality check rule as the app.
+
+### 0.10.0 (2026-11-07)
+- Species bank: new `/species_bank.html` page for a second species check after counting. It shows the clearest view of each candidate, with a close crop and the full frame. Hold the frame to play 2.5 seconds either side, and drag the pane edge to enlarge the images.
+- Species bank: `tools/build_species_bank.py` builds a bank from V6 output. It merges overlapping tracks of one animal, sets aside likely fixed objects and flags candidates that look unusual, sit near the seabed or are small in the frame.
+- Species bank: reviewers record a species, life stage, Not an animal, Can't tell or Needs an expert. Listed invasive, at-risk and range-expanding species show a warning. Decisions export as CSV and never change counts.
+
 ### 0.9.0 (2026-11-06)
 - Label page: a label set can give one named person extra frames, through `personal` in `calibration.json`. Nobody else is offered those frames, even after the set reopens, so a recorded demo cannot unblind a label.
 - Label page and label results: frames listed under `archived` in `calibration.json` are held back from everyone, leave My frames, and are left out of everything `tools/pull_labels.py` writes. Saved labels stay in the database.

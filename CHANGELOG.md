@@ -15,6 +15,11 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 0.10.0 (2026-11-07)
+- Species bank: new `/species_bank.html` page for a second species check after counting. It shows the clearest view of each candidate, with a close crop, a film strip and the full frame.
+- Species bank: `tools/build_species_bank.py` builds a bank from V6 output. It sets aside likely fixed objects and flags candidates that look unusual, sit near the seabed or are small in the frame.
+- Species bank: reviewers record a species, life stage, Not an animal, Can't tell or Needs an expert. Listed invasive, at-risk and range-expanding species show a warning. Decisions export as CSV and never change counts.
+
 ### 0.8.0 (2026-11-06)
 - Review app: Unsure marks (never counted), and `F`, `I` and `U` keys.
 - Review app: Undo also brings back a removed mark.

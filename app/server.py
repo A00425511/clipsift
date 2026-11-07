@@ -62,6 +62,9 @@ LABEL_NOT_FISH_CATEGORIES = ("algae", "debris", "equipment", "seabed", "bubbles"
 LABEL_VIEWS = ("frame", "movement", "clip")   # views used on a frame, kept for later analysis
 LABEL_SPECIES_MAX = 80
 LABEL_PRESET_NAMES = ("Jacob", "Ali", "Gina", "Wang", "Adrien")
+BANK_OUTCOMES = ("species", "not_animal", "cant_tell", "needs_expert")
+BANK_LIFE_STAGES = ("adult", "juvenile", "unknown")
+BANK_FILE_RE = re.compile(r"^[A-Za-z0-9_\-]{1,80}\.jpg$")
 FEEDBACK_AREAS = ("Counting", "Video", "Timeline", "Help", "Layout", "Other")
 FEEDBACK_TYPES = ("Bug", "Confusing", "Idea", "Like")
 
@@ -288,6 +291,10 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
     @app.get("/label.html")
     def label_page():
         return send_from_directory(app.static_folder, "label.html", max_age=0)
+
+    @app.get("/species_bank.html")
+    def species_bank_page():
+        return send_from_directory(app.static_folder, "species_bank.html", max_age=0)
 
     # ---- runs --------------------------------------------------------------
     @app.get("/api/runs")
@@ -755,6 +762,103 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         record = {"alias": alias, "maps_to": maps_to, "at": now_iso()}
         append_jsonl(aliases_file, record)  # never touches species_list.json
         return jsonify(record), 201
+
+    # ---- species bank: images for a person to identify. Never touches counts. ----
+    def load_bank(run_dir):
+        path = run_dir / "species_bank" / "bank.json"
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            abort(422, "bank.json could not be read")
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            abort(422, "bank.json is missing its items list")
+        return data
+
+    def bank_decisions(run_dir):
+        latest = {}
+        for row in read_jsonl(run_dir / "species_bank" / "decisions.jsonl"):
+            latest[row.get("item_id")] = row   # the last decision on an item wins
+        return latest
+
+    def species_flags(name):
+        """Flags and status note for a chosen species, matched on its scientific name."""
+        try:
+            data = json.loads(species_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return [], ""
+        for s in data if isinstance(data, list) else []:
+            if isinstance(s, dict) and s.get("scientific_name") == name:
+                return sorted(k for k, v in (s.get("flags") or {}).items() if v), s.get("id_notes") or ""
+        return [], ""
+
+    @app.get("/api/runs/<run_id>/species_bank")
+    def get_species_bank(run_id):
+        run_dir = run_dir_for(run_id)
+        bank = load_bank(run_dir)
+        if bank is None:
+            return jsonify(available=False)
+        return jsonify(available=True, bank=bank, decisions=bank_decisions(run_dir))
+
+    @app.get("/api/runs/<run_id>/species_bank/files/<name>")
+    def species_bank_file(run_id, name):
+        run_dir = run_dir_for(run_id)
+        path = (run_dir / "species_bank" / "files" / name).resolve()
+        if not BANK_FILE_RE.match(name) or run_dir not in path.parents or not path.is_file():
+            abort(404, "File not found")
+        return send_file(path, mimetype="image/jpeg", max_age=0)
+
+    @app.post("/api/runs/<run_id>/species_bank/decisions")
+    def post_species_bank_decision(run_id):
+        run_dir = run_dir_for(run_id)
+        bank = load_bank(run_dir)
+        if bank is None:
+            abort(404, "This run has no species bank")
+        data = json_body()
+        item_id = data.get("item_id")
+        if not any(isinstance(i, dict) and i.get("id") == item_id for i in bank["items"]):
+            raise BadInput("item_id is not in this bank")
+        outcome = data.get("outcome")
+        if outcome not in BANK_OUTCOMES:
+            raise BadInput("outcome is not a known choice")
+        stage = data.get("life_stage") or "unknown"
+        if stage not in BANK_LIFE_STAGES:
+            raise BadInput("life_stage is not a known choice")
+        species = clean_str(data.get("species"), "species", 200) or ""
+        if outcome == "species" and not species:
+            raise BadInput("Choose a species, or pick another outcome")
+        flags, note = species_flags(species) if outcome == "species" else ([], "")
+        record = {
+            "item_id": item_id, "outcome": outcome,
+            "species": species if outcome == "species" else "",
+            "life_stage": stage if outcome in ("species", "needs_expert") else "unknown",
+            "species_flags": flags, "status_note": note,
+            "notes": clean_str(data.get("notes"), "notes", 2000) or "",
+            "reviewer": clean_str(data.get("reviewer"), "reviewer", 100, allow_empty=False),
+            "at": now_iso(),
+        }
+        append_jsonl(run_dir / "species_bank" / "decisions.jsonl", record)
+        return jsonify(record), 201
+
+    @app.get("/api/runs/<run_id>/species_bank.csv")
+    def export_species_bank_csv(run_id):
+        run_dir = run_dir_for(run_id)
+        bank = load_bank(run_dir)
+        if bank is None:
+            abort(404, "This run has no species bank")
+        decisions = bank_decisions(run_dir)
+        header = ["item_id", "time_s", "point_s", "flags", "outcome", "species", "life_stage",
+                  "species_flags", "notes", "reviewer", "decided_at"]
+        rows = []
+        for item in bank["items"]:
+            d = decisions.get(item.get("id")) or {}
+            rows.append([item.get("id"), item.get("time_s"), item.get("point_s"),
+                         ";".join(item.get("flags") or []) or None,
+                         d.get("outcome"), d.get("species") or None, d.get("life_stage"),
+                         ";".join(d.get("species_flags") or []) or None, d.get("notes") or None,
+                         d.get("reviewer"), d.get("at")])
+        return csv_response(rows, header, f"{run_id}_species_bank.csv")
 
     # ---- feedback ----------------------------------------------------------
     @app.post("/api/feedback")

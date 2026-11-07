@@ -307,6 +307,7 @@
 
   // ---------- load a run ----------
   async function loadRun(id) {
+    $("bank-link").href = "/species_bank.html?run=" + encodeURIComponent(id || "");
     if (!id) { showEmpty("Pick a recording from the Run menu at the top to begin."); return; }
     message("");
     try {

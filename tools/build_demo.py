@@ -110,7 +110,11 @@ def copy_run(runs_root: Path, rid: str, out: Path) -> dict:
                 if f.is_file() and not f.is_symlink():
                     (dest / folder / unit.name).mkdir(parents=True, exist_ok=True)
                     shutil.copy2(f, dest / folder / unit.name / name)
-    return {"run_id": rid, "fixture": (src / "FIXTURE.txt").is_file() or bool(data.get("fixture")),
+    window = src / "window.mp4"   # the whole analysis window, for Step 1 and Step 2
+    has_window = window.is_file() and not window.is_symlink()
+    if has_window:
+        shutil.copy2(window, dest / "window.mp4")
+    return {"run_id": rid, "fixture": (src / "FIXTURE.txt").is_file() or bool(data.get("fixture")), "window": has_window,
             "n_segments": len(data["segments"]), "created_at": (data.get("run") or {}).get("created_at"), "error": None}
 
 

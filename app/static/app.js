@@ -17,7 +17,7 @@
     runId: null, results: null, saved: null, species: [], aliases: [], index: [],
     mode: "sub", selId: null, qc: false, recount: false, step: "count", who: "", whoSet: false,
     guess: { on: false, ready: false, seen: {}, boxes: {} },
-    diff: false, grid: false, watch: { species: [], points: false }, big: localStorage.getItem("clipsift.big") === "1", wantStep: null,
+    diff: false, grid: false, watch: { species: [], points: false }, layout: (() => { try { return localStorage.getItem("clipsift.layout") || (localStorage.getItem("clipsift.big") === "1" ? "big" : "fit"); } catch (e) { return "fit"; } })(), wantStep: null,
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
     markHistory: [], motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, held: false, hudRaf: 0, names: "common",
@@ -107,7 +107,7 @@
   }
   const DemoData = (function () {
     const root = (DEMO && DEMO.base) || "/";
-    const cache = new Map();
+    const cache = new Map(), withWindow = new Set();
     const key = (id, kind) => "clipsift.demo." + id + "." + kind;
     function load(id, kind) {
       try { const v = JSON.parse(localStorage.getItem(key(id, kind)) || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; }
@@ -196,7 +196,11 @@
       async profiles() { try { return JSON.parse(localStorage.getItem("clipsift.demo.profiles") || "[]"); } catch (e) { return []; } },
       async addProfile(name) { const list = await this.profiles(); if (!list.some((n) => n.toLowerCase() === name.toLowerCase())) { list.push(name); list.sort(); try { localStorage.setItem("clipsift.demo.profiles", JSON.stringify(list)); } catch (e) { /* storage may be blocked */ } } return { name }; },
       async home() { return { videos: [], rater: { pairs: [], people: [] } }; },
-      async runs() { const m = await getJson(root + (DEMO.manifest || "manifest.json")); return { runs: Array.isArray(m.runs) ? m.runs : [] }; },
+      async runs() {
+        const m = await getJson(root + (DEMO.manifest || "manifest.json")), runs = Array.isArray(m.runs) ? m.runs : [];
+        for (const r of runs) if (r && r.window) withWindow.add(r.run_id);   // runs that ship their whole-window video
+        return { runs };
+      },
       async species() {
         let species = [];
         try { const d = await getJson(root + (DEMO.species || "species_list.json")); species = Array.isArray(d) ? d.filter((x) => x && typeof x === "object") : []; } catch (e) { /* the app works with free text */ }
@@ -232,7 +236,7 @@
       },
       feedback: (d) => post("/api/feedback", d),
       mediaUrl: (id, folder, unitId, kind) => root + "runs/" + enc(id) + "/" + folder + "/" + enc(unitId) + "/" + DEMO_FILES[kind],
-      windowUrl: () => null,
+      windowUrl: (id) => (withWindow.has(id) ? root + "runs/" + enc(id) + "/window.mp4" : null),
       exportHref: () => "#",
       async download(id, name) {
         const text = await csvFor.call(this, id, name);
@@ -331,7 +335,7 @@
     const theirs = S.results && name !== S.who && (S.saved.subsample_reviews || []).some((r) => r.counter === name);
     if (theirs && !confirm(name + " already has counts on this video. Choose this name only if you are " + name + ", because their counts can be changed under it.")) return;
     const opening = !S.whoSet;
-    if (S.who && name !== S.who) { resetFilters(); if (S.big) toggleBig(); }   // display settings belong to the person who set them
+    if (S.who && name !== S.who) { resetFilters(); }   // colour settings belong to the person who set them
     S.who = name; S.whoSet = true; S.watch.reveal = false; paintWho();
     try { localStorage.setItem("clipsift.reviewer", name); localStorage.setItem("bank-reviewer", name); } catch (e) { /* storage may be blocked */ }
     $("who-dlg").close();
@@ -599,8 +603,8 @@
     if (isTyping(document.activeElement)) document.activeElement.blur();   // otherwise Space and the other keys do nothing on the new point
     if (markKind() === "unsure") setMarkKind("fish");   // later marks must not silently go uncounted
     $("p-species").value = "";   // a species from the last point mustn't ride along
-    const top = $("stage-wrap").getBoundingClientRect().top;
-    if (top < 0 || top > window.innerHeight * 0.5) $("stage-wrap").scrollIntoView({ block: "start" });
+    const top = $("stage-wrap").getBoundingClientRect().top;   // fitted layouts size the picture to the window, so bring it to the top
+    if (top < 0 || top > (S.layout === "classic" ? window.innerHeight * 0.5 : 8)) $("stage-wrap").scrollIntoView({ block: "start" });
     loadMedia(u);
     S.zoom = { k: 1, x: 0, y: 0 }; applyZoom(); $("z-level").textContent = "";   // every point starts at the whole picture
     S.ss.fromMarks = false; S.ss.markSpecies = [];
@@ -617,6 +621,7 @@
     const rec = S.results.recording || {};
     const stage = $("stage");
     if (rec.width && rec.height) stage.style.aspectRatio = rec.width + " / " + rec.height; else stage.style.aspectRatio = "16 / 9";
+    stage.style.setProperty("--ar", rec.width && rec.height ? rec.width / rec.height : 16 / 9);   // so Fit to screen can size it by height
     showStill();
     const sc = $("stage-clip");
     sc.dataset.ok = "1"; sc.onerror = () => { sc.dataset.ok = ""; setMotion(false); };
@@ -1321,11 +1326,22 @@
     $("c-fish").value = 0; $("c-inv").value = 0; $("c-unk").value = ""; paintCharsWarn();
     saveSubsample();
   }
-  function paintBig() { document.body.classList.toggle("big-view", S.big); setPressed("big-view", S.big); }
-  function toggleBig() {
-    S.big = !S.big; paintBig();
-    try { localStorage.setItem("clipsift.big", S.big ? "1" : "0"); } catch (e) { /* storage may be blocked */ }
+  // The layout belongs to the computer and its monitor, not the person, so it's kept when people switch.
+  const LAYOUTS = ["fit", "big", "stack", "classic"];
+  function paintBig() {
+    if (!LAYOUTS.includes(S.layout)) S.layout = "fit";
+    for (const l of LAYOUTS) document.body.classList.toggle("layout-" + l, S.layout === l);
+    document.body.classList.toggle("big-view", S.layout === "big");
+    setPressed("big-view", S.layout === "big"); $("layout").value = S.layout;
+  }
+  function setLayout(l) {
+    if (l !== "big") S.lastLayout = l;
+    S.layout = l; paintBig();
+    try { localStorage.setItem("clipsift.layout", l); } catch (e) { /* storage may be blocked */ }
     requestAnimationFrame(() => { applyZoom(); renderLabels(false); });
+  }
+  function toggleBig() {
+    setLayout(S.layout === "big" ? (S.lastLayout && S.lastLayout !== "big" ? S.lastLayout : "fit") : "big");
   }
 
   // ---------- navigation and keys ----------
@@ -2103,6 +2119,7 @@
     $("c-unk").addEventListener("input", () => { S.ss.unkTouched = true; });
     $("others-marks").addEventListener("change", (e) => { S.showOthers = e.target.checked; renderLabels(false); });
     $("big-view").addEventListener("click", toggleBig);
+    $("layout").addEventListener("change", (e) => setLayout(e.target.value));
     paintBig();
     $("watch-video").addEventListener("timeupdate", () => {
       const p = (S.results && S.results.protocol) || {}, v = $("watch-video");

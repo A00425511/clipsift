@@ -332,3 +332,22 @@ body.big-view #summary, body.big-view #timeline-wrap, body.big-view #path, body.
 body.big-view .workspace[data-mode=sub] { grid-template-columns: 120px minmax(0, 1fr) 300px; padding: 6px; }
 .lb-countmark { left: 12px; transform: none; }
 #who-dlg::backdrop { background: #15181b; }   /* solid: nothing from the last person shows behind the name box */
+/* Layouts, chosen per computer. Fit to screen sizes the picture so it and its play controls fit in the window. */
+:root { --fit-h: calc(100vh - 150px); }
+#vis-video, #watch-video { max-height: calc(100vh - 220px); object-fit: contain; }
+body.layout-fit .stage, body.layout-big .stage, body.layout-stack .stage { width: min(100%, calc(var(--fit-h) * var(--ar, 1.7778))); max-height: none; margin: 0 auto; }
+body.layout-big { --fit-h: calc(100vh - 110px); }
+@media (max-width: 1300px) {   /* laptops: the point list becomes a strip above, so the picture keeps its width */
+  body.layout-fit .workspace[data-mode=sub], body.layout-big .workspace[data-mode=sub] { grid-template-columns: minmax(0, 1fr) 290px; }
+  body.layout-fit .workspace[data-mode=sub] .queue, body.layout-big .workspace[data-mode=sub] .queue { grid-column: 1 / -1; position: static; max-height: none; padding: 6px; }
+  body.layout-fit .workspace[data-mode=sub] .queue-list, body.layout-big .workspace[data-mode=sub] .queue-list { flex-direction: row; overflow-x: auto; }
+  body.layout-fit .workspace[data-mode=sub] .q-item, body.layout-big .workspace[data-mode=sub] .q-item { min-width: 128px; }
+  body.layout-fit, body.layout-big { --fit-h: calc(100vh - 200px); }   /* the strip takes some height */
+}
+body.layout-stack .workspace[data-mode=sub] { grid-template-columns: minmax(0, 1fr); }
+body.layout-stack .workspace[data-mode=sub] .queue { position: static; max-height: none; padding: 6px; }
+body.layout-stack .workspace[data-mode=sub] .queue-list { flex-direction: row; overflow-x: auto; }
+body.layout-stack .workspace[data-mode=sub] .q-item { min-width: 128px; }
+body.layout-stack .workspace[data-mode=sub] .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+body.layout-stack { --fit-h: calc(100vh - 190px); }   /* leave room for the play row and Save */
+body.layout-stack .workspace[data-mode=sub] .save-row { position: fixed; right: 16px; bottom: 12px; width: min(360px, calc(100vw - 32px)); z-index: 20; padding: 8px; border-radius: 6px; border: 1px solid var(--line, #333); box-shadow: 0 4px 14px rgba(0,0,0,.5); }   /* panels sit below the picture, so Save floats where it can always be reached */

@@ -15,6 +15,18 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.3.0 (2026-11-08)
+Screen layouts for different monitors, and the whole-window video on the team site.
+- New **Layout** choice in the top bar, remembered on each computer, so a laptop and a big monitor can each keep their own:
+  - **Fit to screen** (default): the picture is sized so it, its play controls and Save all fit in the window. On screens under 1300 px wide the point list becomes a strip above the picture.
+  - **Largest picture**: hides the summary and timeline for the biggest picture. The V key and Bigger picture switch to it and back.
+  - **Picture above panels**: the picture uses the full width, the panels sit underneath and Save floats at the bottom right.
+  - **Classic**: the earlier layout.
+- Choosing a point brings the picture to the top of the window in the fitted layouts.
+- Step 1 Visibility and Step 2 Watch window now show the video at the same large size, instead of a small picture with black space.
+- Checked at 1920x1080, 1366x768 and 1024x768: the picture, play row and Save stay on screen in every layout.
+- Team site: the demo videos now include the whole analysis window, so Whole-window scrub works there.
+
 ### 1.2.0 (2026-11-07)
 Fixes from three more simulated trials, the model comparison handoff and quality-of-life requests. See the ClipSift Usability Trial 2, 3 and 4 docs.
 - Visibility: choosing better or worse needs the new category. Each point's value is worked out from the video's rating and the changes before it, so a correction carries on to later points.

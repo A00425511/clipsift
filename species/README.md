@@ -3,7 +3,7 @@
 Builds `species_list.json`, the file the app reads. If the file is missing the app still works with an empty list and free text.
 
 ## What is here
-- `seed_species.csv`: the hand-edited starter list (source: the P2 research files). Columns: scientific name, common name, group, rank, three flags, status note, needs_status_check, local names (semicolon separated), ID notes, source note.
+- `seed_species.csv`: the hand-edited starter list (source: the P2 research files). Columns: scientific name, common name, group, kind (fish or invertebrate, which the species menus filter on), rank, three flags, status note, needs_status_check, local names (semicolon separated), ID notes, source note.
 - `build_species_list.py`: looks up each name in WoRMS (AphiaID, English common names, synonyms as aliases) and GBIF (species match key), then writes the outputs.
 - `species_list.json`: the live file. `species_list_vYYYY.MM.DD.json`: a dated copy. `species_manifest.json`: retrieval date, hash, counts and unresolved names.
 

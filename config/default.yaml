@@ -1,10 +1,19 @@
 # ClipSift default configuration. Every number here is a tunable value, not a claim.
 # Protocol numbers come from a DRAFT protocol with unresolved comments; keep them configurable.
 
-layer: 1                 # 0 = manual assist, 1 = local model, 2 = stubs (2a) ; see README
+layer: 0                 # 0 = counting by people only (default). 1 = also run the model when a video opens. 2 = stubs. The model is optional
 sample_fps: 2.0          # sampling rate of the full-window motion scan
 detect_fps_segments: 0.2 # sparse model pass over active segments (frames per second). The model is slow, so it
                          # does NOT run on every sampled frame. Only used by detectors that need full resolution.
+motion_scan: false       # the old whole-window motion scan. The protocol does not use it. See docs/PROTOCOL_WORKFLOW.md
+window_video:            # one playable video of the analysis window, for watching it in real time
+  enabled: true
+  max_width: 1280
+  crf: 28
+model_check:             # the model used after counting: Step 6 and the after-counting guess. Never while counting
+  whole_frame: true      # one pass over the whole frame at the model's own size. Tiled finds more but puts 10 to 24 boxes on empty frames
+  resolution: 640
+  threshold: 0.23        # about 1 false box per empty frame on 11 test frames from one video. Provisional, not tuned
 proxy_width: 320         # width used ONLY for the fast motion scan. Faint movement can vanish at low resolution.
 detect_width: 640        # width of frames given to detectors such as motion_blob and onnx (0 = original). Boxes are scaled back.
                          # The cfd detector ignores this: it always gets original resolution frames and tiles them.
@@ -42,6 +51,7 @@ protocol:
   qc_max: 12
   qc_max_percent_diff: 6
   qc_agreement: 95
+  qc_small_gap: 1        # frames differing by this many animals or fewer are not flagged. The limits are advisory
   qc_seed: 4321
 
 proposer:

@@ -8,6 +8,109 @@ let n = 0;
 const t = (name, fn) => { fn(); n++; console.log("ok - " + name); };
 const frames = Array.from({ length: 100 }, (_, i) => ({ frame_id: "f" + i, time_s: 60 + i * 20 }));
 
+const D = createRequire(import.meta.url)("../../app/static/display.js");
+t("enhance: presets cycle back to off, and unknown ids are off", () => {
+  let id = "off"; const seen = [];
+  for (let i = 0; i < D.ENHANCE_PRESETS.length; i++) { id = D.nextEnhance(id); seen.push(id); }
+  assert.deepEqual(seen, ["light", "strong", "silhouette", "off"]);
+  assert.equal(D.cleanEnhance("nope"), "off");
+});
+t("clip: full clip or the count second, and the playhead stays inside what plays", () => {
+  assert.deepEqual(D.clipRange(false, 5, 0.5, 10), { start: 0, end: 10, only: false });
+  assert.deepEqual(D.clipRange(true, 5, 1, 10), { start: 5, end: 6, only: true });
+  assert.deepEqual(D.clipRange(true, 9.5, 1, 10), { start: 9.5, end: 10, only: true });  // clipped to the clip
+  assert.equal(D.clipRange(true, null, 1, 10).only, false);
+  const b = D.countBands(5, 1, 0.5, 10);
+  assert.deepEqual([b.count.left, b.count.width, b.tolerance.left, b.tolerance.width], [50, 10, 45, 20]);
+  const full = D.clipRange(false, 5, 1, 10), only = D.clipRange(true, 5, 1, 10);
+  assert.equal(D.scrubTime(150, 100, 200, 10, full), 2.5);
+  assert.equal(D.scrubTime(0, 100, 200, 10, full), 0);
+  assert.equal(D.scrubTime(150, 100, 200, 10, only), 5);
+  assert.equal(D.scrubTime(290, 100, 200, 10, only), 6);
+});
+t("clip control: the count second loops, and a fast drag still lands where the mouse let go", () => {
+  const on = {}, tr = {};
+  const v = { duration: 10, currentTime: 5.99, paused: false, seeking: false, plays: 0, pause() { this.paused = true; }, play() { this.paused = false; this.plays++; return Promise.resolve(); }, addEventListener(n, f) { on[n] = f; } };
+  const track = { addEventListener(n, f) { tr[n] = f; }, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, width: 100 }) };
+  let range = D.clipRange(true, 5, 1, 10), released = 0;
+  const c = D.clipControl({ video: v, track, range: () => range, active: () => true, paint() {}, release() { released++; } });
+  c.tick();
+  assert.equal(v.currentTime, 5); assert.equal(v.paused, true);
+  on.seeked(); assert.equal(v.paused, false); assert.equal(v.plays, 1);
+  v.currentTime = 5.5; c.tick(); assert.equal(v.currentTime, 5.5);      // inside the window: left alone
+  range = D.clipRange(false, 5, 1, 10); v.currentTime = 9; c.tick(); assert.equal(v.currentTime, 9);   // full clip: never loops early
+  const ev = (x) => ({ clientX: x, button: 0, pointerId: 1, preventDefault() {}, stopPropagation() {} });
+  tr.pointerdown(ev(20)); assert.equal(c.dragging(), true); assert.equal(v.currentTime, 2);
+  v.seeking = true; tr.pointermove(ev(80)); assert.equal(v.currentTime, 2); assert.equal(c.time(), 8);    // still seeking: remembered, not sent
+  tr.pointerup(ev(80)); assert.equal(v.currentTime, 8); assert.equal(released, 1); assert.equal(c.dragging(), false);
+});
+t("report: totals come from saved primary counts, and points with no count are listed", () => {
+  const results = { recording: { video_id: "T1 411" }, run: { model_version: "m.pth" }, protocol: { window_start_s: 60, window_end_s: 960 }, subsamples: [{ subsample_id: "ss_02", t_s: 120 }, { subsample_id: "ss_01", t_s: 60 }, { subsample_id: "ss_03", t_s: 180 }] };
+  const saved = { mean_count_reviewed: 4, qc: { ss_01: { recount_needed: true } }, qc_agreement: 90,
+    latest_primary: { ss_01: { total_fish_count: 3, invertebrate_count: 1, unknown_count: 2, species_counts: { "Gadus morhua": 2, "Carcinus maenas": 1 }, counter: "=Sam" }, ss_02: { total_fish_count: 5, invertebrate_count: 0, species_counts: { "Gadus morhua": 4 } } } };
+  const r = D.buildReport(results, saved);
+  assert.deepEqual([r.planned, r.counted, r.totalFish, r.totalInv, r.totalUnknown, r.meanCount, r.qcPairs, r.qcRecounts], [3, 2, 8, 1, 2, 4, 1, 1]);
+  assert.deepEqual(r.points.map((p) => p.id), ["ss_01", "ss_02", "ss_03"]);
+  assert.deepEqual(r.species[0], { name: "Gadus morhua", total: 6, points: 2, meanCount: 3 });
+  assert.equal(r.zeroPoints, 0); assert.equal(r.sd.toFixed(3), "1.414");
+  assert.equal(r.points[2].counted, false);
+  const csv = D.reportCsv(r, (t) => t + "s");
+  assert.match(csv.split("\r\n")[0], /Count: Gadus morhua/);
+  assert.match(csv, /'=Sam/);          // typed text cannot become a formula
+  assert.match(csv.split("\r\n")[3], /,no,/);
+});
+t("blind check: the demo's copy of the rules gives the same answers as clipsift/qc.py", () => {
+  const row = (counter, f, i) => ({ counter, total_fish_count: f, invertebrate_count: i });
+  const p = D.assessPoint([row("a", 100, 0), row("b", 120, 0), row("c", 118, 0)], 6);
+  assert.deepEqual([p.first_counter, p.second_counter, p.average_fish, p.recount_needed], ["b", "c", 119, false]);
+  const pt = (d) => ({ percent_diff: d, recount_needed: d > 6 });
+  const v = (ids, pts) => D.qcVerdict(["a", "b"], new Set(ids), pts, 6, 95).status;
+  assert.equal(v(["a"], {}), "counting");
+  assert.equal(v(["a", "b"], { a: pt(0) }), "waiting_second");
+  assert.equal(v(["a", "b"], { a: pt(0), b: pt(40) }), "review");
+  assert.equal(v(["a", "b"], { a: pt(5.5), b: pt(5.5) }), "pass");
+  const small = D.assessPoint([row("a", 2, 0), row("b", 3, 0)], 6);
+  assert.deepEqual([small.percent_diff, small.recount_needed, small.small_gap], [40, false, true]);
+  assert.equal(v(["a", "b"], { a: pt(0), b: pt(2) }), "pass");
+  assert.equal(D.qcMessage(D.qcVerdict(["a"], new Set(["a"]), { a: pt(0) }, 6, 95))[0], "Counts are close");
+  const three = D.assessPoint([row("Ana", 20, 0), row("Ben", 25, 0), row("Cy", 22, 0)], 6), c3 = D.qcCounts(three);
+  assert.deepEqual([c3.people, c3.fish, three.average_fish], ["Ana, Ben, Cy", "20, 25, 22", 21]);
+  assert.match(c3.rule, /closest two counts, Ana and Cy\. Averaging all 3 gives 22\.33/);
+  const none = D.assessPoint([row("a", 0, 0), row("b", 0, 0)], 6), some = D.assessPoint([row("a", 20, 0), row("b", 22, 0)], 6);
+  const mix = D.qcVerdict(["x", "y"], new Set(["x", "y"]), { x: none, y: some }, 6, 95);
+  assert.deepEqual([mix.n_animal_frames, mix.animal_agreement], [1, 90.5]);
+  assert.match(D.qcMessage(mix)[1], /1 of 2 frames had animals, and agreement on those is 90\.5%/);
+});
+t("visibility: each point follows the rating and the changes before it, so a correction carries on", () => {
+  const subs = [1, 2, 3, 4].map((i) => ({ subsample_id: "p" + i, t_s: i }));
+  const primary = { p1: {}, p2: { visibility_direction: "decreasing", visibility_category: "<0.5 m" }, p3: { visibility_category: "1.0-1.5 m" }, p4: { visibility_direction: "increasing", visibility_category: "0.5-1.0 m" } };
+  assert.deepEqual(D.pointVisibility(subs, primary, [{ category: "1.0-1.5 m" }]), { p1: "1.0-1.5 m", p2: "<0.5 m", p3: "<0.5 m", p4: "0.5-1.0 m" });
+  assert.deepEqual(D.noteParts({ notes: "Movement, unidentified. Rock." }), { possible: true, text: "Rock." });
+  assert.deepEqual(D.noteParts({ notes: "Rock.", possible_animals: false }), { possible: false, text: "Rock." });
+});
+t("species names: only two-word names count as species", () => {
+  assert.deepEqual(["Gadus morhua", "Actinopterygii", "Unknown fish", "Menidia sp."].map(D.isSpeciesName), [true, false, false, false]);
+});
+t("marks: two people's marks pair up by distance, each mark used once", () => {
+  const m = D.matchMarks([{ x: 0, y: 0 }, { x: 100, y: 0 }], [{ x: 5, y: 0 }, { x: 500, y: 0 }], 20);
+  assert.deepEqual([m.both.length, m.onlyA.length, m.onlyB.length], [1, 1, 1]);
+});
+t("visibility: spread counts the categories between the lowest and highest rating", () => {
+  const s = D.visibilitySummary([{ category: "<0.5 m" }, { category: "1.0-1.5 m" }, { category: "1.0-1.5 m" }]);
+  assert.deepEqual([s.n, s.spread, s.low, s.usual], [3, 2, true, "1.0-1.5 m"]);
+  assert.equal(D.visibilitySummary([]).n, 0);
+});
+t("species: the list follows the mark kind, and names switch without changing what is saved", () => {
+  const idx = L.buildSpeciesIndex([{ scientific_name: "Gadus morhua", common_names: ["Atlantic cod"], kind: "fish" }, { scientific_name: "Carcinus maenas", common_names: ["European green crab"], kind: "invertebrate" }, { scientific_name: "Mystery", common_names: [] }]);
+  assert.deepEqual(D.forKind(idx, "fish").map((i) => i.sci), ["Gadus morhua", "Mystery"]);
+  assert.deepEqual(D.forKind(idx, "invertebrate").map((i) => i.sci), ["Carcinus maenas", "Mystery"]);
+  assert.equal(D.speciesName(idx[0], "common"), "Atlantic cod");
+  assert.equal(D.speciesName(idx[0], "scientific"), "Gadus morhua");
+  assert.equal(D.speciesName(idx[2], "common"), "Mystery");
+  assert.equal(D.speciesLabel(idx[0], "scientific"), "Gadus morhua (Atlantic cod)");
+  assert.equal(L.resolveSpecies(idx, "atlantic cod"), "Gadus morhua");
+});
+
 t("names: presets keep their spelling, others are trimmed and capped", () => {
   assert.equal(L.cleanName("  jacob "), "Jacob");
   assert.equal(L.cleanName("ADRIEN"), "Adrien");
@@ -64,8 +167,10 @@ t("zoom keeps the point under the cursor fixed and stops at the limits", () => {
   assert.equal(L.zoomAt(v0, 1e6, 0, 0, fit).k, 24);
 });
 t("filters and progress text", () => {
-  assert.equal(L.filterString(100, 100, false), "brightness(100%) contrast(100%)");
-  assert.match(L.filterString(120, 150, true), /saturate/);
+  assert.equal(L.filterString(100, 100, "off"), "brightness(100%) contrast(100%)");
+  assert.match(L.filterString(120, 150, "light"), /saturate/);
+  assert.match(L.filterString(120, 150, "silhouette"), /grayscale/);
+  assert.equal(L.filterString(100, 100, "nonsense"), "brightness(100%) contrast(100%)");
   assert.equal(L.progressText(12, 34, 100), "You: 12 frames. Team: 34 of 100 frames have two labels.");
   assert.equal(L.progressText(1, 0, 100), "You: 1 frame. Team: 0 of 100 frames have two labels.");
   assert.equal(L.fmtTime(125), "2:05");
@@ -99,8 +204,8 @@ t("menu placement stays inside the viewport", () => {
 });
 t("clip time is relative to the count frame, and the count second is half a second either side", () => {
   assert.equal(L.relTime(0, 5), "-5.0 s"); assert.equal(L.relTime(5, 5), "0.0 s"); assert.equal(L.relTime(7.34, 5), "+2.3 s");
-  assert.ok(L.inCountWindow(4.5, 5) && L.inCountWindow(5.5, 5) && L.inCountWindow(5, 5));
-  assert.ok(!L.inCountWindow(4.49, 5) && !L.inCountWindow(5.51, 5));
+  assert.ok(L.inCountWindow(5, 5) && L.inCountWindow(5.5, 5) && L.inCountWindow(6, 5));
+  assert.ok(!L.inCountWindow(4.99, 5) && !L.inCountWindow(6.01, 5));
   assert.deepEqual(L.SPEEDS, [1, 0.5, 0.25]);
 });
 t("views are kept in a fixed order with unknown names dropped", () => {
@@ -175,6 +280,37 @@ t("calibration: not assigned again as normal frames, and an empty list changes n
   assert.equal(L.pickNext(frames, {}, {}, "Jacob", null, []).frame_id, L.pickNext(frames, {}, {}, "Jacob", null).frame_id);
   const skipThis = L.pickNext(frames, {}, {}, "Ali", "f2", ["f2", "f4"]);
   assert.equal(skipThis.frame_id, "f4");               // the exclude rule still works for the prefetch
+});
+t("personal frames: only that person gets them, after the shared frames, and nobody gets them as normal frames", () => {
+  const fr = ["a", "b", "c", "d"].map((id, i) => ({ frame_id: id, time_s: i }));
+  const personal = { jacob: ["c", "d"] }, held = L.heldFrames(personal);
+  assert.deepEqual(L.calibrationFor(["a"], personal, "Jacob"), ["a", "c", "d"]);
+  assert.deepEqual(L.calibrationFor(["a"], personal, "Ali"), ["a"]);
+  assert.deepEqual(L.calibrationFor(["a"], undefined, "Jacob"), ["a"]);
+  const done = { a: { state: "done" } };
+  assert.equal(L.pickNext(fr, {}, done, "Jacob", null, L.calibrationFor(["a"], personal, "Jacob"), true, held).frame_id, "c");
+  assert.equal(L.pickNext(fr, {}, done, "Ali", null, L.calibrationFor(["a"], personal, "Ali"), true, held), null);
+  const seen = new Set(), mine = { a: { state: "done" } };   // frames reopened: still never offered to Ali
+  for (let i = 0; i < 10; i++) { const f = L.pickNext(fr, {}, mine, "Ali", null, ["a"], false, held); if (!f) break; seen.add(f.frame_id); mine[f.frame_id] = { state: "done" }; }
+  assert.deepEqual([...seen], ["b"]);
+});
+t("calibration only: every other frame is held back, and finished people get nothing new", () => {
+  const fr = [{ frame_id: "a" }, { frame_id: "b" }, { frame_id: "c" }, { frame_id: "d" }];
+  assert.equal(L.pickNext(fr, {}, {}, "Sam", null, ["c", "a"], true).frame_id, "c");
+  assert.equal(L.pickNext(fr, {}, { c: { state: "done" } }, "Sam", null, ["c", "a"], true).frame_id, "a");
+  assert.equal(L.pickNext(fr, {}, { c: { state: "done" }, a: { state: "done" } }, "Sam", null, ["c", "a"], true), null);
+  assert.notEqual(L.pickNext(fr, {}, { c: { state: "done" }, a: { state: "done" } }, "Sam", null, ["c", "a"], false), null);
+  assert.equal(L.calibrationProgressText(["c", "a"], { c: { state: "done" }, b: { state: "done" } }), "You: 1 of 2 calibration frames done.");
+});
+t("no animals: both views must be seen first, unless the frame lacks one", () => {
+  assert.deepEqual(L.missingChecks(["frame"], true, true), ["the clip", "the Movement view"]);
+  assert.deepEqual(L.missingChecks(["frame", "clip"], true, true), ["the Movement view"]);
+  assert.deepEqual(L.missingChecks(["frame", "clip", "movement"], true, true), []);
+  assert.deepEqual(L.missingChecks(["frame"], false, false), []);
+});
+t("report: species counted at points join the species observed list", () => {
+  const r = D.buildReport({ subsamples: [{ subsample_id: "a", t_s: 1 }] }, { latest_primary: { a: { total_fish_count: 1, species_counts: { "Gadus morhua": 1 } } }, latest_recording_notes: { species_observed: ["Cancer irroratus", "Gadus morhua"] } });
+  assert.deepEqual(r.speciesObserved, ["Cancer irroratus", "Gadus morhua"]);
 });
 t("calibration: the on-screen label", () => {
   assert.equal(L.calibrationText(["a", "b", "c", "d", "e"], "b"), "Calibration frame 2 of 5");

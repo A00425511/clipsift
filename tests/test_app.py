@@ -107,17 +107,19 @@ def test_range_support(env):
 def test_review_append_only_and_validation(env):
     c, run, *_ = env
     body = {"segment_id": "seg_0001", "decision": "confirm", "species": "Salmo salar", "count": 2,
-            "reviewer": "T", "contrast_settings": {"brightness": 120, "contrast": 150, "saturation": 80}}
+            "reviewer": "T", "contrast_settings": {"brightness": 120, "contrast": 150, "saturation": 80, "enhance": "silhouette"}}
     assert c.post(R + "/reviews", json=body).status_code == 201
     first = (run / "reviews.jsonl").read_text()
     assert c.post(R + "/reviews", json={**body, "decision": "reject"}).status_code == 201
     text = (run / "reviews.jsonl").read_text()
     assert text.startswith(first) and len(lines(run / "reviews.jsonl")) == 2  # earlier line untouched
     assert lines(run / "reviews.jsonl")[0]["contrast_settings"]["contrast"] == 150
+    assert lines(run / "reviews.jsonl")[0]["contrast_settings"]["enhance"] == "silhouette"
     bad = [{"segment_id": "seg_0001", "decision": "maybe"}, {"segment_id": "nope", "decision": "confirm"},
            {"segment_id": "../x", "decision": "confirm"}, {"segment_id": "seg_0001", "decision": "confirm", "count": -1},
            {"segment_id": "seg_0001", "decision": "confirm", "count": "3"},
            {"segment_id": "seg_0001", "decision": "confirm", "contrast_settings": {"brightness": 9999}},
+           {"segment_id": "seg_0001", "decision": "confirm", "contrast_settings": {"enhance": "sparkle"}},
            {"segment_id": "seg_0001", "decision": "confirm", "note": "x" * 5000}]
     for b in bad:
         assert c.post(R + "/reviews", json=b).status_code == 400, b
@@ -147,11 +149,11 @@ def test_subsample_reviews_qc_and_meancount(env):
     c, run, *_ = env
     assert c.post(R + "/subsample_reviews", json=SUB).status_code == 201
     assert c.post(R + "/subsample_reviews", json={**SUB, "subsample_id": "ss_02", "total_fish_count": 20}).status_code == 201
-    # blind second counter: 10+1 vs 10+4 -> clearly over the limit
-    assert c.post(R + "/subsample_reviews", json={**SUB, "counter": "Ben", "pass": "qc_blind", "invertebrate_count": 4}).status_code == 201
+    # blind second counter on a held frame: 20+1 vs 20+4 -> clearly over the limit
+    assert c.post(R + "/subsample_reviews", json={**SUB, "subsample_id": "ss_02", "total_fish_count": 20, "counter": "Ben", "pass": "qc_blind", "invertebrate_count": 4}).status_code == 201
     saved = c.get(R + "/saved").get_json()
     assert saved["mean_count_reviewed"] == 15 and saved["n_counted"] == 2 and saved["n_subsamples"] == 9
-    qc = saved["qc"]["ss_01"]
+    qc = saved["qc"]["ss_02"]
     assert qc["recount_needed"] is True and qc["second_counter"] == "Ben" and qc["percent_diff"] > 6
     assert len(lines(run / "subsample_reviews.jsonl")) == 3
     bad = [{**SUB, "counter": ""}, {**SUB, "pass": "other"}, {**SUB, "total_fish_count": None}, {**SUB, "total_fish_count": -1},
@@ -167,6 +169,13 @@ def test_percent_difference_function():
     assert percent_difference(10, 10) == 0
     assert percent_difference(10, None) is None
     assert round(percent_difference(11, 14), 1) == 24.0
+
+
+def test_unsure_marks_are_saved_without_a_species(env):
+    c, _, _, _ = env
+    r = c.post(R + "/point_labels", json={"subsample_id": "ss_02", "counter": "Ana", "kind": "unsure", "x": 10, "y": 20, "species": "Gadus morhua"})
+    assert r.status_code == 201 and r.get_json()["species"] is None
+    assert c.post(R + "/point_labels", json={"subsample_id": "ss_02", "counter": "Ana", "kind": "seaweed", "x": 1, "y": 2}).status_code == 400
 
 
 def test_point_labels_add_undo_append_only(env):
@@ -280,14 +289,8 @@ def test_feedback_route(env, runs_root):
     fb.unlink(missing_ok=True)
 
 
-def test_model_suggestions_toggle_is_simple_view_and_off_by_default():
+def test_no_model_suggestions_while_counting():
     static = Path(__file__).resolve().parents[1] / "app" / "static"
     html, js = (static / "index.html").read_text(), (static / "app.js").read_text()
-    assert 'id="show-boxes"' not in html and "Detection boxes</label>" not in html          # replaced, not doubled
-    tag = html[html.index('id="suggest-toggle"') - 30: html.index('id="suggest-toggle"') + 200]
-    assert 'id="show-suggest"' in tag and "Show model suggestions" in tag and " adv" not in tag.split("id=\"show-suggest\"")[0]  # not hidden in More tools
-    assert "checked" not in html[html.index('id="show-suggest"'): html.index('id="show-suggest"') + 40]
-    assert "Rough suggestions. The model flags seafloor and the pipe, and isn't trained on this water." in html
-    assert "boxes: false" in js and "S.boxes = false; paintSuggestToggle();" in js           # off at every run load
-    assert "localStorage.setItem(\"clipsift.boxes\"" not in js and "clipsift.suggest" not in js   # never stored
-    assert "cb.disabled = blocked" in js                                                      # QC mode: toggle disabled
+    assert 'id="show-suggest"' not in html and "Suggested counts" not in html and 'id="suggest-panel"' not in html
+    assert "auto.fish_count" not in js and "drawBoxes" not in js

@@ -11,7 +11,8 @@ clips. Review files (*.jsonl) are never copied.
 With --label-set <id> (repeatable), also copies label_sets/<id> (frames, clips, diff, manifest.json only) to
 public/label_sets/<id>, so the blind labelling page (label.html) works. Same allow-list rule: nothing
 whose name contains "river" goes in. If the set has a calibration.json (a list of frame ids), it is put into the
-copied manifest as `calibration`.
+copied manifest as `calibration`. calibration.json can also be {"calibration": [...], "calibration_only": true}, which
+holds every other frame back from the label page until it is set to false and the site is rebuilt.
 
 Limits checked (Cloudflare Workers static assets): under 20,000 files (free plan) and every file under
 25 MiB. The platform handles HTTP Range requests for video.
@@ -109,7 +110,11 @@ def copy_run(runs_root: Path, rid: str, out: Path) -> dict:
                 if f.is_file() and not f.is_symlink():
                     (dest / folder / unit.name).mkdir(parents=True, exist_ok=True)
                     shutil.copy2(f, dest / folder / unit.name / name)
-    return {"run_id": rid, "fixture": (src / "FIXTURE.txt").is_file() or bool(data.get("fixture")),
+    window = src / "window.mp4"   # the whole analysis window, for Step 1 and Step 2
+    has_window = window.is_file() and not window.is_symlink()
+    if has_window:
+        shutil.copy2(window, dest / "window.mp4")
+    return {"run_id": rid, "fixture": (src / "FIXTURE.txt").is_file() or bool(data.get("fixture")), "window": has_window,
             "n_segments": len(data["segments"]), "created_at": (data.get("run") or {}).get("created_at"), "error": None}
 
 
@@ -141,6 +146,19 @@ def copy_label_set(root: Path, sid: str, out: Path) -> dict:
             cal = json.loads(cal_file.read_text(encoding="utf-8"))
         except ValueError:
             raise BuildError(f"Label set '{sid}' has an unreadable calibration.json.") from None
+        if isinstance(cal, dict) and cal.get("calibration_only") is True:
+            manifest["calibration_only"] = True     # the label page offers only these frames until this is turned off
+        if isinstance(cal, dict) and cal.get("archived"):
+            archived = cal["archived"]              # frames shown in a team demo: never labelled again, left out of the results
+            if not isinstance(archived, list) or not set(archived) <= {f["frame_id"] for f in manifest["frames"]}:
+                raise BuildError(f"Label set '{sid}': calibration.json archived must be a list of frame ids that are in the manifest.")
+            manifest["archived"] = list(dict.fromkeys(archived))
+        if isinstance(cal, dict) and cal.get("personal"):
+            personal = cal["personal"]              # {"name": [frame ids]}: extra frames for one person, held back from everyone else
+            known = {f["frame_id"] for f in manifest["frames"]}
+            if not isinstance(personal, dict) or any(not isinstance(v, list) or not set(v) <= known for v in personal.values()):
+                raise BuildError(f"Label set '{sid}': calibration.json personal must map names to lists of frame ids that are in the manifest.")
+            manifest["personal"] = {k.lower(): list(dict.fromkeys(v)) for k, v in personal.items()}
         cal = cal.get("calibration") if isinstance(cal, dict) else cal
         known = {f.get("frame_id") for f in manifest["frames"] if isinstance(f, dict)}
         if not isinstance(cal, list) or any(not isinstance(i, str) or i not in known for i in cal):

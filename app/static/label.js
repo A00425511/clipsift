@@ -9,6 +9,9 @@
 (function () {
   "use strict";
 
+  const D = typeof module !== "undefined" && module.exports ? require("./display.js") : window.ClipSiftDisplay;
+  const relTime = D.relTime;
+
   // ---------- pure helpers (no DOM) ----------
   const PRESET_NAMES = ["Jacob", "Ali", "Gina", "Wang", "Adrien"];
   const NEEDED = 2;            // labels wanted per frame
@@ -16,7 +19,8 @@
   const MAX_K = 24;            // most zoom, relative to the fitted view
   const VIEWS = ["frame", "movement", "clip"];   // recorded per label: which views the person used
   const SPECIES_MAX = 80;
-  const COUNT_HALF_S = 0.5;    // the designated count second is half a second either side of the frame's moment
+  const COUNT_WINDOW_S = 1;    // the designated count second starts at the frame's moment
+  const COUNT_TOLERANCE_S = 0.5;   // a fish first seen this close either side may count
   const SPEEDS = [1, 0.5, 0.25];
   // Not fish: hard negatives, things that could fool a computer. Keep ids in step with worker.js and app/server.py.
   const NOT_FISH_CATEGORIES = [
@@ -42,23 +46,36 @@
   // that depends on their name so five people do not all land on the same frame.
   // Calibration frames (a list of frame ids) come first, in that order, for everyone, whatever the two-label cap
   // says. They are never offered again as normal frames. After them, normal assignment.
-  function pickNext(frames, counts, mine, name, exclude, calibration) {
+  // `held` frames are never offered as normal frames, to anyone (see heldFrames).
+  function pickNext(frames, counts, mine, name, exclude, calibration, calibrationOnly, held) {
     const cal = Array.isArray(calibration) ? calibration : [];
+    const hold = Array.isArray(held) ? held : [];
     for (const id of cal) {
       if (id === exclude || mine[id]) continue;
       const f = frames.find((x) => x.frame_id === id);
       if (f) return f;
     }
+    if (calibrationOnly) return null;     // the other frames are held back for now
     let best = null, bestKey = null;
     for (const f of frames) {
       const id = f.frame_id;
-      if (id === exclude || mine[id] || cal.includes(id)) continue;
+      if (id === exclude || mine[id] || cal.includes(id) || hold.includes(id)) continue;
       const n = counts[id] || 0;
       if (n >= NEEDED) continue;
       const key = [n, hash32(name.toLowerCase() + "|" + id)];
       if (!bestKey || key[0] < bestKey[0] || (key[0] === bestKey[0] && key[1] < bestKey[1])) { best = f; bestKey = key; }
     }
     return best;
+  }
+  // Extra frames for one named person, such as demo frames recorded for the team. `personal` is { "lower case name": [frame ids] }.
+  // That person gets them after the shared calibration frames. Nobody else is offered them, so a recording cannot unblind a label.
+  function calibrationFor(calibration, personal, name) {
+    const extra = personal && typeof personal === "object" ? personal[String(name || "").toLowerCase()] : null;
+    const list = Array.isArray(calibration) ? calibration : [];
+    return Array.isArray(extra) ? list.concat(extra.filter((id) => !list.includes(id))) : list;
+  }
+  function heldFrames(personal) {
+    return personal && typeof personal === "object" ? Object.values(personal).filter(Array.isArray).flat() : [];
   }
   function fitScale(sw, sh, w, h) { return Math.min(sw / w, sh / h); }
   // Keep the picture on screen: centred when smaller than the stage, no empty edge when larger.
@@ -75,13 +92,25 @@
     return { k, x: px - ix * s1, y: py - iy * s1 };
   }
   function filterString(bright, contrast, enhance) {
-    return "brightness(" + bright + "%) contrast(" + contrast + "%)" + (enhance ? " contrast(135%) saturate(125%) brightness(105%)" : "");
+    const extra = D.enhanceFilter(enhance);
+    return "brightness(" + bright + "%) contrast(" + contrast + "%)" + (extra ? " " + extra : "");
   }
   function fmtTime(s) { s = Math.round(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
   // "Calibration frame 2 of 5" for a calibration frame, "" for any other frame.
   function calibrationText(calibration, frameId) {
     const i = Array.isArray(calibration) ? calibration.indexOf(frameId) : -1;
     return i < 0 ? "" : "Calibration frame " + (i + 1) + " of " + calibration.length;
+  }
+  // What must be looked at before a frame can be called empty. Only views this frame actually has.
+  function missingChecks(views, hasClip, hasMovement) {
+    const seen = Array.isArray(views) ? views : [], out = [];
+    if (hasClip && !seen.includes("clip")) out.push("the clip");
+    if (hasMovement && !seen.includes("movement")) out.push("the Movement view");
+    return out;
+  }
+  function calibrationProgressText(calibration, mine) {
+    const done = calibration.filter((id) => mine[id] && mine[id].state === "done").length;
+    return "You: " + done + " of " + calibration.length + " calibration frames done.";
   }
   function progressText(myDone, team, total) {
     return "You: " + myDone + (myDone === 1 ? " frame" : " frames") + ". Team: " + team + " of " + total + " frames have two labels.";
@@ -97,7 +126,7 @@
       if (!sp || typeof sp.scientific_name !== "string" || !sp.scientific_name) continue;
       const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === "string" && x) : []);
       const commons = strs(sp.common_names), alias = strs(sp.aliases);
-      out.push({ sci: sp.scientific_name, common: commons[0] || "", label: commons[0] ? commons[0] + " (" + sp.scientific_name + ")" : sp.scientific_name,
+      out.push({ sci: sp.scientific_name, common: commons[0] || "", kind: sp.kind || null, label: commons[0] ? commons[0] + " (" + sp.scientific_name + ")" : sp.scientific_name,
         terms: [sp.scientific_name, ...commons, ...alias].map((t) => t.toLowerCase()) });
     }
     return out;
@@ -131,12 +160,8 @@
     const m = margin == null ? 6 : margin;
     return { x: Math.max(m, Math.min(x, vw - w - m)), y: Math.max(m, Math.min(y, vh - h - m)) };
   }
-  // Seconds from the frame's moment (negative = before), as text, and whether it is inside the count second.
-  function relTime(t, countS) {
-    const r = Math.round((t - countS) * 10) / 10;
-    return (r > 0 ? "+" : "") + r.toFixed(1) + " s";
-  }
-  function inCountWindow(t, countS) { return Math.abs(t - countS) <= COUNT_HALF_S; }
+  // Whether a moment in the clip is inside the count second.
+  function inCountWindow(t, countS) { return D.inCount(t, countS, COUNT_WINDOW_S); }
   function categoryLabel(id) { const c = NOT_FISH_CATEGORIES.find((x) => x.id === id); return c ? c.label : ""; }
   // A saved or drafted point made safe: known kind (fish if unknown), species only on animals, category only on not_fish.
   function cleanPoint(p) {
@@ -170,7 +195,7 @@
   function noConfidentAnimals(points) { return !!points && points.length > 0 && points.every((p) => p.kind === "not_fish" || p.kind === "unsure"); }
   function orderedViews(list) { return VIEWS.filter((v) => Array.isArray(list) && list.includes(v)); }
 
-  const api = { KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
+  const api = { calibrationFor, heldFrames, missingChecks, calibrationProgressText, KINDS, NOT_FISH_SOFT_LIMIT, notFishHint, noConfidentAnimals, calibrationText, NOT_FISH_CATEGORIES, categoryLabel, cleanPoint, countMarks, markCountText, onlyNotFish, VIEWS, SPEEDS, cleanSpecies, buildSpeciesIndex, speciesMatches, resolveSpecies, clampMenu, relTime, inCountWindow, orderedViews, PRESET_NAMES, cleanName, hash32, pickNext, fitScale, clampView, zoomAt, filterString, progressText, fmtTime, NEEDED };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document === "undefined") return;
 
@@ -186,7 +211,7 @@
     cur: null, points: [], noAnimals: false, seconds: 0, kind: "fish", category: "", undo: [],
     view: { k: 1, x: 0, y: 0 }, fit: 1, motion: false, loadToken: 0,
     saving: false, retryTimer: null, retries: 0, lastInput: Date.now(), draftTimer: null, raf: 0,
-    bright: 100, contrast: 100, enhance: false,
+    bright: 100, contrast: 100, enhance: "off", restart: true, countOnly: false, stopAfterDrag: false, clip: null, names: "common",
     movement: false, diffOk: false, views: [], speed: 1, spaceStarted: false, hudRaf: 0, playMsg: false,
     speciesIndex: null, menuPoint: null, spChoices: [], spActive: -1, lastPos: [0, 0],
   };
@@ -226,7 +251,7 @@
   }
   function paintProgress() {
     const myDone = Object.values(S.mine).filter((m) => m.state === "done").length;
-    $("progress").textContent = progressText(myDone, S.team.frames_with_two || 0, S.total);
+    $("progress").textContent = S.calibrationOnly ? calibrationProgressText(calList(), S.mine) : progressText(myDone, S.team.frames_with_two || 0, S.total);
   }
 
   // ---------- name ----------
@@ -250,6 +275,8 @@
   }
 
   // ---------- drafts: autosave in this browser, so a refresh or a failed save loses nothing ----------
+  const calList = () => calibrationFor(S.calibration, S.personal, S.name);
+  const heldNow = () => heldFrames(S.personal).concat(S.archived || []);   // archived frames are finished with: nobody gets them, and they leave My frames
   const draftKey = (fid) => "clipsift.label.draft." + S.set + "." + S.name.toLowerCase() + "." + fid;
   const curKey = () => "clipsift.label.current." + S.set + "." + S.name.toLowerCase();
   function saveDraftSoon() {
@@ -277,7 +304,7 @@
     S.cur = frame; S.points = []; S.noAnimals = false; S.seconds = 0; S.undo = []; S.views = [];
     $("done-panel").hidden = true; $("loading").hidden = false; setMotion(false); closeMenu(false);
     LS.set(curKey(), frame.frame_id);
-    const calText = calibrationText(S.calibration, frame.frame_id);
+    const calText = calibrationText(calList(), frame.frame_id);
     $("frame-info").textContent = (calText ? calText + ". " : "") + "Frame at " + fmtTime(frame.time_s) + " in the video";
     const note = [];
     const draft = readDraft(frame.frame_id);
@@ -300,7 +327,7 @@
       img.src = frame.frame_url;
     });
     if (token !== S.loadToken) return;
-    const clip = $("clip"); clip.hidden = true; clip.src = frame.clip_url || "";
+    const clip = $("clip"); clip.src = frame.clip_url || "";
     // Movement view: always starts on the plain frame. A missing or broken file just turns the button off.
     S.movement = false; S.diffOk = false;
     const dimg = $("diff"); dimg.hidden = true;
@@ -317,13 +344,13 @@
     prefetchNext();
   }
   function prefetchNext() {
-    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, S.cur && S.cur.frame_id, S.calibration);
+    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, S.cur && S.cur.frame_id, calList(), S.calibrationOnly, heldNow());
     if (nxt) { const i = new Image(); i.src = nxt.frame_url; }
   }
 
   async function goNext() {
     try { await refreshStatus(); } catch (e) { /* use what we have */ }
-    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, null, S.calibration);
+    const nxt = pickNext(S.frames, S.counts, S.mine, S.name, null, calList(), S.calibrationOnly, heldNow());
     if (nxt) { await openFrame(nxt); return; }
     showDone();
   }
@@ -332,7 +359,7 @@
     LS.del(curKey());
     $("loading").hidden = true;
     const myDone = Object.values(S.mine).filter((m) => m.state === "done").length;
-    $("done-text").textContent = "Nothing is left for you. You labelled " + myDone + (myDone === 1 ? " frame" : " frames") +
+    $("done-text").textContent = S.calibrationOnly ? "You have finished the calibration frames. Thank you. More frames open after the team debrief. You can look at these frames again and change them." : "Nothing is left for you. You labelled " + myDone + (myDone === 1 ? " frame" : " frames") +
       ". Every other frame already has two labels, or you skipped it. You can look at your own frames again and change them.";
     $("done-panel").hidden = false;
     $("frame-info").textContent = ""; $("mark-count").textContent = "";
@@ -511,10 +538,17 @@
     const f = filterString(S.bright, S.contrast, S.enhance);
     $("frame").style.filter = f; $("clip").style.filter = f; $("diff").style.filter = f;
     $("s-bright").value = S.bright; $("s-contrast").value = S.contrast;
-    $("b-enhance").setAttribute("aria-pressed", S.enhance);
+    for (const b of $("enhance-group").children) b.setAttribute("aria-pressed", String(b.dataset.enhance === S.enhance));
     LS.set("clipsift.label.filters", JSON.stringify({ b: S.bright, c: S.contrast, e: S.enhance }));
   }
-  function resetFilters() { S.bright = 100; S.contrast = 100; S.enhance = false; applyFilters(); }
+  function resetFilters() { S.bright = 100; S.contrast = 100; S.enhance = "off"; applyFilters(); }
+  function buildEnhance() {
+    for (const p of D.ENHANCE_PRESETS) {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.enhance = p.id; b.textContent = p.label; b.title = p.title;
+      b.addEventListener("click", () => { S.enhance = p.id; applyFilters(); });
+      $("enhance-group").append(b);
+    }
+  }
 
   // ---------- views: frame, movement view, clip. Every view sits in the same zoomed and panned plane, so dots line up ----------
   function markView(v) {
@@ -543,31 +577,37 @@
   function paintHudStatic() {
     const len = clipLen(), c = countS();
     const w = $("hud-window");
-    w.style.left = Math.max(0, (c - COUNT_HALF_S) / len * 100) + "%"; w.style.width = (2 * COUNT_HALF_S / len * 100) + "%";
+    const bands = D.countBands(c, COUNT_WINDOW_S, COUNT_TOLERANCE_S, len), tol = $("hud-tol");
+    w.style.left = bands.count.left + "%"; w.style.width = bands.count.width + "%";
+    tol.style.left = bands.tolerance.left + "%"; tol.style.width = bands.tolerance.width + "%";
     $("hud-speed").textContent = S.speed + "x";
   }
+  const playRange = () => D.clipRange(S.countOnly, countS(), COUNT_WINDOW_S, clipLen());
   function paintHud() {
-    const v = $("clip"), t = v.currentTime || 0, len = clipLen(), c = countS();
+    const v = $("clip"), t = (S.clip ? S.clip.time() : v.currentTime) || 0, len = clipLen(), c = countS();
     $("hud-time").textContent = relTime(t, c);
     $("hud-head").style.left = Math.min(100, t / len * 100) + "%";
     const inWin = inCountWindow(t, c);
     $("hud-count").hidden = !inWin; $("stage").classList.toggle("counting", inWin);
   }
-  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
+  function hudLoop() { if (!S.motion) { S.hudRaf = 0; return; } S.clip.tick(); paintHud(); S.hudRaf = requestAnimationFrame(hudLoop); }
   function setMotion(on) {
     on = !!on && !!S.cur && !!S.cur.clip_url;
     if (on === S.motion) return;
     S.motion = on;
-    const v = $("clip");
+    const v = $("clip"), r = playRange();
     $("b-motion").setAttribute("aria-pressed", on);
-    $("clip-hud").hidden = !on;
+    $("clip-hud").hidden = !on; $("stage").classList.toggle("playing", on);
     if (on) {
       closeMenu(false);
-      v.hidden = false; v.playbackRate = S.speed; markView("clip"); paintHudStatic();
+      v.playbackRate = S.speed; markView("clip"); paintHudStatic();
+      const outside = v.currentTime < r.start - 0.05 || v.currentTime > r.end;
+      if (outside || (S.restart && v.currentTime > r.start + 0.1)) v.currentTime = r.start;   // already rewound on release, so usually nothing to do
       v.play().catch(() => {});
       if (!S.hudRaf) S.hudRaf = requestAnimationFrame(hudLoop);
     } else {
-      v.pause(); v.hidden = true;     // back to the exact frame (or the movement view), nothing moved
+      v.pause();     // back to the exact frame (or the movement view), nothing moved
+      if (S.restart) v.currentTime = r.start;   // rewind now, so the next press starts at once
       $("stage").classList.remove("counting"); $("hud-count").hidden = true;
       if (S.playMsg) { S.playMsg = false; msg(""); }
     }
@@ -578,6 +618,15 @@
     S.speed = r; $("clip").playbackRate = r; $("hud-speed").textContent = r + "x";
     for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(+b.dataset.speed === r));
     LS.set("clipsift.label.speed", String(r));
+  }
+  function setRestart(on) {
+    S.restart = !!on; $("b-restart").setAttribute("aria-pressed", S.restart);
+    LS.set("clipsift.label.restart", S.restart ? "1" : "0");
+  }
+  function setCountOnly(on) {
+    S.countOnly = !!on; $("count-only").setAttribute("aria-pressed", S.countOnly);
+    LS.set("clipsift.count_only", S.countOnly ? "1" : "0");
+    if (S.cur && !S.motion && S.restart) $("clip").currentTime = playRange().start;
   }
   function jumpToCount() {
     if (!S.cur) return;
@@ -601,8 +650,7 @@
     const m = menuEl();
     S.menuPoint = point;
     const nf = point.kind === "not_fish", uns = point.kind === "unsure";
-    $("cm-title").textContent = nf ? "Not fish: " + (categoryLabel(point.category) || "no category") : uns ? "Unsure" :
-      (point.kind === "invertebrate" ? "Invertebrate" : "Fish") + (point.species ? ": " + point.species : ", no species");
+    paintMenuTitle();
     $("cm-to-fish").hidden = point.kind === "fish"; $("cm-to-inv").hidden = point.kind === "invertebrate"; $("cm-to-nf").hidden = nf; $("cm-to-uns").hidden = uns;
     $("cm-category").hidden = !nf; $("cm-species").hidden = nf || uns;
     $("cm-clear").hidden = nf || uns || !point.species;
@@ -611,6 +659,21 @@
     placeMenu(cx, cy);
     menuItems()[0].focus();
     loadSpecies();
+  }
+  function speciesItem(sci) { return (S.speciesIndex || []).find((it) => it.sci === sci) || null; }
+  function speciesShown(sci) { const it = speciesItem(sci); return it ? D.speciesName(it, S.names) : sci; }
+  function paintMenuTitle() {
+    const p = S.menuPoint; if (!p) return;
+    $("cm-title").textContent = p.kind === "not_fish" ? "Not fish: " + (categoryLabel(p.category) || "no category") : p.kind === "unsure" ? "Unsure" :
+      (p.kind === "invertebrate" ? "Invertebrate" : "Fish") + (p.species ? ": " + speciesShown(p.species) : ", no species");
+  }
+  function setNames(mode) {
+    const inp = $("cm-sp-input"), typed = resolveSpecies(S.speciesIndex || [], inp.value);
+    S.names = D.cleanNameMode(mode); LS.set("clipsift.species_names", S.names);
+    for (const b of document.querySelectorAll("[data-names]")) b.setAttribute("aria-pressed", String(b.dataset.names === S.names));
+    if (speciesItem(typed)) inp.value = speciesShown(typed);
+    paintMenuTitle();
+    if (menuOpen() && !$("cm-sp").hidden) { paintSpChoices(); inp.focus(); }
   }
   function closeMenu(refocus) {
     if (!menuOpen()) { S.menuPoint = null; return; }
@@ -635,16 +698,17 @@
   }
   function showSpeciesBox() {
     $("cm-main").hidden = true; $("cm-sp").hidden = false;
-    const inp = $("cm-sp-input"); inp.value = S.menuPoint && S.menuPoint.species || "";
+    const inp = $("cm-sp-input"); inp.value = S.menuPoint && S.menuPoint.species ? speciesShown(S.menuPoint.species) : "";
     paintSpChoices(); placeMenu(...menuEl()._at); inp.focus(); inp.select();
   }
   function paintSpChoices() {
     const ul = $("cm-sp-list"), inp = $("cm-sp-input");
-    S.spChoices = S.speciesIndex ? speciesMatches(S.speciesIndex, inp.value, 8) : [];
+    const list = S.speciesIndex && S.menuPoint ? D.forKind(S.speciesIndex, S.menuPoint.kind) : [];
+    S.spChoices = speciesMatches(list, inp.value, 50);
     if (!inp.value.trim() && !S.speciesIndex) S.spChoices = [];
     S.spActive = -1; ul.textContent = "";
     S.spChoices.forEach((it, i) => {
-      const li = document.createElement("li"); li.id = "cm-sp-" + i; li.setAttribute("role", "option"); li.setAttribute("aria-selected", "false"); li.textContent = it.label;
+      const li = document.createElement("li"); li.id = "cm-sp-" + i; li.setAttribute("role", "option"); li.setAttribute("aria-selected", "false"); li.textContent = D.speciesLabel(it, S.names);
       li.addEventListener("mousedown", (e) => e.preventDefault());
       li.addEventListener("click", () => commitSpecies(it.sci));
       ul.append(li);
@@ -674,6 +738,7 @@
         if (S.speciesIndex.length) break;
       } catch (e) { /* try the next place */ }
     }
+    paintMenuTitle();
     if (menuOpen() && !$("cm-sp").hidden) paintSpChoices();
   }
   function onContextMenu(e) {
@@ -698,7 +763,12 @@
     }, true);
     window.addEventListener("blur", () => closeMenu(false)); window.addEventListener("resize", () => closeMenu(false));
     st.addEventListener("wheel", () => closeMenu(false), { passive: true });
-    const toKind = (k) => editPoint((p) => { p.kind = k; if (k !== "fish" && k !== "invertebrate") delete p.species; if (k !== "not_fish") delete p.category; });
+    const toKind = (k) => editPoint((p) => {
+      const it = speciesItem(p.species);
+      p.kind = k;
+      if ((k !== "fish" && k !== "invertebrate") || (it && it.kind && it.kind !== k)) delete p.species;   // a crab name cannot stay on a fish mark
+      if (k !== "not_fish") delete p.category;
+    });
     $("cm-to-fish").addEventListener("click", () => toKind("fish"));
     $("cm-to-inv").addEventListener("click", () => toKind("invertebrate"));
     $("cm-to-nf").addEventListener("click", () => toKind("not_fish"));
@@ -711,6 +781,7 @@
     $("cm-sp-back").addEventListener("click", () => { $("cm-sp").hidden = true; $("cm-main").hidden = false; placeMenu(...m._at); menuItems()[0].focus(); });
     $("cm-sp-ok").addEventListener("click", () => commitSpecies($("cm-sp-input").value));
     $("cm-sp-input").addEventListener("input", paintSpChoices);
+    for (const b of document.querySelectorAll("[data-names]")) b.addEventListener("click", () => setNames(b.dataset.names));
     m.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
       if (e.key === "Tab") { closeMenu(false); return; }
@@ -737,6 +808,10 @@
   async function commit(kind) {
     if (!S.cur || S.saving) return;
     if (kind === "done" && !S.points.length) { msg("No marks yet. Click each animal you are sure about. If the frame is empty press No animals (N); to leave it, press Skip (S).", "warn"); return; }
+    if (kind === "none") {
+      const missing = missingChecks(S.views, !!S.cur.clip_url, !!S.cur.diff_url && S.diffOk);
+      if (missing.length) { msg("Check " + missing.join(" and ") + " first. Animals are easy to miss in the still.", "warn"); return; }
+    }
     if (kind === "none" && noConfidentAnimals(S.points)) kind = "done";   // only Unsure and Not fish marks: the same as no counted animals, saved with the marks kept
     if (kind === "none" && S.points.length) { msg("You have marks on this frame. Clear them first if it really has no animals.", "warn"); return; }
     if (kind === "skip" && S.points.length && !confirm("Skipping throws away your marks on this frame. Skip anyway?")) return;
@@ -770,7 +845,7 @@
   // ---------- my frames ----------
   function showMine() {
     const list = $("mine-list"); list.textContent = "";
-    const rows = S.frames.filter((f) => S.mine[f.frame_id]);
+    const rows = S.frames.filter((f) => S.mine[f.frame_id] && !(S.archived || []).includes(f.frame_id) && (!S.calibrationOnly || calList().includes(f.frame_id)));
     if (!rows.length) { const li = document.createElement("li"); li.className = "hint"; li.textContent = "You have not saved any frames yet."; list.append(li); }
     for (const f of rows) {
       const m = S.mine[f.frame_id], li = document.createElement("li"), b = document.createElement("button");
@@ -807,11 +882,19 @@
     else if (S.kind === "not_fish" && /^[1-9]$/.test(e.key) && NOT_FISH_CATEGORIES[+e.key - 1]) setCategory(NOT_FISH_CATEGORIES[+e.key - 1].id);
     else if (k === "z") undo();
     else if (k === "m") setMovement(!S.movement);
+    else if (k === "r") setRestart(!S.restart);
+    else if (k === "o") setCountOnly(!S.countOnly);
+    else if (k === "c") { S.enhance = D.nextEnhance(S.enhance); applyFilters(); }
     else if (k === "n") commit("none");
     else if (k === "s") commit("skip");
     else if (e.key === "Escape") { $("help-panel").hidden = true; $("btn-help").setAttribute("aria-expanded", "false"); $("mine-panel").hidden = true; }
   });
-  function spaceUp() { spaceDown = false; if (S.spaceStarted) { S.spaceStarted = false; setMotion(false); } }
+  function spaceUp() {
+    spaceDown = false;
+    if (!S.spaceStarted) return;
+    S.spaceStarted = false;
+    if (S.clip.dragging()) S.stopAfterDrag = true; else setMotion(false);   // let go mid-drag: stop when the mouse lets go too
+  }
   document.addEventListener("keyup", (e) => {
     if (e.key !== " ") return;
     if (!typing(e.target) && !menuEl().contains(e.target) && $("who-dialog").hidden) e.preventDefault();   // a focused button must not also "click"
@@ -833,6 +916,10 @@
     S.set = setId; S.frames = (mf.frames || []).slice().sort((a, b) => a.time_s - b.time_s); S.total = S.frames.length;
     S.byId = {}; for (const f of S.frames) S.byId[f.frame_id] = f;
     const seen = new Set();
+    S.calibrationOnly = mf.calibration_only === true;
+    S.archived = (Array.isArray(mf.archived) ? mf.archived : []).filter((id) => S.byId[id]);
+    S.personal = {};
+    for (const [who, ids] of Object.entries(mf.personal || {})) if (Array.isArray(ids)) S.personal[who.toLowerCase()] = ids.filter((id) => S.byId[id]);
     S.calibration = (Array.isArray(mf.calibration) ? mf.calibration : []).filter((id) => typeof id === "string" && S.byId[id] && !seen.has(id) && seen.add(id));
   }
   async function start() {
@@ -841,7 +928,8 @@
       await refreshStatus();
     } catch (e) { msg("Could not start: " + e.message, "error", { label: "Try again", fn: () => start() }); $("progress").textContent = ""; return; }
     const saved = LS.get(curKey()), f = saved && S.byId[saved];
-    if (f && (!S.mine[f.frame_id] || readDraft(f.frame_id))) { await openFrame(f); return; }
+    const allowed = f && !(S.archived || []).includes(f.frame_id) && (!S.calibrationOnly || calList().includes(f.frame_id));
+    if (allowed && (!S.mine[f.frame_id] || readDraft(f.frame_id))) { await openFrame(f); return; }
     await goNext();
   }
 
@@ -866,7 +954,14 @@
     $("b-save").addEventListener("click", () => commit("done")); $("b-none").addEventListener("click", () => commit("none")); $("b-skip").addEventListener("click", () => commit("skip"));
     $("s-bright").addEventListener("input", (e) => { S.bright = +e.target.value; applyFilters(); });
     $("s-contrast").addEventListener("input", (e) => { S.contrast = +e.target.value; applyFilters(); });
-    $("b-enhance").addEventListener("click", () => { S.enhance = !S.enhance; applyFilters(); });
+    buildEnhance();
+    $("b-restart").addEventListener("click", () => setRestart(!S.restart));
+    $("count-only").addEventListener("click", () => setCountOnly(!S.countOnly));
+    S.clip = D.clipControl({ video: $("clip"), track: document.querySelector("#clip-hud .lb-track"), range: playRange, active: () => S.motion, paint: paintHud,
+      release: () => { if (S.stopAfterDrag) { S.stopAfterDrag = false; setMotion(false); } else $("clip").play().catch(() => {}); } });
+    setCountOnly(LS.get("clipsift.count_only") === "1");
+    setRestart(LS.get("clipsift.label.restart") !== "0");
+    setNames(LS.get("clipsift.species_names"));
     $("b-reset").addEventListener("click", resetFilters);
     $("btn-help").addEventListener("click", () => { const p = $("help-panel"); p.hidden = !p.hidden; $("btn-help").setAttribute("aria-expanded", String(!p.hidden)); });
     $("help-close").addEventListener("click", () => { $("help-panel").hidden = true; $("btn-help").setAttribute("aria-expanded", "false"); LS.set("clipsift.label.help_seen", "1"); });
@@ -874,7 +969,7 @@
     $("mine-close").addEventListener("click", () => { $("mine-panel").hidden = true; });
     $("btn-who").addEventListener("click", askName);
     $("who-other").addEventListener("submit", (e) => { e.preventDefault(); chooseName($("who-text").value); });
-    try { const f = JSON.parse(LS.get("clipsift.label.filters") || "null"); if (f) { S.bright = +f.b || 100; S.contrast = +f.c || 100; S.enhance = !!f.e; } } catch (e) { /* ignore */ }
+    try { const f = JSON.parse(LS.get("clipsift.label.filters") || "null"); if (f) { S.bright = +f.b || 100; S.contrast = +f.c || 100; S.enhance = f.e === true ? "light" : D.cleanEnhance(f.e); } } catch (e) { /* ignore */ }
     applyFilters(); paintButtons();
   }
 

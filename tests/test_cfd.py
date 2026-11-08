@@ -278,7 +278,7 @@ def clip(tmp_path_factory):
 
 
 def _run(clip, tmp_path, backend):
-    cfg = load_config(overrides={**SMALL, "stages": {"detector": backend}})
+    cfg = load_config(overrides={**SMALL, "motion_scan": True, "stages": {"detector": backend}})
     d = run([clip], cfg, tmp_path, log=lambda *a: None)
     return json.loads((d / "results.json").read_text())
 

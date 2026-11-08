@@ -14,11 +14,12 @@ Logged 5 Nov 2026 from the team check-in and app feedback. Ticked items are done
 
 ## Bigger features
 - [x] Simple label-only mode: image, mark, next, with blind double counting for agreement. `/label.html`, see README, Labelling.
-- [ ] Summary report of counts, seconds and species, as CSV and PDF.
+- [x] Summary report of counts, seconds and species, as CSV and PDF. Report button; PDF comes from the print window.
 - [ ] Save and reopen a full analysis (Ali).
 - [ ] Windows package that needs no setup, for handoff (Ali).
 
 ## Model work
+- [ ] Species bank next steps: see `docs/SPECIES_BANK.md`.
 - [x] Reject static boxes (pole, seabed). Done 6 Nov: `clipsift/static_filter.py`, persistence plus movement check, rejected boxes kept with `static: true`. On 100 frames of T1-STAT2 411, boxes at threshold 0.1 went from 28.8 to 14.2 per frame; empty-frame checks 169 to 79 boxes; labelled-frame hits unchanged (24 of 103). One recording, tuned on the same frames. See `2026 Problem Prep/detector-test/STATIC-FILTER.md`.
 - [x] Mask the measuring pole. Config `static_filter.masks` (polygons or a JSON file) and `tools/make_static_mask.py` to suggest one from persistent boxes. A person must check the mask.
 - [ ] Review app: hide `static` detections by default with a "show static" toggle (field is in results.json; app not changed yet).

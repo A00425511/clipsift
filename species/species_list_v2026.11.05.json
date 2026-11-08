@@ -29,6 +29,7 @@
       "Morrhua vulgaris"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -80,6 +81,7 @@
       "Pollachius carbonarius"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -153,6 +155,7 @@
       "Rogenia alba"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -197,6 +200,7 @@
       "Pomolobus pseudoharengus"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -236,6 +240,7 @@
       "Pomolobus cyanonoton"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -299,6 +304,7 @@
       "Valencia lozanoi"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -343,6 +349,7 @@
       "Phoxargyrea dayi"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -433,6 +440,7 @@
       "Gasterosteus tetracanthus"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -484,6 +492,7 @@
       "Pygosteus pungitius trachura"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -521,6 +530,7 @@
       "Osmerus spectrum"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -561,6 +571,7 @@
       "Pseudopleuronectes dignabilis"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -606,6 +617,7 @@
       "Tautogolabrus brandaonis"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -653,6 +665,7 @@
       "Myxocephalus scorpius"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -690,6 +703,7 @@
       "Myoxocephalus aenaeas"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -737,6 +751,7 @@
       "Morrhua tomcodus"
     ],
     "group": "Common resident",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -775,6 +790,7 @@
       "Astacus marinus"
     ],
     "group": "Invertebrate",
+    "kind": "invertebrate",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -811,6 +827,7 @@
       "Platycarcinus irroratus"
     ],
     "group": "Invertebrate",
+    "kind": "invertebrate",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -881,6 +898,7 @@
       "Trutta salar relicta"
     ],
     "group": "Species at risk",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": true,
@@ -938,6 +956,7 @@
       "Muraena serpentina"
     ],
     "group": "Species at risk",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": true,
@@ -986,6 +1005,7 @@
       "Sturio accipenser"
     ],
     "group": "Species at risk",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": true,
@@ -1031,6 +1051,7 @@
       "Sciaena lineata"
     ],
     "group": "Species at risk",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": true,
@@ -1065,6 +1086,7 @@
       "Coregonus canadensis"
     ],
     "group": "Species at risk",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": true,
@@ -1116,6 +1138,7 @@
       "Portunus carcinoides"
     ],
     "group": "Invasive",
+    "kind": "invertebrate",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1156,6 +1179,7 @@
       "Micropterus dolomieui dolomieui"
     ],
     "group": "Invasive",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1191,6 +1215,7 @@
       "Esox reticulatus"
     ],
     "group": "Invasive",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1234,6 +1259,7 @@
       "Botryllus aurantius"
     ],
     "group": "Invasive",
+    "kind": "invertebrate",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1279,6 +1305,7 @@
       "Sebastes maculatus"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1321,6 +1348,7 @@
       "Zeus ocellatus"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1366,6 +1394,7 @@
       "Syngnathus tetragonous"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1403,6 +1432,7 @@
       "Sarothrodus maculocinctus"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1444,6 +1474,7 @@
       "Flagellaria fistularis"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1481,6 +1512,7 @@
       "Portunus pictus"
     ],
     "group": "Range-expander candidate",
+    "kind": "invertebrate",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1518,6 +1550,7 @@
       "Labrus striatus"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1558,6 +1591,7 @@
       "Trigla palmipes"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1595,6 +1629,7 @@
       "Sparus chrysops"
     ],
     "group": "Range-expander candidate",
+    "kind": "fish",
     "rank": "species",
     "flags": {
       "at_risk": false,
@@ -1628,6 +1663,7 @@
     ],
     "aliases": [],
     "group": "Generic (lowest practicable level)",
+    "kind": "fish",
     "rank": "family",
     "flags": {
       "at_risk": false,
@@ -1660,6 +1696,7 @@
     ],
     "aliases": [],
     "group": "Generic (lowest practicable level)",
+    "kind": "fish",
     "rank": "order",
     "flags": {
       "at_risk": false,
@@ -1696,6 +1733,7 @@
       "Podotremata"
     ],
     "group": "Generic (lowest practicable level)",
+    "kind": "invertebrate",
     "rank": "infraorder",
     "flags": {
       "at_risk": false,
@@ -1733,6 +1771,7 @@
       "Eukyphida"
     ],
     "group": "Generic (lowest practicable level)",
+    "kind": "invertebrate",
     "rank": "infraorder",
     "flags": {
       "at_risk": false,
@@ -1765,6 +1804,7 @@
     ],
     "aliases": [],
     "group": "Generic (lowest practicable level)",
+    "kind": "invertebrate",
     "rank": "class",
     "flags": {
       "at_risk": false,
@@ -1804,6 +1844,7 @@
       "Psilogastropoda"
     ],
     "group": "Generic (lowest practicable level)",
+    "kind": "invertebrate",
     "rank": "class",
     "flags": {
       "at_risk": false,
@@ -1837,6 +1878,7 @@
     ],
     "aliases": [],
     "group": "Generic (lowest practicable level)",
+    "kind": "fish",
     "rank": "class",
     "flags": {
       "at_risk": false,

@@ -447,8 +447,26 @@ def load_meta(sets_root: Path, set_ids):
                                           "time_s": f["time_s"] if isinstance(f.get("time_s"), (int, float)) and not isinstance(f.get("time_s"), bool) else None}
         cal = data.get("calibration") if isinstance(data, dict) else None
         known = {f["frame_id"] for f in frames}
+        try:   # calibration.json is the live list, as in tools/build_demo.py
+            side = json.loads((sets_root / sid / "calibration.json").read_text(encoding="utf-8"))
+            cal = side.get("calibration", cal) if isinstance(side, dict) else side
+        except (OSError, ValueError):
+            pass
         calibration[sid] = [c for c in dict.fromkeys(cal) if isinstance(c, str) and c in known] if isinstance(cal, list) else []
     return meta, calibration, sizes_n
+
+
+def archived_frames(sets_root: Path, set_ids):
+    """(set, frame) pairs listed as archived in each set's calibration.json. Their saved labels stay in the database but are left out of every output."""
+    out = set()
+    for sid in set_ids:
+        try:
+            data = json.loads((sets_root / sid / "calibration.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        ids = data.get("archived") if isinstance(data, dict) else None
+        out.update((sid, i) for i in ids if isinstance(i, str)) if isinstance(ids, list) else None
+    return out
 
 
 def attach_meta(labels, meta):
@@ -476,6 +494,8 @@ def main(argv=None):
         return 1
     labels, problems = clean_rows(rows)
     set_ids = sorted({l["set"] for l in labels})
+    archived = archived_frames(Path(a.label_sets_dir), set_ids)
+    labels = [l for l in labels if (l["set"], l["frame"]) not in archived]
     sizes, widths = load_sizes(Path(a.label_sets_dir), set_ids)
     meta, calibration, set_sizes = load_meta(Path(a.label_sets_dir), set_ids)
     attach_meta(labels, meta)

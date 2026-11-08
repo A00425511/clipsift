@@ -33,16 +33,17 @@
   </ol>
   <ul>
     <li>Mark what is in this frame, not what shows up somewhere else in the clip.</li>
-    <li>Movement counts as evidence. An animal that is hard to see in the still but moves in the clip is a confident mark.</li>
-    <li>Mark every animal you are confident about. One click per animal. Pick the type before you click: fish (<kbd>F</kbd>) or invertebrate such as a crab (<kbd>I</kbd>).</li>
-    <li>Use Unsure (<kbd>U</kbd>) for maybes: something that might be an animal but does not meet the rule. Faint fish in a school are the usual case. Unsure marks are never counted.</li>
-    <li>Press <b>No animals</b> (<kbd>N</kbd>) only after you have checked both the clip and the Movement view.</li>
+    <li>Movement is one characteristic, so it is not enough alone. Find a body in the frame or clip too. A bright patch in Movement view with no body is Unsure at most.</li>
+    <li>Mark every animal you are confident about. One click per animal, on the middle of its body. Pick the type before you click: fish (<kbd>F</kbd>) or invertebrate such as a crab (<kbd>I</kbd>).</li>
+    <li>Use Unsure (<kbd>U</kbd>) when you can see exactly one characteristic and can name it. If you can see none, leave it unmarked. Unsure marks are never counted.</li>
+    <li>Do not mark anything that stays in the same place through the clip. The dark, fish-shaped rock at lower left is not a fish.</li>
+    <li>Press <b>No animals</b> (<kbd>N</kbd>) only after you have checked both the clip and the Movement view. The button asks for both.</li>
     <li>Use Not fish (<kbd>X</kbd>) sparingly: at most 3 per frame, and only for things that truly look like a fish. Skip the pipe and ordinary seabed, because software handles those.</li>
     <li>You are confident when you can see at least two of these: shape, anatomy, colour or a flash, movement.</li>
-    <li>Right-click a dot to change its type (including to or from Unsure), set a species if you know it, or remove it. Species is optional.</li>
+    <li>Right-click a dot to change its type (including to or from Unsure), set a species if you know it, or remove it. Species is optional. The list shows fish for a fish mark and invertebrates for an invertebrate mark, and you can switch between common and scientific names.</li>
     <li>Stick to your own name. Do not discuss frames until both people have saved them.</li>
   </ul>
-  <p class="hint">Zoom with the mouse wheel and drag to move. Hold <kbd>Space</kbd> (or press Motion) to play the 10 second clip in the picture, 5 seconds before to 5 seconds after the frame. It is the same zoom, and your dots stay on top. Use 0.25x to slow it down. Count only what is in the frame during the <b>Count frame</b> second. Dots cannot be added while the clip plays. <b>Movement view</b> shows what changed, in black and white, and you can mark in either view. Click a dot to remove it. Another person labels every frame too, on their own. You never see their marks, and there are no computer suggestions here, so label what you see.</p>
+  <p class="hint">Zoom with the mouse wheel and drag to move. Hold <kbd>Space</kbd> (or press Motion) to play the 10 second clip in the picture, 5 seconds before to 5 seconds after the frame. It is the same zoom, and your dots stay on top. It starts from the beginning each time; turn off Restart each time (<kbd>R</kbd>) to carry on from where it stopped. Drag the white playhead to move through the clip, and use Count second only (<kbd>O</kbd>) to loop just the count second. Use 0.25x to slow it down. Count only what is in the frame during the <b>Count frame</b> second. Dots cannot be added while the clip plays. <b>Enhance</b> (<kbd>C</kbd>) has Light, Strong and Silhouette settings; they change the display only. <b>Movement view</b> shows what changed, in black and white, and you can mark in either view. Click a dot to remove it. Another person labels every frame too, on their own. You never see their marks, and there are no computer suggestions here, so label what you see.</p>
   <button type="button" id="help-close">Got it</button>
 </section>
 
@@ -54,14 +55,14 @@
       <div id="plane" class="lb-plane">
         <img id="frame" alt="Frame to label" draggable="false" decoding="async">
         <img id="diff" alt="Movement view: bright areas changed during the 10 seconds around this frame" draggable="false" decoding="async" hidden>
-        <video id="clip" muted loop playsinline preload="auto" hidden></video>
+        <video id="clip" muted loop playsinline preload="auto"></video>
       </div>
       <canvas id="dots" class="lb-dots"></canvas>
       <div id="clip-hud" class="lb-hud" hidden>
         <div id="hud-count" class="lb-countmark" hidden>Count frame</div>
         <div class="lb-hud-bottom">
           <span id="hud-time" class="lb-hud-time">-5.0 s</span>
-          <span class="lb-track" aria-hidden="true"><span id="hud-window" class="lb-track-win"></span><span id="hud-head" class="lb-track-head"></span></span>
+          <span class="lb-track" aria-hidden="true"><span id="hud-tol" class="lb-track-tol"></span><span id="hud-window" class="lb-track-win"></span><span id="hud-head" class="lb-track-head"></span></span>
           <span id="hud-speed" class="lb-hud-time"></span>
         </div>
       </div>
@@ -96,6 +97,8 @@
     <div class="lb-row lb-views">
       <button type="button" id="b-movement" aria-pressed="false" title="Black and white view of what changed. Bright areas moved. Marking works in either view. (M)">Movement view <kbd>M</kbd></button>
       <button type="button" id="b-motion" aria-pressed="false" title="Play the 10 second clip in the picture. Press to start or stop, or hold Space.">Motion <kbd>Space</kbd></button>
+      <button type="button" id="b-restart" aria-pressed="true" title="On: the clip starts from the beginning each time. Off: it carries on from where it stopped. (R)">Restart each time <kbd>R</kbd></button>
+      <button type="button" id="count-only" aria-pressed="false" title="On: only the 1 second Count frame plays, on a loop. Off: the full clip plays. (O)">Count second only <kbd>O</kbd></button>
       <span class="lbl">Speed</span>
       <span class="lb-speeds" role="group" aria-label="Clip speed">
         <button type="button" data-speed="1" aria-pressed="true">1x</button>
@@ -107,7 +110,8 @@
     <div class="lb-row lb-sliders">
       <label>Brightness <input type="range" id="s-bright" min="50" max="250" value="100"></label>
       <label>Contrast <input type="range" id="s-contrast" min="50" max="300" value="100"></label>
-      <button type="button" id="b-enhance" aria-pressed="false" title="Stronger contrast and colour">Enhance</button>
+      <span class="lbl">Enhance <kbd>C</kbd></span>
+      <span id="enhance-group" class="enhance-group" role="group" aria-label="Enhance preset"></span>
       <button type="button" id="b-reset" title="Brightness, contrast and Enhance back to normal">Reset</button>
       <span class="hint">Display only. The picture file is not changed.</span>
     </div>
@@ -156,11 +160,16 @@
   <div id="cm-sp" class="lb-menu-sp" hidden>
     <label for="cm-sp-input">Species (optional)</label>
     <input id="cm-sp-input" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cm-sp-list" autocomplete="off" maxlength="80" placeholder="Start typing, or write your own">
+    <div class="lb-menu-names" role="group" aria-label="Species names">Names
+      <button type="button" data-names="common" aria-pressed="true">Common</button>
+      <button type="button" data-names="scientific" aria-pressed="false">Scientific</button>
+    </div>
     <ul id="cm-sp-list" role="listbox" aria-label="Matching species"></ul>
     <div class="lb-row"><button type="button" id="cm-sp-ok" class="primary">Set</button><button type="button" id="cm-sp-back">Back</button></div>
   </div>
 </div>
 
+<script src="/static/display.js"></script>
 <script src="/static/label.js"></script>
 </body>
 </html>

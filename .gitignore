@@ -12,6 +12,7 @@ __pycache__/
 .venv/
 
 # Video and generated run output stay out of git (size, and rights on footage)
+videos/
 runs/*
 !runs/.gitkeep
 deploy/public/
@@ -33,3 +34,10 @@ label_sets/
 # Blind labelling: local save file and pulled team labels hold names and marks
 app/local_labels.jsonl
 labels/team/
+
+# Packaged app builds
+build/
+dist/
+
+# Backup demo recordings are shipped on purpose
+!docs/demo/*.mp4

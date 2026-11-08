@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipSift species bank</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/species_bank.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>ClipSift species bank</h1>
+  <label class="run-pick">Run <select id="run"></select></label>
+  <label class="who">Reviewer <input id="reviewer" type="text" maxlength="100" autocomplete="off" placeholder="Your name"></label>
+  <span class="spacer"></span>
+  <a id="csv" class="btn" href="#">Download CSV</a>
+  <a id="back" class="btn quiet" href="/">Back to the video</a>
+</header>
+
+<section id="gate" class="bank-gate" hidden>
+  <h2>Finish counting first</h2>
+  <p>These images come from a detector. Seeing them can sway a blind count, so finish your counts and your watch window before opening the bank.</p>
+  <button type="button" id="gate-ok" class="primary">I've finished counting</button>
+</section>
+
+<p id="empty" class="empty" hidden></p>
+
+<main id="bank" class="bank" hidden>
+  <div class="bank-left">
+    <p class="hint" id="bank-intro">These are candidates to look at, not identifications. Flags only set the order. Nothing here changes a count, MeanCount or your watch window species list.</p>
+    <div id="filters" class="bank-filters" role="group" aria-label="Filter candidates"></div>
+    <div id="grid" class="bank-grid"></div>
+  </div>
+  <div id="splitter" class="bank-splitter" role="separator" aria-orientation="vertical" aria-label="Resize the review pane" tabindex="0" title="Drag to resize. Double-click to reset."></div>
+  <aside id="detail" class="bank-detail" aria-label="Selected candidate">
+    <p class="hint" id="pick-hint">Pick a candidate to review it.</p>
+    <div id="detail-body" hidden>
+      <h2 id="d-title"></h2>
+      <ul id="d-reasons" class="bank-reasons"></ul>
+      <img id="d-crop" alt="Close view of the candidate">
+      <div id="d-others" class="bank-others" aria-label="Other views of this animal"></div>
+      <h3>Where it was in the frame</h3>
+      <button type="button" id="d-player" class="bank-player" aria-describedby="d-hold">
+        <img id="d-frame" alt="Full frame with the candidate boxed">
+        <video id="d-clip" muted loop playsinline preload="auto" hidden></video>
+        <span id="d-box" class="bank-box" hidden></span>
+      </button>
+      <button type="button" id="d-play">Play clip</button>
+      <p id="d-hold" class="hint"></p>
+      <form id="d-form">
+        <fieldset class="bank-outcomes">
+          <legend>What is it?</legend>
+          <label><input type="radio" name="outcome" value="species"> Species or group</label>
+          <label><input type="radio" name="outcome" value="needs_expert"> Needs an expert</label>
+          <label><input type="radio" name="outcome" value="cant_tell"> Can't tell</label>
+          <label><input type="radio" name="outcome" value="not_animal"> Not an animal</label>
+        </fieldset>
+        <label class="fb-row">Species, at the lowest level you can
+          <input id="d-species" list="species-list" autocomplete="off"></label>
+        <datalist id="species-list"></datalist>
+        <p id="d-alert" class="bank-alert" hidden></p>
+        <label class="fb-row">Life stage
+          <select id="d-stage"><option value="unknown">Unknown</option><option value="adult">Adult</option><option value="juvenile">Juvenile</option></select></label>
+        <label class="fb-row">Notes <textarea id="d-notes" rows="2" maxlength="2000"></textarea></label>
+        <div class="bank-savebar"><button type="submit" class="primary">Save and next <kbd>Enter</kbd></button> <span id="d-status" class="hint" role="status"></span></div>
+      </form>
+    </div>
+  </aside>
+</main>
+<script src="/static/species_bank.js"></script>
+</body>
+</html>

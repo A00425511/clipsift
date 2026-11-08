@@ -19,7 +19,7 @@ stages:
   proposer: median_background
   detector: onnx          # Community Fish Detector (fish only). Needs requirements-model.txt and weights in models/.
                          # Use motion_blob (no model, development stand-in) or onnx instead if you prefer.
-  tracker: bytetrack
+  tracker: iou
   classifier: placeholder
   counter: basic
   counting_model: null   # optional point/density counter for schools (stub only)

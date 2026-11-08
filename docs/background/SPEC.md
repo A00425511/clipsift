@@ -1,5 +1,7 @@
 # ClipSift skeleton: build spec (working title)
 
+**Archived 8 Nov 2026 (1.4.2).** Kept as build history. Read `../PROTOCOL_WORKFLOW.md` and the README for the current app.
+
 **Read `PROTOCOL_WORKFLOW.md` first. It overrides this file wherever they differ.** This file is the older build history. Its motion segment, active and set-aside design is retired from the workflow.
 
 Local tool that helps Coastal Action review about 1 hour GoPro recordings of turbid Nova Scotia water: detect, track, count fish, and let a person confirm. Runs offline on a desktop. Background: ../2026 Problem Prep/p2-concepts.md.

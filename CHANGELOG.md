@@ -15,6 +15,12 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.4.2 (2026-11-08)
+Documentation only. No app behaviour changes.
+- README rewritten for the 1.4.x app: what it does step by step, the Mac package, running from source, the Layout menu, the current run folder, the command line, and how the fish detector is used. The new candidate models (Adrien's YOLOv8n, Ali's DIGI4ECO RF-DETR) and the licence questions are listed. The retired motion scan is now described as command-line only.
+- `docs/BACKLOG.md` refreshed: done items closed, and the real next steps added (Windows package, licences, benchmarking the two new models, questions for Coastal Action, a timed study).
+- `docs/SPEC.md` and `docs/SHIP_TRIM.md` moved to `docs/background/` as history, with their links updated.
+
 ### 1.4.1 (2026-11-08)
 Brings in the team's work from main. No app behaviour changes.
 - Adrien: a ByteTrack tracker option (not used: his own test found it worse than the default), `config/yolo.yaml` for his YOLOv8n ONNX model, `combine_yolo_track.py`, and a Windows Coastal kit (`1-setup.bat`, `2-Process-Video.bat`, `3-Open-Clipsift.bat`, `README-COASTAL.txt`). `a1.pdf` is removed from the branch (it is still in history, so the repo stays private).

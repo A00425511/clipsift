@@ -1,27 +1,60 @@
-# ClipSift (working title)
+# ClipSift
 
-A local tool that helps Coastal Action staff review long underwater video from turbid Nova Scotia water. It finds the moments worth a look, cuts stills and short loops from the original files, and lets a person confirm and count. It runs offline on a desktop with no GPU. This is a prototype skeleton for a student team to extend.
+ClipSift is a local app for Coastal Action's fish video analysis protocol. It replaces the VLC and Excel workflow with one place to rate visibility, record the species present, count at each sampled point, run the blind quality check and write the report. **A person makes every count.** The fish detector is optional, and it is only used after counting. Everything runs on one computer with no internet connection. The video, counts and results stay on that computer.
 
-Status: built and tested on a synthetic clip. The Community Fish Detector backend has been tried on one labelled Coastal frame and one real recording window (see Layer 1 below). Nothing here is an accuracy or speed claim for Coastal Action's water.
+**Status (1.4.1, 8 Nov 2026):** a working prototype.
+- **Tested so far:**
+  - simulated staff sessions on Coastal Action's T1-STAT2 411 footage (Usability Trials 1 to 4)
+  - the team labelling 75 frames on the team site
+  - 246 automated tests
+- **Not tested yet:**
+  - use by Coastal Action staff
+  - a timed comparison with the old method
+  - the Windows build
+- **No accuracy claims:** nothing here is an accuracy or time-saving claim for Coastal Action's water.
+
+The live plan is `docs/PROTOCOL_WORKFLOW.md`. Every version is listed in `CHANGELOG.md`.
 
 ## What it does
 
-ClipSift follows Coastal Action's video analysis protocol step by step: see `docs/PROTOCOL_WORKFLOW.md`, which replaces anything below about motion segments. The motion scan is off by default.
+ClipSift walks through the protocol one step at a time:
 
-The main unit of review is the **subsample point**, following Coastal Action's draft video analysis protocol:
+1. **Visibility:** 2 to 3 people each rate visibility for the video on their own. Changes at later points are recorded with a direction and category, and they carry forward to the points after them.
+2. **Watch window:** each person watches the analysis window in real time and records which species are present and whether juveniles were seen. Nobody counts at this step.
+3. **Count points:** each point opens ready to count. The app has already worked out the timestamp and cut a still and a ±5 s clip from the original video.
+   - People click each animal, and the totals come from the clicks.
+   - Unsure marks are never counted.
+   - The two-of-four features rule is a checklist.
+   - Picture tools: Enhance presets, the Adjust picture sliders, zoom, frame steps, 0.25x playback and Movement view.
+   - The **Layout** menu fits the picture to each monitor, and each computer remembers its own choice.
+4. **Quality check:** the app picks 6 to 12 random points. A second person counts them blind, because the first counts are hidden. The app then shows each point's percent difference and the agreement score against the protocol's 6% and 95% limits. These limits are advisory: they never block anyone, and the team decides whether to recount.
+5. **Report:** MeanCount, SD and SE, the species list, visibility and QC results. It can be printed, saved as a PDF or downloaded as CSVs.
+6. **Check model flags (optional, after everything else):** a person reviews a mix of 30 to 40 detector flags without being told where each came from. The answers are saved as possible training data. **This step never changes a count.**
 
-- The analysis window is the video minus a trimmed start and end (default 60 s each, up to 900 s long).
-- A point is placed every `interval_s` seconds (default 60) from the window start.
-- Each point gets an exact-time still, a difference image, and a context clip (default 5 s either side), all cut from the original files.
-- Counts are a **relative index**, not abundance. Software counts are suggestions. A person makes the final count.
+Other rules the app follows:
+- Counts are a **relative index**, not abundance.
+- The model never runs or shows while someone is counting. After a count is saved, the counter can choose to see the model's guess.
+- **Change window or spacing** cuts new count points from the same video. Before anyone has counted, it rebuilds the points in place. After counting, it makes a new version, so earlier counts are kept.
 
-A second, supporting pass scans the whole window for motion and sorts it into **active** segments and **set-aside** segments. Set-aside time is recorded, never deleted. A seeded random share (default 5 percent of set-aside time) is marked as an **audit sample** and goes into the review queue.
+## Run it
 
-Every number in the protocol block of `config/default.yaml` is a setting, because the protocol is a draft with unresolved comments.
+### Mac: portable package (no install)
 
-## Setup
+```
+python3 tools/package_mac.py                # dist/ClipSift-<version>-mac.zip, about 100 MB
+python3 tools/package_mac.py --with-model   # adds the fish detector (CFD nano), about 555 MB
+```
 
-Needs Python 3.10 or newer and (for browser-playable loops) ffmpeg on the PATH. If ffmpeg is missing, loops fall back to OpenCV with a warning, and many browsers cannot play them.
+The zip holds its own Python, ffmpeg and the app. It needs an Apple silicon Mac.
+1. Unzip it and double-click **Start ClipSift.command**.
+2. Work is saved in `~/Documents/ClipSift`, so a new version can replace the folder without losing anything.
+3. Technical messages go to `~/Documents/ClipSift/clipsift.log`.
+
+Sort out the detector weights' licence before the `--with-model` zip leaves the team. See **Fish detector** below.
+
+### From the source code (Mac, Windows, Linux)
+
+This needs Python 3.10 or newer and ffmpeg. If ffmpeg isn't on the PATH, the app also looks for the copy that comes with the `imageio-ffmpeg` package.
 
 macOS:
 
@@ -30,13 +63,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 brew install ffmpeg
-```
-
-The fish model is optional and off by default. It is only used after counting, in Step 6 and the after-counting guess. To use it, also install the model extras and fetch the weights (see **Layer 1 model** below):
-
-```
-pip install -r requirements-model.txt
-python tools/fetch_cfd_weights.py
+python -m app.server --runs runs --port 8765 --open
 ```
 
 Windows (PowerShell):
@@ -46,48 +73,29 @@ py -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 winget install Gyan.FFmpeg
+py -m app.server --runs runs --port 8765 --open
+```
+
+On Windows, `Start ClipSift.bat` does the last step with a double-click. Adrien's `1-setup.bat`, `2-Process-Video.bat`, `3-Open-Clipsift.bat` and `README-COASTAL.txt` are a Windows handoff kit written for the earlier process-then-review flow. They are being updated to match 1.4.x, so check with the team before giving them to anyone.
+
+To install the optional fish detector, used in Step 6 and the after-count guess:
+
+```
 pip install -r requirements-model.txt
-py tools\fetch_cfd_weights.py
+python tools/fetch_cfd_weights.py
 ```
 
-`requirements.txt` stays light and everything except the CFD backend works without torch: Layer 0, `motion_blob`, `onnx`, the review app and all tests. `rfdetr` (and torch) are imported only when the `cfd` detector is built, with a clear error if they are missing.
+`requirements.txt` stays light. Everything except the detector works without torch, including all the tests.
 
-## Commands
+## Using the app
 
-Run `python -m clipsift ...` from the project folder (use `py -m clipsift` on Windows if `python` is not found).
+When the app opens, the home screen lists the videos in progress. Drop in a video, choose one, or paste its path. Pasting the path leaves a large video where it is instead of copying it. Then check the Video ID, transect, STAT and survey date, and press Start. The app opens the video when its count points are ready, and asks who is working, so every count is saved under a name.
 
-```
-python -m clipsift run "path/to/GX010221_T1@1217pm.MP4" "path/to/GX020221_T1@1226pm.MP4" --out runs
-python -m clipsift run path/to/folder_of_videos --layer 0
-python -m clipsift export runs/GX0221_T1
-python -m clipsift evaluate runs/GX0221_T1/results.json --labels labels.csv --out eval_rows.csv
-python -m pytest
-```
-
-- `run` groups GoPro chapters by video number (`GX01nnnn` and `GX02nnnn` are chapters of `nnnn`) and treats chapters of one video as one timeline in name order. Options: `--config my.yaml`, `--preset cfd_medium_clahe`, `--layer 0|1|2`, `--detector name`, `--device auto|cuda|mps|cpu`, `--id`, `--video-id`, `--window-start`, `--window-end`. The default Layer 1 detector is `cfd`; use `--detector motion_blob` for the no-model stand-in.
-- `export` writes, into the run's `export` folder: one row per subsample, a per-video summary (MeanCount and species list), a segments table, and a column dictionary that states counts are relative indices.
-- `evaluate` compares results with a human labels CSV. Subsample style: columns `Video ID`, `Timestamp` (seconds or mm:ss), `Total Fish Count` (and `Total Fish Count B` for a second counter). Segment style: `recording_id`, `segment_id` or `start_s`/`end_s`, `maxn`, `count`. It reports signed bias (model minus human), MAE, per-row rows, human versus human agreement, and a note when the sample is small.
-- The Video ID guess (`GX0221_T1`) is only a guess at the spreadsheet format. Override it with `--video-id` or `recording.video_id` in config.
-
-Make a synthetic test clip (labelled synthetic, with ground truth in a JSON file):
-
-```
-python tools/make_synthetic_clip.py test_clip.mp4 --duration 60 --width 640
-```
-
-For short clips, use small protocol values in a config file, for example `trim_start_s: 2`, `trim_end_s: 2`, `interval_s: 10`, `context_s: 2`, `window_length_s: 50`.
-
-## Review app
-
-```
-python -m app.server --runs runs --port 8765   # then press New video in the app to add and process a video
-```
-
-Then open the address it prints. The app opens on a home screen: drop or choose a video, set it up, and it opens when the count points are ready. Everyone picks their name when a video opens. The steps are 1 Visibility, 2 Watch window, 3 Count points, 4 Quality check, 5 Report and 6 Check model flags (optional). No model runs or shows while counting. The **More tools** button shows the grid settings, sliders and the Label fish page. See `docs/PROTOCOL_WORKFLOW.md`.
-
-- **?** in the header opens Help: what the tool does, a first count in 5 steps, what the timeline markers mean, keyboard shortcuts, the counting rules in brief. It can also replay the short first-visit tour, which is shown once per browser.
-- **Feedback** in the header opens a small form (name, area, type, message). The current run, point and view are attached. In the local app, notes are appended to `runs/feedback.jsonl`. Treat the text as untrusted.
-- All calls in `app/static/app.js` go through one `Data` object with two implementations: the Flask API, and a static demo (below).
+- **?** opens Help: the steps, the counting rules, the timeline markers and the keyboard shortcuts. It can also replay the first-visit tour.
+- **Video** in the top bar switches between videos. **Open another video** goes back to the home screen.
+- **Layout** offers three choices: **Fit to screen** (the default), **Largest picture** (the V key toggles it) and **Picture above panels**.
+- **Feedback** and **Label fish** show on the team site only. The local app keeps a `/api/feedback` route that writes to `runs/feedback.jsonl`.
+- All calls in `app/static/app.js` go through one `Data` object. It has two versions: the Flask API, and the static team-site demo described below.
 
 ## Team demo (Cloudflare Worker, no Python server)
 
@@ -171,54 +179,76 @@ Runs `npx wrangler d1 execute clipsift-feedback --remote --json --command ...` f
 ## Run folder
 
 ```
-runs/<recording_id>/
-  results.json                 schema_version 0.2 (see clipsift/schema.py)
-  subsamples/ss_01/{still.jpg, diff.jpg, context.mp4}
-  segments/seg_0001/{still.jpg, diff.jpg, loop.mp4}    active and audit segments only
-  reviews.jsonl, grid_tags.jsonl, subsample_reviews.jsonl, recording_notes.jsonl, point_labels.jsonl   written by the app
+runs/
+  profiles.jsonl                 names of the people using this computer
+  .replaced/                     run folders swapped out by Change window or spacing (kept, not deleted)
+  <run_id>/
+    results.json                 schema_version 0.2 (see clipsift/schema.py): recording, protocol settings, points
+    window.mp4                   the whole analysis window, for Step 1 and Step 2
+    subsamples/ss_01/{still.jpg, diff.jpg, context.mp4}
+    visibility.jsonl, recording_notes.jsonl, subsample_reviews.jsonl, point_labels.jsonl   written by the app
+    model_guess/<point>.json     the after-count guess, saved when someone asks for it
+    review_set/                  Step 6 items (bank.json and images)
 ```
 
-Original files are never modified. Stills, diffs and loops come from the originals. The fast motion scan runs on downscaled frames (`proxy_width`); faint movement can vanish at low resolution, so keep that in mind. A loop never crosses a chapter boundary.
+The app only ever reads the original video files. Stills and clips are cut from them. Older runs may also have `segments/`, `reviews.jsonl` and `grid_tags.jsonl` from the retired motion scan. The server still reads these, but the app doesn't show them.
 
-## Layers
+## Command line
 
-| Layer | What runs | State |
-| --- | --- | --- |
-| 0, manual assist | subsample points, motion segments, stills, loops, diffs, no detections | works on the synthetic clip |
-| 1, local model | layer 0 plus the Community Fish Detector (fish only), counter | works; weights are fetched separately, not in the repo |
-| 2a, bigger local models | stubs | `NotImplementedError` with instructions |
-| 2b, cloud comparison | stub, off unless `cloud.enable_2b: true` | `NotImplementedError`; any network use belongs only here |
+Run `python -m clipsift ...` from the project folder. On Windows, use `py -m clipsift` if `python` isn't found. The app runs these for you. The command line is for batches and checks.
 
-Backends that exist:
+```
+python -m clipsift run "path/to/GX010221_T1@1217pm.MP4" "path/to/GX020221_T1@1226pm.MP4" --out runs
+python -m clipsift export runs/GX0221_T1
+python -m clipsift verify runs/GX0221_T1 --count 36
+python -m clipsift evaluate runs/GX0221_T1/results.json --labels labels.csv --out eval_rows.csv
+python -m pytest
+```
 
-- Proposer: `median_background`.
-- Detector: `cfd` (default; Community Fish Detector, tiled), `onnx` (YOLO-style, CPU, needs `detector.onnx.model_path`, nothing is downloaded), `motion_blob`.
-- Tracker: `iou` (greedy IoU; ByteTrack or similar can replace it).
-- Classifier: `placeholder` (always `fish_unknown`).
-- Counter: `basic` (MaxN and its time, MeanCount over fixed intervals, unique tracks).
-- Counting model (optional, for schools): only a stub, `point_density_stub`.
+- **`run`** groups GoPro chapters by video number (`GX01nnnn` and `GX02nnnn` are chapters of `nnnn`) and treats the chapters of one video as one timeline, in name order.
+  - Options: `--config my.yaml`, `--layer 0|1|2`, `--detector name`, `--device auto|cuda|mps|cpu`, `--id`, `--video-id`, `--window-start`, `--window-end`, `--preset`, plus `--date`, `--transect`, `--stat`, `--year` and `--season`.
+  - The default is `layer: 0`, so no model runs.
+  - The Video ID guess (`GX0221_T1`) is only a guess at the spreadsheet format. Override it with `--video-id`.
+- **`export`** writes the same CSVs as the app's report, through `clipsift/summary.py`: one row per point, a per-video summary and a column guide.
+- **`verify`** builds the Step 6 review set.
+- **`evaluate`** compares results with a human labels CSV (columns `Video ID`, `Timestamp`, `Total Fish Count`). It reports bias, MAE and agreement between people.
 
-**`motion_blob` is a development stand-in, not a model.** It exists so the pipeline runs with no weights. It reacts to any movement (shake, kelp, bubbles), and every detection it makes has `source: motion_blob`. Never report its counts as model accuracy. Subsample suggestions from it are moving-blob counts.
+To make a synthetic test clip, labelled synthetic and with its ground truth in a JSON file:
 
-The generic `tiling` block splits frames for the `onnx` and `motion_blob` backends. It is off by default and untested on real footage. The `cfd` backend does its own tiling.
+```
+python tools/make_synthetic_clip.py test_clip.mp4 --duration 60 --width 640
+```
 
-## Layer 1 model: Community Fish Detector (CFD)
+For short clips, use small protocol values in a config file, for example `trim_start_s: 2`, `trim_end_s: 2`, `interval_s: 10`, `context_s: 2`, `window_length_s: 50`.
 
-`detector: cfd` runs RF-DETR weights from filippovarini/community-fish-detector (Nano, Small, Medium) in `models/` (gitignored). **It finds fish only. It was not trained on Nova Scotia footage.** It does not find crabs or other invertebrates, so `invertebrate_count` stays null. Boxes are suggestions for a person to check, and counts are relative indices.
+## Fish detector (optional)
 
-How it runs (`clipsift/stages/cfd.py`, settings in `detector.cfd`):
+The shipped detector is the **Community Fish Detector** (CFD): RF-DETR weights from filippovarini/community-fish-detector, kept in `models/` and out of git. **It finds fish only, and it wasn't trained on Nova Scotia footage.** It doesn't find crabs or other invertebrates.
 
-- Frames are decoded at original resolution, cut into overlapping tiles (default 512 px, overlap 0.25), run through the model (default threshold 0.05), mapped back to original pixels and merged across tiles by intersection over the smaller box. Whole-frame use finds almost nothing, so tiling is not optional.
-- The model is loaded once per run. `device: auto` picks cuda, then mps, then cpu. `batch` sets tiles per call. `enhancement: clahe` applies CLAHE before tiling. `roi_mask` (a grayscale image, non-zero analysed) restricts the area and is off by default.
-- Each detection has `source: cfd:<variant>`, and the run's `model_version` is the weights file name.
-- **Subsample points first:** the detector runs on the exact-time still at full resolution. That feeds `auto.fish_count`, `auto.detections` (box and score) and `auto.status` (`fish_unknown` with boxes; `movement_unidentified` for motion without boxes, never dropped). `mean_count_auto` is the mean of those point counts. `mean_count_reviewed` stays null until a person counts.
-- **Then a sparse pass over active segments** at `detect_fps_segments` (default 0.2, one frame per 5 s), not on every sampled frame. Frames that far apart are not tracked, so segment `unique_tracks` is null. MeanCount is the metric that matters here, and unique counts are not attempted.
-- **Review order:** mid-confidence detections (`review.mid_conf_low` to `mid_conf_high`) and disagreement between motion and detections (motion but no boxes, or boxes but no motion) rank first. QC samples stay on top.
-- Per-stage runtimes are in `run.stage_runtimes_s` (`detector_load`, `subsample_detect`, `segment_detect`, ...).
+**How the app uses it (`model_check` in `config/default.yaml`):**
+- Nano at 640, one pass over the whole frame, threshold 0.23.
+- On 11 test frames from one video, that gave about 1 false box per empty frame, at a recall of about 0.20. The threshold is provisional, not tuned. See `Model Comparison/` in the team folder.
+- It is used only in Step 6 and in the guess a counter can ask for after saving a count.
 
-### Static-object filter
+**On the command line**, `--layer 1` runs the detector on every point while the video processes. It cuts each frame into 512 px tiles and uses a threshold of 0.05. That setting finds more fish but puts 10 to 24 boxes on an empty frame, so the app doesn't use it. Settings are in `detector.cfd`. `device: auto` picks cuda, then mps, then cpu.
 
-The camera is fixed, so the pipe, pole and rocks sit in the same place in every frame and the detector keeps boxing them. `clipsift/static_filter.py` runs after detection (cfd backend only) and marks such boxes `static: true` with a `static_reason`. **Nothing is deleted:** results.json keeps every box, the review app should hide `static` ones by default, and static boxes are left out of `fish_count`, `mean_count_auto`, `auto.status`, review order, segment counts and the CSV `n_detections`. Old results without the field read as `static: false`.
+**Other candidates on main.** Neither has been benchmarked on the Coastal frames, and neither model file is in git:
+- **Adrien's YOLOv8n ONNX model:** `config/yolo.yaml`, which runs through the `onnx` backend. Check `keep_class_ids` first: `[1, 4]` are small fish and jellyfish in the Brackish class list.
+- **Ali's DIGI4ECO fine-tuned RF-DETR Small:** `experiments/digi4eco-finetuned/`, kept separate from the app.
+
+The next step for either is the same check the current model passed: about 1 false box per empty frame on the frozen benchmark.
+
+**Weights and licences:** `python tools/fetch_cfd_weights.py` downloads the CFD release files and checks their SHA-256 (`--check` only verifies).
+- The model code comes through `rfdetr`, under Apache 2.0.
+- The weights repository states no licence for the weights, and the training data is mixed, including some non-commercial sources.
+- Ultralytics YOLOv8 is AGPL-3.0, and the Brackish dataset's licence is unconfirmed.
+- DIGI4ECO is CC BY 4.0, so it needs credit.
+
+Settle these with Coastal Action and the owners before sharing any weights beyond the team.
+
+### Static-object filter (Step 6 and the command line)
+
+The camera is fixed, so the pipe, pole and rocks sit in the same place in every frame and the detector keeps boxing them. `clipsift/static_filter.py` runs after detection (cfd backend only) and marks such boxes `static: true` with a `static_reason`. **Nothing is deleted:** results.json keeps every box, Step 6 leaves them out, and static boxes are left out of `fish_count`, `mean_count_auto`, `auto.status`, review order, segment counts and the CSV `n_detections`. Old results without the field read as `static: false`.
 
 Settings are in `static_filter` in `config/default.yaml`:
 
@@ -227,20 +257,27 @@ Settings are in `static_filter` in `config/default.yaml`:
 - **Hand mask:** `masks: [{match: "T1-STAT2*", file: config/masks/t1s2.json}]` or inline `polygons`, in original pixels. `python tools/make_static_mask.py --run runs/<id>/results.json --json mask.json --png mask.png --overlay frame.jpg` suggests polygons from persistent boxes. **A person must check the PNG before using it.**
 - Bias is toward keeping: boxes scoring 0.5 or higher are never rejected by persistence or movement, and a persistent place is kept if the box clearly moves. `enabled: false` switches it all off. `python tools/eval_detector.py --run ... --include-static` scores the rejected boxes too.
 
-**Limits.** It can remove a truly still animal (a resting crab, a hovering fish, a school that stays put), and the model only finds fish anyway. On 100 frames of one recording it marked about half the boxes static (mean boxes per frame at threshold 0.1: 28.8 to 14.2); on seven frames marked empty by one person it cut 169 boxes to 79, and did little on two frames where the scene was moving (camera sway or surge). Recall on the labelled dot frame did not change at 0.1 (24 of 103 hits before and after). One recording, tuned on those same frames. Details and controls: `2026 Problem Prep/detector-test/STATIC-FILTER.md`; reproduce with `tools/eval_static_filter.py`.
+**Limits.** It can remove a truly still animal (a resting crab, a hovering fish, a school that stays put), and the model only finds fish anyway. On 100 frames of one recording it marked about half the boxes static (mean boxes per frame at threshold 0.1: 28.8 to 14.2); on seven frames marked empty by one person it cut 169 boxes to 79, and did little on two frames where the scene was moving (camera sway or surge). Recall on the labelled dot frame did not change at 0.1 (24 of 103 hits before and after). One recording, tuned on those same frames. Details and controls: `docs/background/detector-test/STATIC-FILTER.md`; reproduce with `tools/eval_static_filter.py`.
 
-Setups tried on **one** labelled frame (T1-STAT2 411 at 22:00.3, a dense school, 103 dots from Coastal Action), no fine-tuning. Not accuracy figures: thresholds were picked on that same frame.
+Results from 5 Nov on **one** labelled frame (T1-STAT2 411 at 22:00.3, a dense school, 103 dots from Coastal Action), with tiled detection and no fine-tuning. These aren't accuracy figures, because the thresholds were picked on that same frame:
 
 | Setup | Boxes | Recall | Precision | Chance recall / precision |
 | --- | --- | --- | --- | --- |
-| Nano, no enhancement, 512 tiles, threshold 0.05 (default) | 73 | 0.45 | 0.63 | 0.19 / 0.26 |
+| Nano, 512 tiles, threshold 0.05 | 73 | 0.45 | 0.63 | 0.19 / 0.26 |
 | Medium, CLAHE, 512 tiles, threshold 0.05 (`--preset cfd_medium_clahe`) | 133 | 0.61 | 0.47 | 0.31 / 0.24 |
 
-Chance is the same box sizes placed at random in the labelled area. `python tools/eval_detector.py --reproduce` repeats this through the integrated backend. To score other labelled frames: `python tools/eval_detector.py --frame IMG --labels dots.json` (add `--variant`, `--enhancement`, `--thresholds 0.03,0.05,0.1`), or `--run runs/<id>/results.json --labels points.csv`. It always prints chance beside the real result.
+Chance means the same box sizes placed at random in the labelled area. `python tools/eval_detector.py --reproduce` repeats the test. `--frame IMG --labels dots.json` or `--run runs/<id>/results.json --labels points.csv` scores other frames. It always prints chance beside the result.
 
-Weights: `python tools/fetch_cfd_weights.py` downloads the three release files and checks their sha256 (`--check` only verifies). **Licence caveats:** the model code comes through `rfdetr` (Apache 2.0). The weights repository states no licence for the weights, and the training data is mixed, including some non-commercial sources. Settle this with Coastal Action and the repository owner before sharing or relying on the weights beyond a student prototype.
+### Other backends
 
-## Adding a backend
+Older pipeline backends are still in `clipsift/stages/`. They are only used from the command line:
+- the `median_background` motion proposer, behind `motion_scan: true`
+- the `motion_blob` stand-in, which is not a model and reacts to any movement
+- the `iou` and `bytetrack` trackers
+- placeholder classifier and counter stubs
+- Layer 2 stubs
+
+### Adding a backend
 
 Write one class in `clipsift/stages/` (see `base.py` for the method each stage needs), decorate it, and select it in config:
 
@@ -255,16 +292,6 @@ class MyDetector(Detector):
 
 Then set `stages.detector: my_detector`. Import your module in `clipsift/stages/__init__.py`.
 
-## Stubs and what does not work yet
-
-- Layer 2a and 2b backends, and the point or density counting model, are stubs.
-- No species classifier. Invertebrate counts are always null from software, because the model only finds fish. Crabs and other benthic animals need a separate approach.
-- The CFD model is untrained on Nova Scotia footage. Confidence is low on turbid water, so the threshold is low (0.05) and a share of boxes will be wrong. Check a handful of points by eye before trusting any suggested count.
-- Speed depends on the machine. Timings measured on a Mac (see the run notes) are not Coastal Action's PC. Medium with CLAHE is slower than Nano.
-- Quick pass and full scan both use the same simple motion method; crash-resume per chunk is a TODO in `pipeline.py`.
-- QC: the protocol PDF does not contain its percent-difference formula. `clipsift/qc.py` uses a placeholder (`percent_difference`) that must be replaced once confirmed. This tool does not claim to meet the protocol's QC thresholds.
-- The shake flag and low-visibility flag use simple, uncalibrated measures.
-
 ## Extracting weak labels from marked screenshots
 
 ```
@@ -275,7 +302,9 @@ Reads (never modifies) a folder of marked screenshots, masks the player bar, and
 
 ## Known limits
 
-- Tested on one synthetic clip, one labelled real frame and one real recording window. Behaviour elsewhere is unknown.
-- A fish that stays still for a whole background window is absorbed into the background of the motion scan.
-- Background windows are not aligned across window boundaries.
-- Counts are relative indices, not abundance.
+- **Testing so far:** simulated staff, the team's own labelling and one Coastal video (T1-STAT2 411). How it behaves on other sites and in other water is unknown.
+- **Dense schools:** our own taggers disagreed widely on dense school frames, with 5% of pairs under 6%. The app shows that disagreement but doesn't fix it. Ask Coastal Action how the 6% rule applies to dense stills.
+- **The detector:** it finds fish only, finds about 1 in 5 fish at the cautious setting, and wasn't trained on Nova Scotia water. Invertebrates need a person.
+- **QC formula:** the protocol PDF doesn't give a formula for the percent difference. `clipsift/qc.py` uses |a − b| divided by their mean until Coastal Action confirms it.
+- **Windows:** the app runs on Windows from the source code, but no Windows package has been built or tested.
+- **Counts** are relative indices, not abundance.

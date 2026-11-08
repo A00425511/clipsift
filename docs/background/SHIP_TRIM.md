@@ -1,5 +1,7 @@
 # What to trim before shipping ClipSift to Coastal (audit, 8 Nov 2026)
 
+**Archived 8 Nov 2026 (1.4.2).** All of it is done (1.4.0). Open items moved to `../BACKLOG.md`.
+
 **Status, 8 Nov 2026 (1.4.0):**
 - **Done:** items 1 to 3 and 5 to 11. Feedback and Label fish are kept on the team site only. The segment screen is removed from the app, and the server still reads old runs.
 - **Item 4 is kept:** the team plans to ship with the detector (`tools/package_mac.py --with-model`). Step 6 still says the detector isn't installed in a build without it.

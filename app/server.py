@@ -2,7 +2,7 @@
 
 Run from the project root:  python -m app.server --runs runs --port 8765
 
-Reads the run folder contract in docs/SPEC.md directly (no pipeline import).
+Reads the run folder contract (docs/background/SPEC.md, and README "Run folder") directly (no pipeline import).
 All writes are append-only JSON lines. Original footage is never touched.
 """
 from __future__ import annotations

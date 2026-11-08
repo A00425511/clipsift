@@ -15,6 +15,15 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.4.1 (2026-11-08)
+Brings in the team's work from main. No app behaviour changes.
+- Adrien: a ByteTrack tracker option (not used: his own test found it worse than the default), `config/yolo.yaml` for his YOLOv8n ONNX model, `combine_yolo_track.py`, and a Windows Coastal kit (`1-setup.bat`, `2-Process-Video.bat`, `3-Open-Clipsift.bat`, `README-COASTAL.txt`). `a1.pdf` is removed from the branch (it is still in history, so the repo stays private).
+- Ali: the experimental DIGI4ECO fine-tuned RF-DETR Small detector in `experiments/digi4eco-finetuned/`, kept separate from the app.
+- To check before the Coastal handoff:
+  - The Coastal kit and README describe the older process-then-review flow with suggested counts. 1.4.x counts first and shows the model's guess only after a count is saved.
+  - `config/yolo.yaml` keeps class ids 1 and 4, which are small fish and jellyfish in the Brackish class list, not fish (0).
+  - Neither new model's weights are in git. Neither has been benchmarked on the frozen Coastal frames.
+
 ### 1.4.0 (2026-11-08)
 Ready to package for Coastal. See docs/SHIP_TRIM.md.
 - Mac package: `tools/package_mac.py` builds a portable zip with its own Python and ffmpeg, and `--with-model` adds the fish detector (CFD nano). Work is saved in Documents/ClipSift. The CFD weights' licence must be settled before the detector zip leaves the team.

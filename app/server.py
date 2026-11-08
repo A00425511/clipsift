@@ -27,6 +27,7 @@ from flask import Flask, Response, abort, jsonify, request, send_file, send_from
 
 from clipsift import protocol as proto
 from clipsift import qc as qcm
+from clipsift import summary
 from clipsift.cli import VIDEO_EXT, _expand
 from clipsift.qc import percent_difference
 
@@ -55,7 +56,8 @@ SPECIES_RE = re.compile(r"^(?!Unknown|Unidentified)[A-Z][a-z]+ [a-z]+$")   # two
 CHARACTERISTICS = ("shape", "anatomical_features", "colouration_or_flashes", "swimming_behaviour")
 VISIBILITY = ("<0.5 m", "0.5-1.0 m", "1.0-1.5 m", ">1.5 m")
 # Defaults only. The run's own results.json "protocol" block wins. Draft protocol, so all configurable.
-QC_DEFAULTS = {"qc_max_percent_diff": 6, "qc_agreement": 95, "qc_small_gap": 1, "qc_share": 0.10, "qc_min": 6, "qc_max": 12, "qc_seed": 4321}
+QC_DEFAULTS = summary.QC_DEFAULTS
+MODEL_GUESS = ("after", "seen")   # shown once the count was saved, or seen before a later edit of it
 # Blind label mode. Same rules as deploy/src/worker.js: keep the two in step.
 LABEL_SET_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_\-]{0,39}$")
 LABEL_FRAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,79}$")
@@ -164,7 +166,8 @@ def clean_pair(value, field, lo, hi):
     return [clean_int(v, field, lo, hi, allow_none=False) for v in value]
 
 
-def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets_dir=None, labels_path=None, videos_dir=None) -> Flask:
+def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets_dir=None, labels_path=None, videos_dir=None,
+               guess_detector=None) -> Flask:
     app = Flask(__name__, static_folder=str(APP_DIR / "static"), static_url_path="/static")
     runs_root = Path(runs_dir).resolve()
     species_file = Path(species_path) if species_path else DEFAULT_SPECIES
@@ -174,6 +177,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
     videos_root = Path(videos_dir).resolve() if videos_dir else (PROJECT_ROOT / "videos")
     jobs = JobQueue(runs_root, PROJECT_ROOT)
     write_lock = threading.Lock()
+    guess = {"detector": guess_detector, "lock": threading.Lock()}   # the model for the after-counting guess, loaded on first use
     app.config.update(RUNS_ROOT=runs_root, SPECIES_FILE=species_file, ALIASES_FILE=aliases_file, LABEL_SETS_ROOT=label_sets_root, LABELS_FILE=labels_file)
 
     # ---- helpers -----------------------------------------------------------
@@ -412,11 +416,18 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         pass_ = data.get("pass", "primary")
         if pass_ not in PASSES:
             raise BadInput("pass must be one of: " + ", ".join(sorted(PASSES)))
+        earlier = [r for r in read_jsonl(run_dir / "subsample_reviews.jsonl") if r.get("subsample_id") == data["subsample_id"]]
+        firsts = [r for r in earlier if r.get("pass") == "primary"]
         if pass_ == "qc_blind":
-            earlier = {(r.get("counter") or "").lower() for r in read_jsonl(run_dir / "subsample_reviews.jsonl")
-                       if r.get("subsample_id") == data["subsample_id"] and r.get("pass") == "primary"}
-            if counter.lower() in earlier:
+            if counter.lower() in {(r.get("counter") or "").lower() for r in firsts}:
                 raise BadInput("A blind second count has to come from a different person.")
+            if data["subsample_id"] not in qc_sample_ids(results):
+                raise BadInput("That frame isn't one of the frames held for the blind check.")
+        if pass_ == "primary" and firsts and (firsts[-1].get("counter") or "").lower() != counter.lower() and data.get("replace") is not True:
+            raise BadInput(f"{firsts[-1].get('counter')} already counted this point. Send replace to make yours the first count.")
+        guess = data.get("model_guess")
+        if guess is not None and guess not in MODEL_GUESS:
+            raise BadInput("model_guess must be after, seen or empty")
         species_counts = data.get("species_counts") or {}
         if not isinstance(species_counts, dict) or len(species_counts) > 200:
             raise BadInput("species_counts must be an object of name: count")
@@ -433,6 +444,11 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         direction = data.get("visibility_direction")
         if direction is not None and direction not in VISIBILITY_DIRECTIONS:
             raise BadInput("visibility_direction must be increasing, decreasing or empty")
+        if direction is not None and vis is None:
+            raise BadInput("Choose the visibility now, as well as whether it got better or worse.")
+        possible = data.get("possible_animals", False)
+        if not isinstance(possible, bool):
+            raise BadInput("possible_animals must be true or false")
         chars = data.get("characteristics") or []
         if not isinstance(chars, list) or any(c not in CHARACTERISTICS for c in chars):
             raise BadInput("characteristics must be from: " + ", ".join(CHARACTERISTICS))
@@ -453,6 +469,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             "visibility_change": vchange,
             "visibility_direction": direction,
             "characteristics": sorted(set(chars)),
+            "possible_animals": possible,
+            "model_guess": guess,
             "free_text_species": free,
             "notes": clean_str(data.get("notes"), "notes", 2000) or "",
             "at": now_iso(),
@@ -513,8 +531,11 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         data = json_body()
         if data.get("category") not in VISIBILITY:
             raise BadInput("category must be one of: " + ", ".join(VISIBILITY))
+        at_s = data.get("at_s")
+        if at_s is not None:
+            finite(at_s, "at_s", 0, 86400)   # where in the video the rating was judged
         record = {"observer": clean_str(data.get("observer"), "observer", 100, allow_empty=False), "category": data["category"],
-                  "notes": clean_str(data.get("notes"), "notes", 500) or "", "at": now_iso()}
+                  "at_s": None if at_s is None else round(float(at_s), 1), "notes": clean_str(data.get("notes"), "notes", 500) or "", "at": now_iso()}
         append_jsonl(run_dir / "visibility.jsonl", record)
         return jsonify(record), 201
 
@@ -526,6 +547,29 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         for row in read_jsonl(run_dir / "visibility.jsonl"):
             latest[row.get("observer")] = row
         return list(latest.values())
+
+    def point_visibility(results, primary, vis_rows):
+        """Each counted point's visibility: the video's rating, then each change recorded along the way.
+        Worked out every time, so correcting one point carries on to the points after it. Same rule as display.js."""
+        ranks = [VISIBILITY.index(r["category"]) for r in vis_rows if r.get("category") in VISIBILITY]
+        current = VISIBILITY[min(set(ranks), key=lambda i: (-ranks.count(i), i))] if ranks else None
+        out = {}
+        for s in sorted((x for x in results.get("subsamples") or [] if isinstance(x, dict)), key=lambda x: x.get("t_s") or 0):
+            row = primary.get(s.get("subsample_id"))
+            if row is None:
+                continue
+            if row.get("visibility_direction") and row.get("visibility_category"):
+                current = row["visibility_category"]
+            elif current is None:
+                current = row.get("visibility_category")   # older counts made before visibility was rated
+            out[s["subsample_id"]] = current
+        return out
+
+    def note_parts(r):
+        """The note as typed, and the Possible animals tick. Older rows kept the tick as a prefix on the note."""
+        notes = r.get("notes") or ""
+        legacy = notes.startswith("Movement, unidentified.")
+        return bool(r.get("possible_animals")) or legacy, notes[len("Movement, unidentified."):].strip() if legacy else notes
 
     def finite(v, field, lo, hi):
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
@@ -569,45 +613,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         append_jsonl(path, record)
         return jsonify(record), 201
 
-    def qc_sample_ids(results):
-        """The frames picked for the blind check. Runs made before the pick was recorded get one now."""
-        subs = sorted([x for x in results.get("subsamples") or [] if isinstance(x, dict)], key=lambda x: x.get("t_s") or 0)
-        marked = [x["subsample_id"] for x in subs if x.get("qc_sample")]
-        if marked:
-            return marked
-        pc = {**QC_DEFAULTS, **(results.get("protocol") or {})}
-        picks = proto.pick_qc(len(subs), pc, (results.get("recording") or {}).get("recording_id") or "")
-        return [x["subsample_id"] for i, x in enumerate(subs) if i in picks]
-
-    def qc_and_means(results, sub_reviews):
-        """Latest first count per point, every blind comparison, the app's recommendation, and MeanCount."""
-        pc = {**QC_DEFAULTS, **(results.get("protocol") or {})}
-        limit, target = pc["qc_max_percent_diff"], pc["qc_agreement"]
-        primary, seconds = {}, {}
-        for r in sub_reviews:
-            sid = r.get("subsample_id")
-            if r.get("pass") == "primary":
-                primary[sid] = r
-            elif r.get("pass") in ("qc_blind", "recount"):
-                seconds.setdefault(sid, {})[(r.get("counter") or "").lower()] = r   # the latest row per person
-        qc = {sid: qcm.assess_point([primary[sid], *rows.values()], limit, pc["qc_small_gap"]) for sid, rows in seconds.items() if sid in primary}
-        check = qcm.verdict(qc_sample_ids(results), set(primary), qc, limit, target)
-        fish = [r.get("total_fish_count") for r in primary.values() if r.get("total_fish_count") is not None]
-        final = {sid: (qc[sid]["average_fish"] if sid in qc else r.get("total_fish_count"))
-                 for sid, r in primary.items()}   # the protocol averages the two blind counts of a checked frame
-        final = {k: v for k, v in final.items() if v is not None}
-        return {
-            "latest_primary": primary,
-            "qc": qc,
-            "qc_check": check,
-            "qc_agreement": check["agreement"],
-            "qc_agreement_target": target,
-            "n_counted": len(primary),
-            "n_subsamples": len(results.get("subsamples") or []),
-            "mean_count_reviewed": round(sum(fish) / len(fish), 3) if fish else None,
-            "final_fish": final,
-            "mean_count_final": round(sum(final.values()) / len(final), 3) if final else None,
-        }
+    qc_sample_ids = summary.qc_sample_ids
+    qc_and_means = summary.summarise   # one summary for the app, its CSVs and the command line export
 
     @app.get("/api/runs/<run_id>/saved")
     def get_saved(run_id):
@@ -645,7 +652,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                 row = by_source.setdefault(item.get("source"), {"animal": 0, "not_animal": 0, "unclear": 0})
                 label = TRAINING_LABEL.get(d.get("outcome"))
                 row["not_animal" if label == "not_animal" else "animal" if label else "unclear"] += 1
-        return {"total": len(bank["items"]), "done": len(done), "by_source": by_source, "missed": sorted(missed.values(), key=lambda m: m["time_s"]), "created_at": bank.get("created_at"),
+        return {"total": len(bank["items"]), "requested": bank.get("requested"), "done": len(done), "by_source": by_source, "missed": sorted(missed.values(), key=lambda m: m["time_s"]), "created_at": bank.get("created_at"),
                 "model": (bank.get("source") or {}).get("model")}
 
     # ---- people: profiles, and how closely they agree across videos ----------
@@ -690,6 +697,8 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             out.append({"run_id": d.name, "video_id": rec.get("video_id") or d.name, "fixture": bool(results.get("fixture")) or (d / "FIXTURE.txt").is_file(),
                         "created_at": (results.get("run") or {}).get("created_at"), "n_counted": info["n_counted"], "n_subsamples": info["n_subsamples"],
                         "qc_status": info["qc_check"]["status"],
+                        "n_visibility": len(visibility_rows(d, read_jsonl(d / "recording_notes.jsonl"))),
+                        "review_done": (review_set_state(d) or {}).get("done", 0), "review_total": (review_set_state(d) or {}).get("total", 0),
                         # hidden while a blind count may still be to come: MeanCount and the point count give away the total
                         "mean_count": None if info["qc_check"]["status"] in ("counting", "waiting_second") else info["mean_count_final"]})
         return jsonify(videos=out)
@@ -754,7 +763,7 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
     @app.get("/api/videos")
     def list_videos():
         entries = [{k: v for k, v in e.items() if k != "paths"} for e in inbox_entries()]
-        return jsonify(videos=entries, folder=str(videos_root), detector_ready=detector_ready())
+        return jsonify(videos=entries, folder=str(videos_root), detector_ready=detector_ready() or guess["detector"] is not None)
 
     @app.put("/api/videos/upload")
     def upload_video():
@@ -796,9 +805,15 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         for longer_than, extra in LONG_VIDEO_MINUTES:
             if line.duration_s > longer_than:
                 minutes += extra
+        if line.duration_s < 8 * 60:   # a short clip: offer starts inside it, not at whole minutes
+            minutes = [s / 60 for s in (0, 10, 20, 30, 45, 60)]
         frames = []
         for m in minutes:
-            t = m * 60
+            t = round(m * 60)
+            if line.duration_s >= 8 * 60 and t >= line.duration_s - 60:
+                continue
+            if t >= line.duration_s - 20:
+                continue
             if t >= line.duration_s - 60:
                 continue
             out = folder / f"{int(t)}.jpg"
@@ -864,6 +879,65 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         meta = {"transect": clean_str(data.get("transect"), "transect", 40), "stat": clean_str(data.get("stat"), "stat", 40),
                 "year": year, "season": clean_str(data.get("season"), "season", 40), "date": clean_str(data.get("date"), "date", 20)}
         return jsonify(jobs.add(name, paths, layer, ws, we, video_id, interval, meta)), 201
+
+    @app.post("/api/runs/<run_id>/recut")
+    def recut(run_id):
+        """Cut new count points for a video that's already set up, with a new window or spacing.
+        Before any counting, the new points replace the old ones and the visibility ratings and watch notes carry
+        over. Once counting has started, it makes a new version beside the original, so no count loses its frame."""
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        data = json_body()
+        rec = results.get("recording") or {}
+        paths = [Path(p) for p in rec.get("source_files") or []]
+        if not paths or not all(p.is_file() for p in paths):
+            raise BadInput("The original video isn't where it was when this was set up. Open it again from the home screen.")
+        if jobs.busy_with(run_id):
+            raise BadInput("This video is already being processed.")
+
+        def seconds(key):
+            v = data.get(key)
+            if v is None or v == "":
+                return None
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v < 1e6:
+                raise BadInput(f"{key} must be a number of seconds")
+            return v
+        ws, we, interval = seconds("window_start"), seconds("window_end"), seconds("interval")
+        if ws is not None and we is not None and we <= ws:
+            raise BadInput("The window must end after it starts.")
+        if interval is not None and not 5 <= interval <= 600:
+            raise BadInput("interval must be between 5 and 600 seconds")
+        counted = bool(read_jsonl(run_dir / "subsample_reviews.jsonl")) or bool(active_point_labels(read_jsonl(run_dir / "point_labels.jsonl")))
+        if counted:   # a new version: the original keeps its counts and frames
+            n = 2
+            while (runs_root / f"{run_id}_v{n}").exists() or jobs.busy_with(f"{run_id}_v{n}"):
+                n += 1
+            work = final = f"{run_id}_v{n}"
+        else:
+            work, final = f"{run_id}__recut", run_id
+            if (runs_root / work).exists():
+                shutil.rmtree(runs_root / work)
+        carried = ("visibility.jsonl", "recording_notes.jsonl")
+        meta = {k: rec.get(k) for k in ("transect", "stat", "year", "season", "date")}
+
+        def swap(job):
+            new = runs_root / work
+            for name in carried:
+                if (run_dir / name).is_file():
+                    shutil.copy2(run_dir / name, new / name)
+            if work != final:   # replace in place: the old folder is kept out of sight, never deleted
+                kept = runs_root / ".replaced" / f"{run_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+                kept.parent.mkdir(parents=True, exist_ok=True)
+                run_dir.replace(kept)
+                new.replace(runs_root / final)
+                res_path = runs_root / final / "results.json"
+                res = json.loads(res_path.read_text(encoding="utf-8"))
+                res["recording"]["recording_id"] = final
+                res_path.write_text(json.dumps(res, indent=1), encoding="utf-8")
+            job["name"] = final
+
+        job = jobs.add(work, paths, 0, ws, we, rec.get("video_id"), interval, meta, on_done=swap)
+        return jsonify({**job, "opens": final, "new_version": counted}), 201
 
     @app.post("/api/jobs/<job_id>/cancel")
     def cancel_job(job_id):
@@ -991,6 +1065,39 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         }
         append_jsonl(run_dir / folder / "decisions.jsonl", record)
         return jsonify(record), 201
+
+    @app.post("/api/runs/<run_id>/model_guess")
+    def model_guess(run_id):
+        """The model's guess for one point, for a person to compare with the count they've already saved.
+        Never while counting blind. Uses the quieter whole-frame setting from the config's model_check block."""
+        import cv2
+        from clipsift.config import load_config
+        run_dir = run_dir_for(run_id)
+        results = load_results(run_dir)
+        ss = known_subsample(results, json_body().get("subsample_id"))
+        sid = ss["subsample_id"]
+        cache = run_dir / "model_guess" / f"{sid}.json"
+        if cache.is_file():
+            return jsonify(json.loads(cache.read_text(encoding="utf-8")))
+        if guess["detector"] is None and not detector_ready():
+            raise BadInput("The fish detector isn't installed on this computer.")
+        still = cv2.imread(str(run_dir / "subsamples" / sid / "still.jpg"))
+        if still is None:
+            abort(404, "No still for this point")
+        cfg = load_config()
+        threshold = float((cfg.get("model_check") or {}).get("threshold") or 0.23)
+        with guess["lock"]:
+            if guess["detector"] is None:
+                from clipsift.verify import model_check_detector
+                guess["detector"] = model_check_detector(cfg)
+            dets = guess["detector"].detect(still, ss.get("t_s") or 0)
+        k = ((results.get("recording") or {}).get("width") or still.shape[1]) / still.shape[1]   # back to the recording's pixels
+        boxes = [[round(v * k, 1) for v in d.box] + [round(float(d.score), 3)] for d in dets if d.score >= threshold]
+        out = {"subsample_id": sid, "fish": len(boxes), "boxes": boxes, "threshold": threshold,
+               "model": getattr(guess["detector"], "model_version", None), "at": now_iso()}
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(out), encoding="utf-8")
+        return jsonify(out)
 
     @app.post("/api/runs/<run_id>/review_set")
     def start_review_set(run_id):
@@ -1328,7 +1435,9 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         ("Visibility change >= 0.5 m", "yes if visibility changed by 0.5 m or more."),
         ("Visibility direction", "increasing or decreasing, when it changed."),
         ("Characteristics ticked", "Of shape, anatomical features, colour or flashes, swimming behaviour."),
-        ("Notes", "Reviewer notes. Movement noted as unidentified is a note, never counted."),
+        ("Model guess shown", "after: the model's guess was shown once this count was saved. seen: it was seen before this count was saved."),
+        ("Possible animals not confirmed", "yes if the counter ticked that there may be animals they couldn't confirm. Never counted."),
+        ("Notes", "Reviewer notes."),
         ("Saved at (UTC)", "When the count was saved."),
         ("QC percent difference", "Primary vs second count difference. Formula is provisional (see percent_difference in server.py)."),
         ("QC recount suggested", "yes if the two counts are over the limit and more than a small gap apart. Advisory."),
@@ -1345,16 +1454,20 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
         vid = (results.get("recording") or {}).get("video_id") or (results.get("recording") or {}).get("recording_id") or run_id
         times = {s.get("subsample_id"): s.get("t_s") for s in results.get("subsamples") or [] if isinstance(s, dict)}
         names = sorted({n for r in revs for n in (r.get("species_counts") or {})})
+        derived = point_visibility(results, info["latest_primary"], visibility_rows(run_dir, read_jsonl(run_dir / "recording_notes.jsonl")))
         rows = []
         for r in revs:
             q = info["qc"].get(r.get("subsample_id")) if r.get("pass") != "primary" else None
             sc = r.get("species_counts") or {}
             vc = r.get("visibility_change")
+            possible, note = note_parts(r)
+            latest = info["latest_primary"].get(r.get("subsample_id")) is r
+            vis_cat = derived.get(r.get("subsample_id")) if latest else r.get("visibility_category")
             rows.append([vid, r.get("subsample_id"), times.get(r.get("subsample_id")), r.get("counter"), r.get("pass"),
                          r.get("total_fish_count"), r.get("invertebrate_count"), r.get("total_species"),
-                         r.get("unknown_count"), r.get("visibility_category"),
+                         r.get("unknown_count"), vis_cat,
                          "" if vc is None else ("yes" if vc else "no"), r.get("visibility_direction"),
-                         ";".join(r.get("characteristics") or []), r.get("notes"), r.get("at"),
+                         ";".join(r.get("characteristics") or []), r.get("model_guess"), "yes" if possible else "", note, r.get("at"),
                          q["percent_diff"] if q and q["percent_diff"] is not None else "",
                          ("yes" if q["recount_needed"] else "no") if q else ""] + [sc.get(n, "") for n in names])
         rows = [["" if c is None else c for c in row] for row in rows]
@@ -1377,11 +1490,17 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
             species.update((r.get("species_counts") or {}).keys())
         vis = "; ".join(f"{v['observer']}: {v['category']}" for v in visibility_rows(run_dir, notes))
         finals = list(info["final_fish"].values())
+        per_species = {}
+        for r in info["latest_primary"].values():
+            for k, v in (r.get("species_counts") or {}).items():
+                per_species[k] = per_species.get(k, 0) + v
+        derived = point_visibility(results, info["latest_primary"], visibility_rows(run_dir, notes))
         sd = math.sqrt(sum((v - sum(finals) / len(finals)) ** 2 for v in finals) / (len(finals) - 1)) if len(finals) > 1 else None
         header = ["Video ID", "Transect", "STAT", "Year", "Season", "Window start (s)", "Window end (s)",
                   "Subsamples counted", "Subsamples planned", "MeanCount (fish per subsample, reviewed)",
                   "MeanCount with QC averages", "Standard deviation", "Standard error",
                   "Species and groups observed", "Number of species identified", "Juveniles present (1/0)", "Visibility by observer",
+                  "Points with no fish", "MeanCount per species", "Visibility changes", "Model guess shown on points",
                   "QC pairs", "QC recounts suggested", "QC agreement (%) (provisional)", "QC frames with animals",
                   "QC agreement on frames with animals (%) (provisional)", "QC result", "Note"]
         qcs = info["qc"].values()
@@ -1391,6 +1510,10 @@ def create_app(runs_dir="runs", species_path=None, aliases_path=None, label_sets
                info["n_counted"], info["n_subsamples"], info["mean_count_reviewed"], info["mean_count_final"],
                None if sd is None else round(sd, 3), None if sd is None else round(sd / math.sqrt(len(finals)), 3),
                "; ".join(sorted(species)), sum(1 for x in species if SPECIES_RE.match(x)), n.get("juveniles"), vis,
+               sum(1 for v in finals if not v),
+               "; ".join(f"{k}: {round(t / max(1, len(finals)), 3)}" for k, t in sorted(per_species.items())),
+               "; ".join(f"{sid} {r.get('visibility_direction')} to {derived.get(sid)}" for sid, r in sorted(info["latest_primary"].items()) if r.get("visibility_direction")),
+               sum(1 for r in info["latest_primary"].values() if r.get("model_guess")),
                len(info["qc"]), sum(1 for q in qcs if q["recount_needed"]), info["qc_agreement"], info["qc_check"]["n_animal_frames"],
                info["qc_check"]["animal_agreement"], info["qc_check"]["status"],
                "Counts are a relative index, not abundance."]

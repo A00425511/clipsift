@@ -149,11 +149,11 @@ def test_subsample_reviews_qc_and_meancount(env):
     c, run, *_ = env
     assert c.post(R + "/subsample_reviews", json=SUB).status_code == 201
     assert c.post(R + "/subsample_reviews", json={**SUB, "subsample_id": "ss_02", "total_fish_count": 20}).status_code == 201
-    # blind second counter: 10+1 vs 10+4 -> clearly over the limit
-    assert c.post(R + "/subsample_reviews", json={**SUB, "counter": "Ben", "pass": "qc_blind", "invertebrate_count": 4}).status_code == 201
+    # blind second counter on a held frame: 20+1 vs 20+4 -> clearly over the limit
+    assert c.post(R + "/subsample_reviews", json={**SUB, "subsample_id": "ss_02", "total_fish_count": 20, "counter": "Ben", "pass": "qc_blind", "invertebrate_count": 4}).status_code == 201
     saved = c.get(R + "/saved").get_json()
     assert saved["mean_count_reviewed"] == 15 and saved["n_counted"] == 2 and saved["n_subsamples"] == 9
-    qc = saved["qc"]["ss_01"]
+    qc = saved["qc"]["ss_02"]
     assert qc["recount_needed"] is True and qc["second_counter"] == "Ben" and qc["percent_diff"] > 6
     assert len(lines(run / "subsample_reviews.jsonl")) == 3
     bad = [{**SUB, "counter": ""}, {**SUB, "pass": "other"}, {**SUB, "total_fish_count": None}, {**SUB, "total_fish_count": -1},

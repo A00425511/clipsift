@@ -81,6 +81,13 @@ t("blind check: the demo's copy of the rules gives the same answers as clipsift/
   assert.deepEqual([mix.n_animal_frames, mix.animal_agreement], [1, 90.5]);
   assert.match(D.qcMessage(mix)[1], /1 of 2 frames had animals, and agreement on those is 90\.5%/);
 });
+t("visibility: each point follows the rating and the changes before it, so a correction carries on", () => {
+  const subs = [1, 2, 3, 4].map((i) => ({ subsample_id: "p" + i, t_s: i }));
+  const primary = { p1: {}, p2: { visibility_direction: "decreasing", visibility_category: "<0.5 m" }, p3: { visibility_category: "1.0-1.5 m" }, p4: { visibility_direction: "increasing", visibility_category: "0.5-1.0 m" } };
+  assert.deepEqual(D.pointVisibility(subs, primary, [{ category: "1.0-1.5 m" }]), { p1: "1.0-1.5 m", p2: "<0.5 m", p3: "<0.5 m", p4: "0.5-1.0 m" });
+  assert.deepEqual(D.noteParts({ notes: "Movement, unidentified. Rock." }), { possible: true, text: "Rock." });
+  assert.deepEqual(D.noteParts({ notes: "Rock.", possible_animals: false }), { possible: false, text: "Rock." });
+});
 t("species names: only two-word names count as species", () => {
   assert.deepEqual(["Gadus morhua", "Actinopterygii", "Unknown fish", "Menidia sp."].map(D.isSpeciesName), [true, false, false, false]);
 });

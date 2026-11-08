@@ -153,6 +153,7 @@
       const on = $("d-clip").hidden;
       if (on) playClip(); else stopClip();
       $("d-play").textContent = on ? "Stop clip" : "Play clip";
+      $("d-play").blur();   // so Enter saves rather than pressing Play again
     });
   }
 
@@ -171,12 +172,16 @@
       bar.classList.add("dragging");
       bank.classList.add("dragging");
     });
-    bar.addEventListener("pointermove", (e) => {
-      if (bar.classList.contains("dragging")) apply(bank.getBoundingClientRect().right - 12 - e.clientX);
-    });
     const end = () => { bar.classList.remove("dragging"); bank.classList.remove("dragging"); };
+    bar.addEventListener("pointermove", (e) => {
+      if (!bar.classList.contains("dragging")) return;
+      if (!(e.buttons & 1)) { end(); return; }   // the release was missed (outside the window, or the clip took the pointer): stop following
+      apply(bank.getBoundingClientRect().right - 12 - e.clientX);
+    });
     bar.addEventListener("pointerup", end);
     bar.addEventListener("pointercancel", end);
+    bar.addEventListener("lostpointercapture", end);
+    window.addEventListener("blur", end);
     bar.addEventListener("dblclick", () => apply(380));
     bar.addEventListener("keydown", (e) => {
       const step = { ArrowLeft: 40, ArrowRight: -40 }[e.key];
@@ -190,7 +195,7 @@
     $("pick-hint").hidden = true;
     $("detail-body").hidden = false;
     $("d-title").textContent = `${REVIEW ? "Item" : "Candidate"} at ${clock(item.time_s)}`;
-    const why = REVIEW && item.source ? [SOURCE_NOTE[item.source]] : item.reasons || [];
+    const why = REVIEW && item.source ? [item.kind_marked === "unsure" ? "The model flagged this at a count point. The counter marked it Unsure, which isn't counted." : SOURCE_NOTE[item.source]] : item.reasons || [];
     $("d-reasons").replaceChildren(...why.map((r) => el("li", "", r)));
     $("d-crop").src = fileUrl(item.images.crop);
     $("d-others").replaceChildren(...(item.other_views || []).map(otherView).concat(
@@ -288,8 +293,9 @@
       $("bank-intro").textContent = "Look at each item and say what it is. You won't see where an item came from until you've decided. Nothing here changes a count.";
       $("d-others").hidden = true;
       const box = document.querySelector(".bank-outcomes");
+      let keyNo = 0;
       box.replaceChildren(el("legend", "", "What is it?"), ...[["fish", "Fish"], ["invertebrate", "Invertebrate"], ["equipment", "Equipment"], ["background", "Background or sediment"], ["cant_tell", "Can't tell"], ["needs_expert", "Needs an expert"]].map(([v, t]) => {
-        const l = el("label"), r = el("input"); r.type = "radio"; r.name = "outcome"; r.value = v; l.append(r, " " + t); return l;
+        const l = el("label"), r = el("input"), k = el("kbd", "", String(++keyNo)); r.type = "radio"; r.name = "outcome"; r.value = v; l.append(r, " ", k, " " + t); return l;
       }));
       $("reviewer").value = store.get("clipsift.reviewer") || $("reviewer").value;
       // Keys for a run of 30: 1 to 6 pick the answer, Enter saves.

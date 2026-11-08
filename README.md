@@ -32,7 +32,7 @@ pip install -r requirements.txt
 brew install ffmpeg
 ```
 
-For the fish model (Layer 1 default), also install the model extras and fetch the weights (see **Layer 1 model** below):
+The fish model is optional and off by default. It is only used after counting, in Step 6 and the after-counting guess. To use it, also install the model extras and fetch the weights (see **Layer 1 model** below):
 
 ```
 pip install -r requirements-model.txt

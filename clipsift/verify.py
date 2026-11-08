@@ -27,14 +27,15 @@ from .video import find_ffmpeg, resize_to_width
 SET_VERSION = 1
 SOURCES = ("agree", "model_only", "elsewhere")
 MIX = {"agree": 0.34, "model_only": 0.33, "elsewhere": 0.33}
-MIN_SCORE = 0.10          # the same threshold as the old suggested count
+MIN_SCORE = 0.10          # used only when the config has no model_check threshold
 MATCH_RADIUS = 60 / 3840  # share of frame width, as in tools/eval_detector.py
 MATCH_PAD = 20 / 3840
 SETTINGS = {"crop_px": 480, "frame_width": 1280, "clip_width": 960, "clip_half_s": 2.5, "max_elsewhere_frames": 14}
 
 
 def read_marks(run_dir: Path) -> dict:
-    """Live fish and invertebrate marks by the first counter of each point: {subsample_id: [mark]}."""
+    """Live fish, invertebrate and Unsure marks by the first counter of each point: {subsample_id: [mark]}.
+    Unsure marks are never counted. They only say which model flags the counter had already doubted."""
     def rows(name):
         path = run_dir / name
         if not path.is_file():
@@ -55,7 +56,7 @@ def read_marks(run_dir: Path) -> dict:
             live[r["label_id"]] = r
     marks: dict = {}
     for r in live.values():
-        if r.get("kind") in ("fish", "invertebrate") and r.get("counter") == first.get(r.get("subsample_id")):
+        if r.get("kind") in ("fish", "invertebrate", "unsure") and r.get("counter") == first.get(r.get("subsample_id")):
             marks.setdefault(r["subsample_id"], []).append(r)
     return marks
 
@@ -153,15 +154,28 @@ def _cut(source: Path, out: Path, start: float, length: float, width: int) -> bo
     return subprocess.run(cmd, capture_output=True).returncode == 0 and out.is_file()
 
 
+def model_check_detector(cfg: dict):
+    """The detector for checking after counting: whole-frame by default, set by the config's model_check block."""
+    import copy
+    from .stages import get_backend
+    mc = cfg.get("model_check") or {}
+    c = copy.deepcopy(cfg)
+    cc = c.setdefault("detector", {}).setdefault("cfd", {})
+    cc.update({"whole_frame": bool(mc.get("whole_frame", True)), "resolution": mc.get("resolution", 640)})
+    if mc.get("threshold") is not None:
+        cc["threshold"] = float(mc["threshold"])
+    return get_backend("detector", "cfd", c)
+
+
 def build_review_set(run_dir, cfg: dict, detector=None, total: int = 36, log=print, settings: dict = SETTINGS) -> dict:
     """Write review_set/bank.json and its images, in the same shape as the species bank, and return it."""
     run_dir = Path(run_dir)
     results = json.loads((run_dir / "results.json").read_text(encoding="utf-8"))
     rec, pc = results.get("recording") or {}, results.get("protocol") or {}
     subs = sorted([s for s in results.get("subsamples") or [] if isinstance(s, dict)], key=lambda s: s.get("t_s") or 0)
+    min_score = float((cfg.get("model_check") or {}).get("threshold") or MIN_SCORE)
     if detector is None:
-        from .stages import get_backend
-        detector = get_backend("detector", cfg["stages"]["detector"], cfg)
+        detector = model_check_detector(cfg)
     marks = read_marks(run_dir)
     window = run_dir / "window.mp4"
     cap = cv2.VideoCapture(str(window)) if window.is_file() else None
@@ -192,12 +206,15 @@ def build_review_set(run_dir, cfg: dict, detector=None, total: int = 36, log=pri
 
     ids = [s["subsample_id"] for s in subs if s["subsample_id"] in stills]
     for sid, (t, dets) in zip(ids, frames):
-        boxes = [d for d in sfm.live(dets) if d.score >= MIN_SCORE]
-        pairs, loose, _ = match(boxes, marks.get(sid, []), width)
+        boxes = [d for d in sfm.live(dets) if d.score >= min_score]
+        counted = [m for m in marks.get(sid, []) if m.get("kind") != "unsure"]
+        pairs, loose, _ = match(boxes, counted, width)
+        unsure_pairs, _, _ = match(loose, [m for m in marks.get(sid, []) if m.get("kind") == "unsure"], width)
+        unsure_ids = {id(det) for det, _ in unsure_pairs}
         for det, m in pairs:
             add("agree", sid, t, _xyxy(det.box), det.score, {"kind_marked": m.get("kind"), "species_marked": m.get("species")})
         for det in loose:
-            add("model_only", sid, t, _xyxy(det.box), det.score)
+            add("model_only", sid, t, _xyxy(det.box), det.score, {"kind_marked": "unsure"} if id(det) in unsure_ids else None)
 
     between = {}
     for i, t in enumerate(gaps):
@@ -209,7 +226,7 @@ def build_review_set(run_dir, cfg: dict, detector=None, total: int = 36, log=pri
         between[t] = img
         k = width / img.shape[1]
         for det in detector.detect(img, t):
-            if det.score < MIN_SCORE:
+            if det.score < min_score:
                 continue
             bbox = [int(v * k) for v in _xyxy(det.box)]
             if not any(_iou(bbox, f) > 0.3 for f in fixed):
@@ -245,6 +262,7 @@ def build_review_set(run_dir, cfg: dict, detector=None, total: int = 36, log=pri
         "pools": {s: len(pools[s]) for s in SOURCES},
         "fixed_objects_left_out": summary.get("static", 0),
         "counts": {s: sum(i["source"] == s for i in items) for s in SOURCES} | {"total": len(items)},
+        "requested": total,
         "items": items,
     }
     tmp = out_dir / "bank.json.tmp"

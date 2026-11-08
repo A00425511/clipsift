@@ -15,6 +15,35 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.2.0 (2026-11-07)
+Fixes from three more simulated trials, the model comparison handoff and quality-of-life requests. See the ClipSift Usability Trial 2, 3 and 4 docs.
+- Visibility: choosing better or worse needs the new category. Each point's value is worked out from the video's rating and the changes before it, so a correction carries on to later points.
+- Step 3: a read-only panel shows other people's counts on the point, with their marks dashed if wanted. Hidden from anyone counting blind or about to recount.
+- Names: choosing a name that already has counts asks first. Step 2 says who recorded it and asks before replacing their entries.
+- Unknown is the total minus the animals with a species, and updates as species change. A typed number is kept.
+- The Possible animals tick is its own field and CSV column, so notes only hold what was typed. Older notes are read the same way.
+- Opening a video goes to Step 1 for anyone who hasn't rated visibility. Messages float instead of pushing the page down.
+- Step 3: scrolls back to the picture on each point, pins Save and No animals, allows marking on a paused clip frame, and keeps the Play button and Space in step. Display settings reset for a new person, and the species box clears each point.
+- Step 2: Enter picks the top match, and saving needs a species or the none seen tick.
+- Report: DRAFT until the quality check is done. Adds invertebrate MeanCount, Step 2 notes, a Features column and an invertebrate average in the quality check.
+- Compare scrolls to the picture and can hide marks. Step 6 shows keys 1 to 6, Enter saves, and flags on Unsure marks say so.
+- Home shows Ready to sign off or In progress, with progress per step. Short clips get start frames inside the clip.
+- Model guess after counting: an optional toggle on the count tool, off for every video. Once a count is saved, it shows the model's guess as pink boxes beside the person's number. Never in a blind count or recount. Each count records whether the guess was shown, and the report says on how many points.
+- Model check: Step 6 and the guess use whole-frame Nano at 640 with a 0.23 threshold (`model_check` in the config), about 1 false box per empty frame on our test frames. Tiled stays available as a setting. Step 6 says when it finds fewer items than asked.
+- No model by default: `layer: 0` in the config and README.
+- Check model flags: the divider no longer keeps following the mouse after a release it missed.
+- From Trials 3 and 4: totals stay in step with the marks, down to 0 when the last mark is removed. A click on the picture only adds a mark. Remove with right-click or Undo.
+- Step 3: drag the picture to move around it in any tool. Wheel zoom is stronger and zooms at the pointer, + and - zoom 2x where the mouse last was, and the zoom level shows. Each point opens at the whole picture.
+- Step 3: the first frame step goes to the count second. After the last point, any uncounted point opens. The point name shows beside Save.
+- Step 2: typed notes save when you leave the step, and the tab says "notes only" until species are recorded.
+- No counts sit in the page behind the name box. "See the summary in Step 6" keeps Step 6 through the name prompt.
+- Report: "None seen in the watch window" notes animals counted at points, visibility shows the most common rating, and 0 against 0 reads "both 0".
+- Setup: custom spacing between count points, by seconds or by the number of points wanted, with the resulting count shown. The report flags spacing that isn't the protocol's 60 s.
+- Step 1: rate visibility at the first count point, or scrub the whole window to the clearest view. The time it was judged is saved and shown in the report.
+- Change window or spacing: cut new count points from the same video after setup. Before counting they replace the old points. Once counting has started they make a new version beside the original. Visibility ratings and watch notes carry over, and a replaced folder is kept in runs/.replaced.
+- Server: refuses blind counts on frames that aren't held for the check, and asks for `replace` before one person's first count replaces another's.
+- One summary for the app, its CSVs and the command line export, so they agree. The summary CSV adds points with no fish, MeanCount per species, visibility changes and model guess use. A test checks the exports agree.
+
 ### 1.1.0 (2026-11-07)
 Fixes from a simulated trial with three staff. See the ClipSift Usability Trial doc.
 - Blind counts: MeanCount, Step 2 notes and the comparison stay hidden from anyone yet to count. The name box has a solid background and can't be skipped when a video opens.

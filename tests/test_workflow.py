@@ -128,10 +128,39 @@ def test_each_person_rates_visibility_and_the_latest_counts(env):
 
 def test_visibility_direction_is_saved_and_exported(env):
     c, _ = env
-    body = {"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 1, "invertebrate_count": 0, "visibility_change": True, "visibility_direction": "decreasing"}
+    body = {"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 1, "invertebrate_count": 0, "visibility_change": True,
+            "visibility_direction": "decreasing", "visibility_category": "<0.5 m"}
     assert c.post(R + "/subsample_reviews", json=body).status_code == 201
     assert "decreasing" in c.get(R + "/export.csv").get_data(as_text=True)
     assert c.post(R + "/subsample_reviews", json={**body, "visibility_direction": "sideways"}).status_code == 400
+    missing = c.post(R + "/subsample_reviews", json={**body, "visibility_category": None})
+    assert missing.status_code == 400 and "visibility now" in missing.get_json()["error"]
+
+
+def test_a_corrected_visibility_carries_on_to_later_points(env):
+    c, _ = env
+    c.post(R + "/visibility", json={"observer": "Ana", "category": "1.0-1.5 m"})
+    ids = [s["subsample_id"] for s in sorted(c.get(R + "/results").get_json()["subsamples"], key=lambda s: s["t_s"])]
+    base = {"counter": "Ana", "total_fish_count": 0, "invertebrate_count": 0}
+    c.post(R + "/subsample_reviews", json={**base, "subsample_id": ids[0], "visibility_direction": "decreasing", "visibility_category": "<0.5 m"})
+    c.post(R + "/subsample_reviews", json={**base, "subsample_id": ids[1], "visibility_category": "<0.5 m"})    # a stale stored copy
+    c.post(R + "/subsample_reviews", json={**base, "subsample_id": ids[0], "visibility_direction": "decreasing", "visibility_category": "0.5-1.0 m"})
+    import csv as _csv, io as _io
+    rows = list(_csv.DictReader(_io.StringIO(c.get(R + "/export.csv").get_data(as_text=True))))
+    latest = {r["Subsample"]: r["Visibility category"] for r in rows}
+    assert latest[ids[0]] == "0.5-1.0 m" and latest[ids[1]] == "0.5-1.0 m"
+
+
+def test_possible_animals_is_its_own_field(env):
+    c, _ = env
+    body = {"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 0, "invertebrate_count": 0, "possible_animals": True, "notes": "No movement, likely a rock."}
+    assert c.post(R + "/subsample_reviews", json=body).status_code == 201
+    c.post(R + "/subsample_reviews", json={**body, "subsample_id": "ss_02", "possible_animals": False, "notes": "Movement, unidentified. Old style."})
+    import csv as _csv, io as _io
+    rows = {r["Subsample"]: r for r in _csv.DictReader(_io.StringIO(c.get(R + "/export.csv").get_data(as_text=True)))}
+    assert rows["ss_01"]["Possible animals not confirmed"] == "yes" and rows["ss_01"]["Notes"] == "No movement, likely a rock."
+    assert rows["ss_02"]["Possible animals not confirmed"] == "yes" and rows["ss_02"]["Notes"] == "Old style."
+    assert c.post(R + "/subsample_reviews", json={**body, "possible_animals": "yes"}).status_code == 400
 
 
 def test_a_blind_count_must_come_from_someone_else(env):
@@ -316,7 +345,133 @@ def test_survey_date_reaches_the_job(env, tmp_path):
     assert c.post("/api/jobs", json={"path": str(video), "name": "dated", "date": "2025-08-27"}).status_code == 201
 
 
+def test_short_clips_get_start_frames_inside_them(env, tmp_path):
+    c, _ = env
+    from tools.make_synthetic_clip import make
+    clip = tmp_path / "short.mp4"
+    make(str(clip), duration=120.0, width=320, fps=6.0)
+    frames = c.post("/api/videos/preview", json={"path": str(clip)}).get_json()["frames"]
+    assert frames and all(f["t_s"] < 100 for f in frames) and frames[0]["t_s"] == 0
+
+
+def test_home_shows_each_videos_progress(env):
+    c, _ = env
+    c.post(R + "/visibility", json={"observer": "Ana", "category": "1.0-1.5 m"})
+    v = c.get("/api/progress").get_json()["videos"][0]
+    assert v["n_visibility"] == 1 and v["review_total"] == 0
+
+
+def test_a_flag_on_an_unsure_mark_says_so(review):
+    c, run = review
+    results = json.loads((run / "results.json").read_text())
+    sub, k = results["subsamples"][0], results["recording"]["width"] / 1000
+    x = (500 + sub["t_s"] % 300 + 20) * k   # the centre of FakeDetector's second box on this frame
+    c.post(R + "/point_labels", json={"subsample_id": sub["subsample_id"], "counter": "Ana", "kind": "unsure", "x": x, "y": 320 * k})
+    bank = verify.build_review_set(run, {"static_filter": {"enabled": False}}, detector=FakeDetector(), total=40, log=lambda *_: None)
+    flagged = [i for i in bank["items"] if i.get("kind_marked") == "unsure"]
+    assert flagged and all(i["source"] == "model_only" and i["subsample_id"] == sub["subsample_id"] for i in flagged)
+
+
 def test_marks_match_inside_a_box_or_nearby():
     box = Detection(t=0, box=[100, 100, 50, 50], score=0.5, source="x")
     pairs, loose, missed = verify.match([box], [{"x": 120, "y": 120}, {"x": 900, "y": 900}], 3840)
     assert len(pairs) == 1 and not loose and missed == [{"x": 900, "y": 900}]
+
+
+def test_server_refuses_blind_counts_off_the_held_frames(env):
+    c, _ = env
+    count_all(c)
+    held = set(sample(c))
+    other = next(s["subsample_id"] for s in c.get(R + "/results").get_json()["subsamples"] if s["subsample_id"] not in held)
+    res = c.post(R + "/subsample_reviews", json={"subsample_id": other, "counter": "Ben", "pass": "qc_blind", "total_fish_count": 1, "invertebrate_count": 0})
+    assert res.status_code == 400 and "held" in res.get_json()["error"]
+
+
+def test_replacing_someone_elses_first_count_needs_replace(env):
+    c, _ = env
+    first = {"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 3, "invertebrate_count": 0}
+    assert c.post(R + "/subsample_reviews", json=first).status_code == 201
+    assert c.post(R + "/subsample_reviews", json={**first, "total_fish_count": 4}).status_code == 201   # Ana correcting her own count
+    res = c.post(R + "/subsample_reviews", json={**first, "counter": "Ben"})
+    assert res.status_code == 400 and "already counted" in res.get_json()["error"]
+    assert c.post(R + "/subsample_reviews", json={**first, "counter": "Ben", "replace": True}).status_code == 201
+
+
+def test_default_config_runs_no_model_and_checks_with_the_whole_frame():
+    from clipsift.config import load_config
+    cfg = load_config()
+    assert cfg["layer"] == 0
+    assert cfg["model_check"]["whole_frame"] is True and cfg["model_check"]["threshold"] == 0.23
+
+
+def test_model_check_builds_a_whole_frame_detector(monkeypatch):
+    from clipsift import stages
+    seen = {}
+    monkeypatch.setattr(stages, "get_backend", lambda kind, name, cfg: seen.update(kind=kind, name=name, cc=cfg["detector"]["cfd"]) or "det")
+    from clipsift.config import load_config
+    assert verify.model_check_detector(load_config()) == "det"
+    assert seen["name"] == "cfd" and seen["cc"]["whole_frame"] is True and seen["cc"]["resolution"] == 640 and seen["cc"]["threshold"] == 0.23
+
+
+def test_whole_frame_sends_one_image_to_the_model():
+    from clipsift.stages.cfd import CfdDetector
+    from clipsift.config import load_config
+
+    class Model:
+        def __init__(self): self.calls = []
+        def infer(self, tiles, threshold):
+            self.calls.append([t.shape for t in tiles])
+            return [(np.array([[10, 10, 40, 40]]), np.array([0.9])) for _ in tiles]
+    cfg = load_config()
+    cfg["detector"]["cfd"].update(whole_frame=True)
+    m = Model()
+    dets = CfdDetector(cfg, model=m).detect(np.zeros((2160, 3840, 3), np.uint8), 0)
+    assert m.calls == [[(2160, 3840, 3)]] and len(dets) == 1
+    cfg["detector"]["cfd"].update(whole_frame=False)
+    m2 = Model()
+    CfdDetector(cfg, model=m2).detect(np.zeros((2160, 3840, 3), np.uint8), 0)
+    assert sum(len(c) for c in m2.calls) > 20   # tiled: many tiles
+
+
+def test_model_guess_is_shown_after_counting_and_recorded(tmp_path):
+    build(tmp_path)
+    c = create_app(tmp_path, guess_detector=FakeDetector()).test_client()
+    assert c.post(R + "/subsample_reviews", json={"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 2, "invertebrate_count": 0, "model_guess": "after"}).status_code == 201
+    g = c.post(R + "/model_guess", json={"subsample_id": "ss_01"}).get_json()
+    assert g["fish"] == 2 and len(g["boxes"][0]) == 5 and all(b[4] >= g["threshold"] == 0.23 for b in g["boxes"])
+    assert (tmp_path / "_fixture" / "model_guess" / "ss_01.json").is_file()
+    assert c.post(R + "/subsample_reviews", json={"subsample_id": "ss_01", "counter": "Ana", "total_fish_count": 2, "invertebrate_count": 0, "model_guess": "sometimes"}).status_code == 400
+    text = c.get(R + "/export.csv").get_data(as_text=True)
+    assert "Model guess shown" in text.splitlines()[0] and ",after," in text
+    assert c.get(R + "/export_summary.csv").get_data(as_text=True).splitlines()[1].count(",") > 10
+
+
+def test_app_and_command_line_exports_agree(env, tmp_path):
+    """A golden check: the same counts give the same MeanCount and quality check in every export."""
+    c, run = env
+    counts = [0, 2, 1, 3, 0, 4, 2, 1, 0]
+    subs = sorted(c.get(R + "/results").get_json()["subsamples"], key=lambda s: s["t_s"])
+    for s, n in zip(subs, counts):
+        c.post(R + "/subsample_reviews", json={"subsample_id": s["subsample_id"], "counter": "Ana", "total_fish_count": n, "invertebrate_count": 0})
+    held = sample(c)
+    for sid in held:
+        n = counts[[s["subsample_id"] for s in subs].index(sid)]
+        c.post(R + "/subsample_reviews", json={"subsample_id": sid, "counter": "Ben", "pass": "qc_blind", "total_fish_count": n + 1, "invertebrate_count": 0})
+    saved = c.get(R + "/saved").get_json()
+    assert saved["mean_count_reviewed"] == round(13 / 9, 3)
+    from clipsift.export import export_run
+    import csv as _csv
+    paths = export_run(run, tmp_path / "cli")
+    cli = next(_csv.DictReader(open(paths[1])))
+    app = next(_csv.DictReader(c.get(R + "/export_summary.csv").get_data(as_text=True).splitlines()))
+    assert float(cli["MeanCount (reviewed)"]) == float(app["MeanCount (fish per subsample, reviewed)"]) == round(13 / 9, 3)
+    assert float(cli["MeanCount with QC averages"]) == float(app["MeanCount with QC averages"]) == saved["mean_count_final"]
+    assert float(cli["QC Agreement (%) (provisional)"]) == float(app["QC agreement (%) (provisional)"]) == saved["qc_agreement"]
+    assert cli["QC Result"] == app["QC result"] == saved["qc_check"]["status"]
+
+
+def test_visibility_keeps_where_it_was_judged(env):
+    c, _ = env
+    assert c.post(R + "/visibility", json={"observer": "Ana", "category": "<0.5 m", "at_s": 125.25}).status_code == 201
+    assert c.get(R + "/saved").get_json()["visibility"][0]["at_s"] == 125.2
+    assert c.post(R + "/visibility", json={"observer": "Ben", "category": "<0.5 m", "at_s": -1}).status_code == 400

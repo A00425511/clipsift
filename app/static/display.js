@@ -162,15 +162,34 @@
     const usual = Number(Object.keys(tally).sort((x, y) => tally[y] - tally[x] || x - y)[0]);
     return { n: ranks.length, spread: Math.max(...ranks) - Math.min(...ranks), low: Math.min(...ranks) === 0, usual: VIS_ORDER[usual] };
   }
+  // Each counted point's visibility: the video's rating, then each change recorded along the way. Worked out each
+  // time, so correcting one point carries on to the points after it. Same rule as point_visibility in app/server.py.
+  function pointVisibility(subsamples, primary, ratings) {
+    let current = visibilitySummary(ratings || []).usual;
+    const out = {};
+    for (const s of (subsamples || []).filter((x) => x && x.subsample_id).slice().sort((a, b) => (a.t_s || 0) - (b.t_s || 0))) {
+      const r = primary[s.subsample_id]; if (!r) continue;
+      if (r.visibility_direction && r.visibility_category) current = r.visibility_category;
+      else if (current == null) current = r.visibility_category || null;   // counts made before visibility was rated
+      out[s.subsample_id] = current;
+    }
+    return out;
+  }
+  // The note as typed, and the Possible animals tick. Older rows kept the tick as a prefix on the note.
+  function noteParts(r) {
+    const n = (r && r.notes) || "", legacy = n.startsWith("Movement, unidentified.");
+    return { possible: !!(r && r.possible_animals) || legacy, text: legacy ? n.slice(23).trim() : n };
+  }
   // Everything the summary report shows, from the run and the saved primary counts. Model numbers are left out on purpose.
   function buildReport(results, saved) {
     const rec = results.recording || {}, run = results.run || {}, proto = results.protocol || {};
     const latest = saved.latest_primary || {}, qc = Object.values(saved.qc || {});
+    const vis = pointVisibility(results.subsamples, latest, saved.visibility || (saved.latest_recording_notes || {}).visibility_by_observer);
     const points = (results.subsamples || []).filter((s) => s && s.subsample_id).slice().sort((a, b) => (a.t_s || 0) - (b.t_s || 0)).map((s) => {
       const r = latest[s.subsample_id];
       const finalFish = (saved.final_fish || {})[s.subsample_id];
       return { id: s.subsample_id, t: s.t_s, counted: !!r, fish: r ? r.total_fish_count : null, finalFish: finalFish == null ? (r ? r.total_fish_count : null) : finalFish, inv: r ? r.invertebrate_count : null, unknown: r ? r.unknown_count || 0 : null,
-        species: r ? r.species_counts || {} : {}, visibility: r ? r.visibility_category : null, visibilityDirection: r ? r.visibility_direction || null : null, counter: r ? r.counter : null, notes: r ? r.notes || "" : "" };
+        species: r ? r.species_counts || {} : {}, visibility: r ? vis[s.subsample_id] : null, visibilityDirection: r ? r.visibility_direction || null : null, counter: r ? r.counter : null, features: r ? (r.characteristics || []).map((c) => ({ shape: "shape", anatomical_features: "anatomy", colouration_or_flashes: "colour", swimming_behaviour: "movement" }[c] || c)).join(", ") : "", notes: r ? (noteParts(r).possible ? "Possible animals, not confirmed. " : "") + noteParts(r).text : "" };
     });
     const counted = points.filter((p) => p.counted), sum = (k) => counted.reduce((a, p) => a + (p[k] || 0), 0), bySpecies = {};
     const n = counted.length, mean = n ? sum("finalFish") / n : null;
@@ -189,7 +208,9 @@
       totalFish: sum("fish"), totalInv: sum("inv"), totalUnknown: sum("unknown"), points,
       sd, se: sd == null ? null : sd / Math.sqrt(n), zeroPoints: counted.filter((p) => !p.fish).length,
       interval: proto.interval_s, speciesObserved: [...new Set([...(notes.species_observed || []), ...Object.keys(bySpecies), ...qcRows.flatMap((r) => Object.keys(r.species_counts || {}))])],
-      qcNotes: qcRows.filter((r) => r.notes || Object.keys(r.species_counts || {}).length).map((r) => ({ id: r.subsample_id, counter: r.counter, fish: r.total_fish_count, species: r.species_counts || {}, notes: r.notes || "" })), juveniles: notes.juveniles == null ? null : notes.juveniles,
+      guessAfter: Object.values(latest).filter((r) => r.model_guess === "after").length, guessSeen: Object.values(latest).filter((r) => r.model_guess === "seen").length,
+      watchNotes: notes.notes || "", watchBy: notes.reviewer || "",
+      qcNotes: qcRows.filter((r) => r.notes || Object.keys(r.species_counts || {}).length).map((r) => ({ id: r.subsample_id, counter: r.counter, fish: r.total_fish_count, species: r.species_counts || {}, notes: (noteParts(r).possible ? "Possible animals, not confirmed. " : "") + noteParts(r).text })), juveniles: notes.juveniles == null ? null : notes.juveniles,
       visibility: saved.visibility || notes.visibility_by_observer || [],
       fileName: ((rec.source_files || [])[0] || "").split(/[\\/]/).pop() + ((rec.source_files || []).length > 1 ? " and " + (rec.source_files.length - 1) + " more" : ""), surveyDate: rec.date || null,
       counters: [...new Set(counted.map((p) => p.counter).filter(Boolean))], secondCounters: [...new Set(qcRows.map((r) => r.counter).filter(Boolean))],
@@ -204,7 +225,7 @@
   }
   // A named species has a two-word name. Anything else ("Unknown fish", Actinopterygii) is a broader group.
   const isSpeciesName = (n) => /^(?!Unknown|Unidentified)[A-Z][a-z]+ [a-z]+$/.test(n);
-  const api = { isSpeciesName, percentDiff, assessPoint, qcVerdict, qcMessage, qcCounts, matchMarks, visibilitySummary, VIS_ORDER, inCount, countBands, csvText, buildReport, reportCsv, clipRange, scrubTime, clipControl, ENHANCE_PRESETS, enhanceFilter, cleanEnhance, nextEnhance, forKind, speciesName, speciesLabel, cleanNameMode, relTime };
+  const api = { pointVisibility, noteParts, isSpeciesName, percentDiff, assessPoint, qcVerdict, qcMessage, qcCounts, matchMarks, visibilitySummary, VIS_ORDER, inCount, countBands, csvText, buildReport, reportCsv, clipRange, scrubTime, clipControl, ENHANCE_PRESETS, enhanceFilter, cleanEnhance, nextEnhance, forKind, speciesName, speciesLabel, cleanNameMode, relTime };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.ClipSiftDisplay = api;
 })(typeof window !== "undefined" ? window : globalThis);

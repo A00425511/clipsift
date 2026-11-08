@@ -117,14 +117,16 @@ def find_weights(cc: dict, models_dir) -> Path:
 class RfdetrModel:
     """Thin wrapper so the detector only needs infer(tiles, threshold). Loads rfdetr lazily."""
 
-    def __init__(self, weights: Path, device: str):
+    def __init__(self, weights: Path, device: str, resolution: int | None = None):
         try:
             from rfdetr import from_checkpoint  # lazy: torch is heavy and optional
         except ImportError as e:
             raise ModelUnavailable(f"The CFD backend needs the 'rfdetr' package (and torch). "
                                    f"{INSTALL_HINT}") from e
         # rfdetr forwards extra keywords to the model config; the weights move to `device` on first use.
-        self.model = from_checkpoint(str(weights), device=device)
+        # A set resolution is for whole-frame use: the checkpoint's position grid is sized to match, as in the comparison.
+        extra = {"resolution": int(resolution), "positional_encoding_size": int(resolution) // 16} if resolution else {}
+        self.model = from_checkpoint(str(weights), device=device, **extra)
         self.device = device
 
     def infer(self, tiles, threshold: float):
@@ -161,6 +163,7 @@ class CfdDetector(Detector):
         enhance(np.zeros((8, 8, 3), np.uint8), self.enhancement)  # fail early on a bad name
         self.batch = max(1, int(cc.get("batch", 1)))
         self.merge_overlap = float(cc.get("merge_overlap", 0.5))
+        self.whole_frame = bool(cc.get("whole_frame", False))   # one pass over the whole frame, no tiles: far fewer false boxes
         self.roi = self._load_roi(cc.get("roi_mask"))
         self.source = f"cfd:{self.variant}"
         self.load_s = 0.0
@@ -173,9 +176,9 @@ class CfdDetector(Detector):
             models_dir = resolve_path((cfg.get("paths") or {}).get("models_dir", "models"))
             self.weights = find_weights(cc, models_dir)
             self.device = resolve_device(cc.get("device", "auto"))
-            self.model = RfdetrModel(self.weights, self.device)
+            self.model = RfdetrModel(self.weights, self.device, cc.get("resolution") if self.whole_frame else None)
         self.load_s = time.perf_counter() - t0
-        self.model_version = self.weights.stem if self.weights else f"cfd-{self.variant}"
+        self.model_version = (self.weights.stem if self.weights else f"cfd-{self.variant}") + (" whole frame" if self.whole_frame else "")
 
     @staticmethod
     def _load_roi(path):
@@ -202,7 +205,7 @@ class CfdDetector(Detector):
         roi = self._roi_for(frame.shape)
         img = enhance(frame, self.enhancement)
         rgb = np.ascontiguousarray(img[:, :, ::-1])
-        crops = tile_boxes(w, h, self.tile, self.overlap)
+        crops = [(0, 0, w, h)] if self.whole_frame else tile_boxes(w, h, self.tile, self.overlap)
         if roi is not None:
             crops = [c for c in crops if roi[c[1]:c[3], c[0]:c[2]].any()]
         boxes, scores = [], []

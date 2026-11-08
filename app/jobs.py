@@ -104,18 +104,22 @@ class JobQueue:
         self.proc = None
         self.thread = None
 
-    def add(self, name, paths, layer=0, window_start=None, window_end=None, video_id=None, interval=None, meta=None) -> dict:
+    def add(self, name, paths, layer=0, window_start=None, window_end=None, video_id=None, interval=None, meta=None, on_done=None) -> dict:
+        """on_done(job) runs after a successful run, before the job shows as done. It may change job["name"]."""
         return self._queue(name, [Path(p).name for p in paths], int(layer), "video",
-                           build_command(paths, self.runs_root, name, layer, window_start, window_end, video_id=video_id, interval=interval, meta=meta))
+                           build_command(paths, self.runs_root, name, layer, window_start, window_end, video_id=video_id, interval=interval, meta=meta),
+                           on_done)
 
     def add_review_set(self, name, run_dir, count) -> dict:
         """Run the model after counting, to pick the flags a person checks. One job at a time, like videos."""
         return self._queue(name, [], 1, "review_set",
                            [sys.executable, "-u", "-m", "clipsift", "verify", str(run_dir), "--count", str(count)])
 
-    def _queue(self, name, videos, layer, kind, cmd) -> dict:
+    def _queue(self, name, videos, layer, kind, cmd, on_done=None) -> dict:
         job = {"id": uuid.uuid4().hex[:12], "name": name, "videos": videos, "layer": layer, "kind": kind,
                "status": "queued", "added_at": time.time(), "started_at": None, "ended_at": None, "error": None, "cmd": cmd}
+        if on_done:
+            job["on_done"] = on_done
         with self.lock:
             self.jobs.append(job)
             if self.thread is None:
@@ -138,7 +142,7 @@ class JobQueue:
             return []
 
     def view(self, job) -> dict:
-        out = {k: v for k, v in job.items() if k != "cmd"}
+        out = {k: v for k, v in job.items() if k not in ("cmd", "on_done")}
         now = job["ended_at"] or time.time()
         out["elapsed_s"] = round(now - job["started_at"]) if job["started_at"] else 0
         p = read_progress(self._lines(job)) if job["status"] == "running" else {"text": "", "percent": 100 if job["status"] == "done" else 0}
@@ -191,6 +195,12 @@ class JobQueue:
                 code = proc.wait()
         except OSError as ex:
             code, job["error"] = 1, str(ex)
+        hook = job.pop("on_done", None)
+        if hook and code == 0 and not job.get("cancel") and (self.runs_root / job["name"] / "results.json").is_file():
+            try:
+                hook(job)   # for a re-cut: swap the new points in
+            except Exception as ex:  # noqa: BLE001 - shown to the person, never silent
+                code, job["error"] = 1, f"The new points were made but couldn't be swapped in: {ex}"
         with self.lock:
             self.proc = None
             job["ended_at"] = time.time()

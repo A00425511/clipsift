@@ -88,8 +88,12 @@
   <p class="hint">Rate this once for the whole video, before counting. The protocol asks 2 to 3 people to each rate it on their own. You'll check for changes at every count point in step 3.</p>
   <div class="vis-grid">
     <div>
+      <div class="watch-modes" role="group" aria-label="What to judge from">
+        <button type="button" id="vis-first" aria-pressed="true">First count point</button>
+        <button type="button" id="vis-whole" aria-pressed="false">Whole window, scrub to any frame</button>
+      </div>
       <video id="vis-video" controls muted loop playsinline preload="metadata"></video>
-      <p class="hint">The first count point. Use the pole here if there is one. If this video has its own visibility video, use that instead.</p>
+      <p class="hint" id="vis-where">The first count point. Use the pole here if there is one. If this video has its own visibility video, use that instead.</p>
     </div>
     <div>
       <fieldset class="choice" id="vis-choice">
@@ -133,6 +137,7 @@
       <button type="button" id="watch-reveal" hidden>Show the notes</button>
     </div>
     <div id="watch-form">
+      <p id="rn-who" class="hint"></p>
       <h3>Species present</h3>
       <div class="combo">
         <input id="rn-sp-input" type="text" role="combobox" aria-expanded="false" aria-controls="rn-sp-list" aria-autocomplete="list" autocomplete="off" placeholder="Add a species you saw" aria-label="Add a species you saw">
@@ -155,7 +160,7 @@
 
 <section id="step-qc" class="step-panel" aria-labelledby="qc-h" hidden>
   <h2 id="qc-h">4. Quality check</h2>
-  <p class="hint">ClipSift picks the random frames and holds them for a second person, who counts them blind. It then compares the two counts and shows how close they are. The numbers are for information, and a recount is your call.</p>
+  <p class="hint">ClipSift picks the random frames and holds them for a second person, who counts them blind. It then compares the two counts and shows how close they are. The numbers are for information, and a recount is your call. Blinding is done by this app on this computer: it hides earlier counts on screen, and isn't a security lock.</p>
   <div id="qc-verdict" class="verdict"></div>
   <div id="qc-actions" class="qc-actions"></div>
   <div id="qc-results"></div>
@@ -246,9 +251,9 @@
         <button type="button" id="p-clear" title="Remove all of your dots on this picture (asks first)">Clear all marks</button>
         <button type="button" id="z-in" aria-label="Zoom in">+</button>
         <button type="button" id="z-out" aria-label="Zoom out">&minus;</button>
-        <button type="button" id="z-reset" title="Back to the whole picture">Reset zoom</button>
+        <button type="button" id="z-reset" title="Back to the whole picture">Reset zoom</button> <span id="z-level" class="hint" aria-live="polite"></span>
         <span id="p-totals" class="p-totals" aria-live="polite"></span>
-        <span class="hint">Dot = one animal (circle for fish, square for invertebrate, dashed ring for Unsure, which is never counted). Use an ellipse or box for a larger animal. Marks are yours only and save at once. Mouse wheel zooms; drag in Move mode to pan. To remove a dot, ellipse or box, right-click it.</span>
+        <span class="hint">Dot = one animal (circle for fish, square for invertebrate, dashed ring for Unsure, which is never counted). Use an ellipse or box for a larger animal. Marks are yours only and save at once. Mouse wheel zooms where the pointer is, and + and − zoom 2x. Click to mark, and drag the picture to move around. To remove a mark, right-click it or press Undo.</span>
       </div>
       <div class="sliders adv">
         <label>Brightness <input type="range" id="f-brightness" min="50" max="300" value="100"><output></output></label>
@@ -262,6 +267,12 @@
   </section>
 
   <aside class="side" id="side-sub" aria-label="Subsample count" hidden>
+    <section class="panel" id="others-panel" aria-labelledby="oth-h" hidden>
+      <h2 id="oth-h">Other counts on this point</h2>
+      <p class="hint">Read only. Your own count goes in the boxes below.</p>
+      <div id="others-list"></div>
+      <label class="check"><input type="checkbox" id="others-marks"> Show their marks on the picture (dashed)</label>
+    </section>
     <section class="panel" aria-labelledby="cnt-h">
       <h2 id="cnt-h"><span class="step-n">3</span> Check your count</h2>
       <p class="hint">Count only the designated second. Counts are a relative index, not abundance. Enter 0 if none.</p>
@@ -303,7 +314,10 @@
         <button type="button" class="quiet" data-note="School present, more fish likely but not confirmed.">School, more not confirmed</button>
         <button type="button" class="quiet" data-note="Counted one extra: certain it was a different fish.">Certain it was a different fish</button>
       </div>
+      <label class="check" id="guess-row" hidden title="Optional. The model's guess appears only after your own count is saved, so it can't sway it. Never in a blind count."><input type="checkbox" id="guess-on"> After I save, show the model's guess (prototype)</label>
+      <div id="guess-box" class="guess-box" hidden></div>
       <div class="save-row">
+        <span id="save-point" class="save-point"></span>
         <button type="button" id="no-animals" title="Nothing seen at this point: sets fish and invertebrates to 0, saves and moves on. (N)">No animals <kbd>N</kbd></button>
         <button type="button" id="save-sub" class="primary"><span class="step-n">4</span> Save and go to the next <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
       </div>
@@ -457,7 +471,11 @@
   <div class="fb-two">
     <label class="fb-row">Video ID, as in the spreadsheet <input id="nv-id" type="text" maxlength="100" autocomplete="off"></label>
     <label class="fb-row">Count points
-      <select id="nv-points"><option value="">15 points, every 60 s (protocol)</option><option value="15">60 points, every 15 s</option></select></label>
+      <select id="nv-points"><option value="">Every 60 s (protocol)</option><option value="15">Every 15 s</option><option value="custom">Custom spacing</option></select></label>
+  </div>
+  <div id="nv-custom" class="fb-two" hidden>
+    <label class="fb-row">Seconds between points <input id="nv-every" type="number" min="5" max="600" step="1" placeholder="e.g. 45"></label>
+    <label class="fb-row">Or the number of points you want <input id="nv-howmany" type="number" min="1" max="200" step="1"></label>
   </div>
   <p id="nv-count" class="hint"></p>
   <div class="fb-four">

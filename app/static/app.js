@@ -16,6 +16,7 @@
   const S = {
     runId: null, results: null, saved: null, species: [], aliases: [], index: [],
     mode: "sub", selId: null, qc: false, recount: false, step: "count", who: "", whoSet: false,
+    guess: { on: false, ready: false, seen: {}, boxes: {} },
     diff: false, grid: false, watch: { species: [], points: false }, big: localStorage.getItem("clipsift.big") === "1", wantStep: null,
     seg: { species: null }, ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
@@ -51,6 +52,7 @@
     m.textContent = text || "";
     m.className = "message " + (kind || "");
     m.hidden = !text;
+    clearTimeout(m._t); if (text && kind !== "error") m._t = setTimeout(() => { m.hidden = true; }, 5000);
   }
   // ---------- data layer: every call to a server or store goes through `Data` ----------
   // Two implementations. FlaskData talks to the local Flask API. DemoData reads static files and keeps
@@ -143,7 +145,7 @@
     }
     // ---- CSV exports, generated in the browser (mirror app/server.py) ----
     const SEG_COLS = [["recording_id", "Recording folder name."], ["segment_id", "Segment id from results.json."], ["start_s", "Segment start, seconds from the start of the recording."], ["end_s", "Segment end, seconds."], ["kind", "active, or set_aside (no activity found, time is kept)."], ["audit_sample", "true if this set-aside segment was picked at random as a check."], ["status", "Model status: known, fish_unknown, unclear, movement_unidentified, none."], ["motion_score", "Motion score from the pipeline. Blank means not computed."], ["visibility_score", "Visibility score from the pipeline. Blank means not computed."], ["flag_shake", "true if camera shake was flagged."], ["flag_low_visibility", "true if low visibility was flagged."], ["review_priority", "Higher means it was shown earlier in the queue."], ["model_maxn", "Model MaxN: the most fish seen in one frame. A relative index, not abundance."], ["model_mean_count", "Model mean fish per sampled frame. A relative index, not abundance."], ["model_unique_tracks", "Number of separate fish tracks. A relative index, not abundance."], ["decision", "Reviewer decision: confirm, reject, unknown, needs_second_look."], ["species", "Species the reviewer entered. Blank if none."], ["species_free_text", "true if the species was typed and is not in the species list. Check these."], ["count", "Fish count the reviewer entered. A relative index, not abundance."], ["note", "Reviewer note."], ["reviewer", "Reviewer name as typed."], ["reviewed_at", "When the latest decision was saved (UTC)."], ["n_decisions", "How many decisions were saved for this segment. Only the latest is shown here."], ["n_grid_tags", "How many grid cell tags were saved for this segment."]];
-    const SUB_COLS = [["Video ID", "Video ID from results.json. Must match the Coastal Action spreadsheet."], ["Subsample", "Subsample point id."], ["Time (s)", "Seconds from the start of the recording."], ["Counter", "Who counted."], ["Pass", "primary, qc_blind (second blind count) or recount."], ["Total fish count", "Fish counted in the designated second. A relative index, not abundance."], ["Invertebrate count", "Invertebrates counted in the designated second. A relative index."], ["Number of species", "Species in this subsample."], ["Unknown/Unable to ID due to visibility", "Count that could not be identified because of visibility."], ["Visibility category", "Water clarity category for this point."], ["Visibility change >= 0.5 m", "yes if visibility changed by 0.5 m or more."], ["Visibility direction", "increasing or decreasing, when it changed."], ["Characteristics ticked", "Of shape, anatomical features, colour or flashes, swimming behaviour."], ["Notes", "Reviewer notes. Movement noted as unidentified is a note, never counted."], ["Saved at (UTC)", "When the count was saved."], ["QC percent difference", "Primary vs second count difference. Formula is provisional."], ["QC recount needed", "yes if the difference is over the configured limit."]];
+    const SUB_COLS = [["Video ID", "Video ID from results.json. Must match the Coastal Action spreadsheet."], ["Subsample", "Subsample point id."], ["Time (s)", "Seconds from the start of the recording."], ["Counter", "Who counted."], ["Pass", "primary, qc_blind (second blind count) or recount."], ["Total fish count", "Fish counted in the designated second. A relative index, not abundance."], ["Invertebrate count", "Invertebrates counted in the designated second. A relative index."], ["Number of species", "Species in this subsample."], ["Unknown/Unable to ID due to visibility", "Count that could not be identified because of visibility."], ["Visibility category", "Water clarity category for this point."], ["Visibility change >= 0.5 m", "yes if visibility changed by 0.5 m or more."], ["Visibility direction", "increasing or decreasing, when it changed."], ["Characteristics ticked", "Of shape, anatomical features, colour or flashes, swimming behaviour."], ["Model guess shown", "after: the model's guess was shown once this count was saved. seen: it was seen before this count was saved."], ["Possible animals not confirmed", "yes if the counter ticked that there may be animals they couldn't confirm. Never counted."], ["Notes", "Reviewer notes."], ["Saved at (UTC)", "When the count was saved."], ["QC percent difference", "Primary vs second count difference. Formula is provisional."], ["QC recount needed", "yes if the difference is over the configured limit."]];
     const csvText = D.csvText;
     async function csvFor(id, name) {
       const results = await this.results(id);
@@ -157,7 +159,7 @@
         const rows = revs.map((r) => {
           const q = r.pass !== "primary" ? info.qc[r.subsample_id] : null, sc = r.species_counts || {};
           return [vid, r.subsample_id, times[r.subsample_id], r.counter, r.pass, r.total_fish_count, r.invertebrate_count, r.total_species, r.unknown_count, r.visibility_category,
-            r.visibility_change == null ? "" : (r.visibility_change ? "yes" : "no"), r.visibility_direction, (r.characteristics || []).join(";"), r.notes, r.at,
+            r.visibility_change == null ? "" : (r.visibility_change ? "yes" : "no"), r.visibility_direction, (r.characteristics || []).join(";"), r.model_guess, D.noteParts(r).possible ? "yes" : "", D.noteParts(r).text, r.at,
             q && q.percent_diff != null ? q.percent_diff : "", q ? (q.recount_needed ? "yes" : "no") : ""].concat(names.map((n) => (n in sc ? sc[n] : "")));
         });
         return csvText(SUB_COLS.map((c) => c[0]).concat(names.map((n) => "Count: " + n)), rows);
@@ -308,11 +310,13 @@
     try { d = await Data.home(); } catch (e) { message(e.message, "error"); return; }
     const list = $("home-videos"); clear(list);
     const STATUS_WORDS = { no_sample: "", counting: "", waiting_second: "Waiting for a second count", review: "Quality check done, some frames worth a look", pass: "Quality check done" };
+    const stage = (v) => ["Visibility " + v.n_visibility + " rated", "Counted " + v.n_counted + " of " + v.n_subsamples, STATUS_WORDS[v.qc_status], v.review_total ? "Model flags " + v.review_done + " of " + v.review_total : ""].filter(Boolean).join(". ");
     const real = d.videos.filter((v) => !v.fixture);
     if (!real.length) list.append(el("li", { class: "hint", text: "No videos yet. Open one to begin." }));
+    const ready = (v) => ["pass", "review"].includes(v.qc_status) && v.n_counted >= v.n_subsamples;
     for (const v of real) list.append(el("li", {}, el("button", { type: "button", on: { click: () => { $("run-select").value = v.run_id; loadRun(v.run_id); } } },
-      el("span", { text: v.video_id }), el("span", { class: "hint", text: v.n_counted + " of " + v.n_subsamples + " counted" }),
-      el("span", { class: "sub", text: [STATUS_WORDS[v.qc_status], v.mean_count != null ? "MeanCount " + v.mean_count.toFixed(2) : ""].filter(Boolean).join(". ") }))));
+      el("span", { text: v.video_id }), el("span", { class: ready(v) ? "hint ready" : "hint", text: ready(v) ? "Ready to sign off" : "In progress" }),
+      el("span", { class: "sub", text: stage(v) + (v.mean_count != null ? ". MeanCount " + v.mean_count.toFixed(2) : "") }))));
     const box = $("home-rater"); clear(box);
     if (!d.rater.pairs.length) { box.append(el("p", { class: "hint", text: "Nothing yet. This fills in after the first blind check." })); return; }
     box.append(el("table", { class: "rater-table" },
@@ -324,10 +328,14 @@
   // ---------- who is working: a saved name, asked for each time a video opens ----------
   function paintWho() { $("who-name").textContent = S.who ? "Working as " + S.who : "Choose your name"; }
   function setWho(name) {
+    const theirs = S.results && name !== S.who && (S.saved.subsample_reviews || []).some((r) => r.counter === name);
+    if (theirs && !confirm(name + " already has counts on this video. Choose this name only if you are " + name + ", because their counts can be changed under it.")) return;
+    const opening = !S.whoSet;
+    if (S.who && name !== S.who) { resetFilters(); if (S.big) toggleBig(); }   // display settings belong to the person who set them
     S.who = name; S.whoSet = true; S.watch.reveal = false; paintWho();
     try { localStorage.setItem("clipsift.reviewer", name); localStorage.setItem("bank-reviewer", name); } catch (e) { /* storage may be blocked */ }
     $("who-dlg").close();
-    if (S.results) { const back = S.qc ? "qc" : S.step; S.selId = null; refreshSaved().then(() => { setStep(locked() && ["count", "report", "verify"].includes(back) ? "qc" : back); if (S.step === "count") maybeTour(); }); }
+    if (S.results) { const back = S.qc ? "qc" : S.step; S.selId = null; refreshSaved().then(() => { const go = opening ? firstStep() : back; setStep(locked() && ["count", "report", "verify"].includes(go) ? "qc" : go); if (S.step === "count") maybeTour(); }); }
   }
   async function askWho() {
     const list = await Data.profiles().catch(() => []), box = $("who-list"); clear(box);
@@ -367,7 +375,8 @@
   // ---------- load a run ----------
   async function loadRun(id) {
     if (!id) { showHome(); return; }
-    message(""); S.whoSet = false; S.watch.reveal = false; $("home").hidden = true; $("run-pick").hidden = false; $("new-video").hidden = !!DEMO;
+    message(""); S.whoSet = false; S.watch.reveal = false; S.guess = { on: false, ready: S.guess.ready, seen: {}, boxes: {} };   // the guess starts off for every video
+    if (!DEMO && !S.guess.checked) { S.guess.checked = true; api("/api/videos").then((d) => { S.guess.ready = !!d.detector_ready; }).catch(() => {}); } $("home").hidden = true; $("run-pick").hidden = false; $("new-video").hidden = !!DEMO;
     try {
       const [results, saved] = await Promise.all([Data.results(id), Data.saved(id)]);
       S.runId = id; S.results = results; S.saved = saved; S.selId = null;
@@ -391,7 +400,9 @@
   }
   // Where to pick up: the first step that still needs doing.
   function firstStep() {
-    if (S.wantStep) { const s = S.wantStep; S.wantStep = null; return s; }
+    if (S.wantStep) { const s = S.wantStep; if (S.whoSet) S.wantStep = null; return s; }   // kept until the name is chosen
+    const rated = (S.saved.visibility || []).map((r) => r.observer);
+    if (S.whoSet && rated.length < 3 && !rated.includes(reviewer())) return "visibility";   // each person rates on their own, before anything else
     if (!(S.saved.visibility || []).length) return "visibility";
     if (!S.saved.latest_recording_notes) return "watch";
     return S.saved.n_counted < subs().length ? "count" : "qc";
@@ -452,6 +463,21 @@
   function renderChrome() {
     renderSummary(); renderProgress(); renderTimeline(); renderQueue(); paintSteps();
   }
+  // Re-cut a video already set up: same file, new window or spacing.
+  async function openRecut() {
+    const r = S.results, rec = r.recording || {}, p = r.protocol || {}, src = (rec.source_files || [])[0];
+    if (!src) { message("This video's original file isn't recorded, so it can't be re-cut here.", "error"); return; }
+    const counted = (S.saved.subsample_reviews || []).length > 0 || (S.saved.point_labels || []).length > 0;
+    await setupVideo({ path: src, recutOf: S.runId });
+    const set = (id, v) => { if (v != null) $(id).value = v; };
+    set("nv-id", rec.video_id); set("nv-start", p.window_start_s); set("nv-end", p.window_end_s);
+    set("nv-transect", rec.transect); set("nv-stat", rec.stat); set("nv-year", rec.year); set("nv-season", rec.season); set("nv-date", rec.date);
+    const every = p.interval_s;
+    if (every && every !== 60) { if (every === 15) $("nv-points").value = "15"; else { $("nv-points").value = "custom"; $("nv-every").value = every; } }
+    paintPointCount();
+    nvStatus(counted ? "Counting has started on this video, so this makes a new version beside it. The original and its counts stay as they are. Visibility ratings and watch notes carry over."
+      : "The new points replace the current ones. Visibility ratings and watch notes carry over.", "");
+  }
   function renderSummary() {
     const r = S.results, sm = r.summary || {}, rec = r.recording || {};
     const box = $("summary"); clear(box); box.hidden = false;
@@ -466,6 +492,7 @@
     box.append(item("MeanCount (index)", !S.whoSet ? "hidden until you choose your name" : hide ? "hidden until your blind count is done" : fmtNum(S.saved.mean_count_final ?? S.saved.mean_count_reviewed, 2)));
     const meta = [rec.transect && "Transect " + rec.transect, rec.stat && statText(rec.stat), rec.year, rec.season].filter(Boolean).join(", ");
     if (meta) box.append(el("div", { class: "stat meta", text: meta }));
+    if (!DEMO && !S.qc && !locked() && (rec.source_files || []).length) box.append(el("button", { type: "button", class: "quiet", text: "Change window or spacing", title: "Cut new count points from the same video", on: { click: openRecut } }));
   }
   function renderProgress() {
     const wrap = $("progress-wrap"); wrap.hidden = false;
@@ -544,7 +571,7 @@
         if (u.flags && u.flags.low_visibility) b.append(badge("Low visibility", "flag"));
       }
       const r = done && S.mode === "sub" && !S.qc ? primaryOf(id) : null;
-      b.append(el("span", { class: "q-done", text: !done ? "" : r && r.counter === reviewer() ? "✓ " + r.total_fish_count + " fish, " + r.invertebrate_count + " inv" : "✓ done" }));
+      b.append(el("span", { class: "q-done", text: !done ? "" : r && S.whoSet && r.counter === reviewer() ? "✓ " + r.total_fish_count + " fish, " + r.invertebrate_count + " inv" : "✓ done" }));
       list.append(el("li", {}, b));
     });
   }
@@ -571,8 +598,13 @@
     setMotion(false);
     if (isTyping(document.activeElement)) document.activeElement.blur();   // otherwise Space and the other keys do nothing on the new point
     if (markKind() === "unsure") setMarkKind("fish");   // later marks must not silently go uncounted
+    $("p-species").value = "";   // a species from the last point mustn't ride along
+    const top = $("stage-wrap").getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.5) $("stage-wrap").scrollIntoView({ block: "start" });
     loadMedia(u);
-    S.zoom = { k: 1, x: 0, y: 0 }; applyZoom();
+    S.zoom = { k: 1, x: 0, y: 0 }; applyZoom(); $("z-level").textContent = "";   // every point starts at the whole picture
+    S.ss.fromMarks = false; S.ss.markSpecies = [];
+    $("save-point").textContent = id + " at " + fmtTime(u.t_s);
     $("point-tools").hidden = S.mode !== "sub";
     if (S.mode === "sub") renderSubsample(u); else renderSegment(u);
     renderGrid();
@@ -628,6 +660,7 @@
       w.style.left = b.count.left + "%"; w.style.width = b.count.width + "%"; tol.style.left = b.tolerance.left + "%"; tol.style.width = b.tolerance.width + "%";
     }
     $("hud-time").textContent = off != null ? D.relTime(t, off) : t.toFixed(1) + " s";
+    $("motion-btn").firstChild.textContent = !S.motion ? "Play clip " : (v.paused ? "Back to still " : "Stop clip ");
     $("hud-speed").textContent = currentSpeed() + "x";
     $("hud-head").style.left = Math.min(100, (t / len) * 100) + "%";
     const inWin = off != null && D.inCount(t, off, countSec());
@@ -769,6 +802,18 @@
     const blocked = qcBlocked();
     const labels = blocked ? [] : myLabels();
     const rad = (6 * W) / Math.max(200, $("stage").clientWidth) / S.zoom.k;
+    const g = !S.qc && S.guess.boxes[S.selId];
+    if (g) for (const b of g.boxes) {
+      const n = document.createElementNS(NS, "rect");
+      n.setAttribute("x", b[0]); n.setAttribute("y", b[1]); n.setAttribute("width", b[2]); n.setAttribute("height", b[3]);
+      n.setAttribute("class", "mark guess"); n.setAttribute("vector-effect", "non-scaling-stroke");
+      const t = document.createElementNS(NS, "title"); t.textContent = "Model guess, score " + b[4]; n.append(t); svg.append(n);
+    }
+    if (S.showOthers && othersVisible()) for (const l of (S.saved.point_labels || []).filter((x) => x.subsample_id === S.selId && x.counter !== reviewer() && x.kind !== "unsure")) {
+      const [cx, cy] = labelCenter(l), n = document.createElementNS(NS, "circle");
+      n.setAttribute("cx", cx); n.setAttribute("cy", cy); n.setAttribute("r", rad * 1.6); n.setAttribute("class", "mark other"); n.setAttribute("vector-effect", "non-scaling-stroke");
+      const t = document.createElementNS(NS, "title"); t.textContent = l.counter + ": " + l.kind; n.append(t); svg.append(n);
+    }
     for (const l of labels) {
       const inv = l.kind === "invertebrate", cls = "mark " + (l.kind === "unsure" ? "uns" : inv ? "inv" : "fish");
       let n;
@@ -787,10 +832,12 @@
     }
     const fish = labels.filter((l) => l.kind === "fish").length, inv = labels.filter((l) => l.kind === "invertebrate").length, uns = labels.length - fish - inv;
     $("p-totals").textContent = blocked ? "Use a different name for the blind second count." : (labels.length ? "Marked: " + fish + " fish, " + inv + " invertebrates" + (uns ? ", " + uns + " Unsure (not counted)" : "") : "No marks yet. Click an animal on the picture to place a dot.");
-    if (feed && labels.length && !blocked) {
+    if (feed && !blocked && (labels.length || S.ss.fromMarks)) {   // once marks set the totals, they keep them in step, down to 0
+      S.ss.fromMarks = labels.length > 0 || S.ss.fromMarks;
+      if (!labels.length) S.ss.rows = S.ss.rows.filter((r) => !S.ss.markSpecies || !S.ss.markSpecies.includes(r.name));
       $("c-fish").value = fish; $("c-inv").value = inv;
-      $("c-unk").value = labels.filter((l) => l.kind !== "unsure" && !l.species).length || "";
       const withSp = labels.filter((l) => l.species);
+      S.ss.markSpecies = [...new Set(withSp.map((l) => l.species))];
       if (withSp.length) {
         const m = {}; for (const l of withSp) m[l.species] = (m[l.species] || 0) + 1;
         S.ss.rows = Object.entries(m).map(([name, n2]) => ({ name, n: n2, free: !resolve(name) })); paintSpeciesRows();
@@ -810,6 +857,7 @@
     cx = cx ?? st.clientWidth / 2; cy = cy ?? st.clientHeight / 2;
     z.x = cx - (cx - z.x) * (nk / z.k); z.y = cy - (cy - z.y) * (nk / z.k); z.k = nk;
     applyZoom(); renderLabels(false);
+    $("z-level").textContent = S.zoom.k > 1.01 ? S.zoom.k.toFixed(1) + "x" : "";
   }
   function setTool(t) {
     S.tool = t;
@@ -825,6 +873,8 @@
     if (qcBlocked()) { message("Use a different name for the blind second count.", "error"); return; }
     const typed = $("p-species").value.trim(), known = resolve(typed);
     const payload = { subsample_id: S.selId, counter: reviewer(), op: "add", shape, kind: markKind(), species: (known ? known.sci : typed) || null, x, y };
+    const u = unit(S.selId, "sub");   // marked on a paused clip frame: keep the moment it was seen
+    if (S.motion && u && u.context_start_s != null) payload.time_s = Math.round((u.context_start_s + $("stage-clip").currentTime) * 100) / 100;
     if (shape !== "point") { payload.w = w; payload.h = h; }
     try {
       const rec = await Data.save(S.runId, "point_labels", payload);
@@ -853,7 +903,6 @@
       S.saved.point_labels = (S.saved.point_labels || []).filter((x) => x.label_id !== l.label_id);
       S.markHistory.push({ type: "remove", label: l });
       renderLabels(true);
-      if (!myLabels().length) $("p-totals").textContent += " Count fields were not changed; edit them by hand.";
       message("Mark removed. Press Z to bring it back.", "");
     } catch (err) { message("Could not remove that mark: " + err.message, "error"); }
   }
@@ -866,7 +915,7 @@
         await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: l.label_id });
         S.saved.point_labels = S.saved.point_labels.filter((x) => x.label_id !== l.label_id);
       }
-      message("Cleared " + mine.length + " marks. Count fields were not changed; edit them by hand.", "ok");
+      message("Cleared " + mine.length + " marks. The totals follow the marks.", "ok");
     } catch (err) { message("Clearing stopped partway: " + err.message, "error"); }
     renderLabels(true);
   }
@@ -891,7 +940,6 @@
       await Data.save(S.runId, "point_labels", { subsample_id: S.selId, counter: reviewer(), op: "remove", label_id: last.label_id });
       S.saved.point_labels = S.saved.point_labels.filter((l) => l.label_id !== last.label_id);
       renderLabels(true);
-      if (!myLabels().length) $("p-totals").textContent += ". Count fields were not changed; edit them by hand.";
     } catch (err) { message("Undo failed: " + err.message, "error"); }
   }
   function wireTools() {
@@ -899,16 +947,20 @@
     st.addEventListener("pointerdown", (e) => {
       if (S.mode !== "sub" || e.button > 1 || (e.button === 0 && e.ctrlKey) || !$("still").complete) return;   // Ctrl+click is a right-click on a Mac
       const middle = e.button === 1;
-      if (S.motion && S.tool !== "pan" && !middle) { message("Let go of Space to add or remove marks.", "warn"); return; }
+      if (S.motion && S.tool !== "pan" && !middle && !$("stage-clip").paused) { message("Pause the clip, or let go of Space, to add or remove marks.", "warn"); return; }
       if (S.tool === "pan" || middle) { S.drag = { type: "pan", x: e.clientX, y: e.clientY }; st.setPointerCapture(e.pointerId); e.preventDefault(); return; }
       const [x, y] = toImage(e);
-      S.drag = { type: S.tool, x, y, x2: x, y2: y };
+      S.drag = { type: S.tool, x, y, x2: x, y2: y, sx: e.clientX, sy: e.clientY };
       st.setPointerCapture(e.pointerId); e.preventDefault();
     });
     st.addEventListener("pointermove", (e) => {
       const d = S.drag; if (!d) return;
       if (d.type === "pan") { S.zoom.x += e.clientX - d.x; S.zoom.y += e.clientY - d.y; d.x = e.clientX; d.y = e.clientY; applyZoom(); return; }
-      if (d.type === "dot") return;
+      if (d.type === "dot") {   // a drag in Dot mode moves the picture, so it never places a mark by accident
+        if (!d.panning && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return;
+        if (!d.panning) { d.panning = true; d.px = d.sx; d.py = d.sy; st.classList.add("panning"); }
+        S.zoom.x += e.clientX - d.px; S.zoom.y += e.clientY - d.py; d.px = e.clientX; d.py = e.clientY; applyZoom(); return;
+      }
       [d.x2, d.y2] = toImage(e);
       let pv = $("labels").querySelector(".preview"); if (pv) pv.remove();
       const x = Math.min(d.x, d.x2), y = Math.min(d.y, d.y2), w = Math.abs(d.x2 - d.x), h = Math.abs(d.y2 - d.y);
@@ -922,8 +974,9 @@
       const pv = $("labels").querySelector(".preview"); if (pv) pv.remove();
       if (d.type === "pan") return;
       if (d.type === "dot") {
-        const hit = labelAt(d.x, d.y);
-        if (hit) removeLabel(hit); else addLabel("point", Math.round(d.x), Math.round(d.y));
+        st.classList.remove("panning");
+        if (d.panning) { renderLabels(false); return; }
+        addLabel("point", Math.round(d.x), Math.round(d.y));   // a click only ever adds. Right-click or Undo removes
         return;
       }
       const [W] = dims(), minPx = (8 * W) / Math.max(200, st.clientWidth) / S.zoom.k;
@@ -943,12 +996,15 @@
       if (S.mode !== "sub") return;
       e.preventDefault();
       const r = st.getBoundingClientRect();
-      zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top);
+      S.lastPointer = [e.clientX - r.left, e.clientY - r.top];
+      zoomBy(Math.pow(1.0018, -e.deltaY * (e.deltaMode === 1 ? 33 : 1)), e.clientX - r.left, e.clientY - r.top);   // about 1.2x per wheel notch, smooth on a trackpad
     }, { passive: false });
     document.querySelectorAll("[data-tool]").forEach((b) => b.addEventListener("click", () => setTool(b.dataset.tool)));
     $("p-undo").addEventListener("click", undoLabel);
     $("p-clear").addEventListener("click", clearAllLabels);
-    $("z-in").addEventListener("click", () => zoomBy(1.4)); $("z-out").addEventListener("click", () => zoomBy(1 / 1.4));
+    st.addEventListener("pointermove", (e) => { const r = st.getBoundingClientRect(); S.lastPointer = [e.clientX - r.left, e.clientY - r.top]; });
+    const atPointer = (f) => zoomBy(f, ...(S.lastPointer || []));   // + and - zoom where the mouse last was
+    $("z-in").addEventListener("click", () => atPointer(2)); $("z-out").addEventListener("click", () => atPointer(0.5));
     $("z-reset").addEventListener("click", () => { S.zoom = { k: 1, x: 0, y: 0 }; applyZoom(); renderLabels(false); });
     window.addEventListener("resize", () => { applyZoom(); if (S.mode === "sub") renderLabels(false); });
   }
@@ -1019,7 +1075,7 @@
       else if (e.key === "ArrowUp" && !list.hidden) { e.preventDefault(); active = Math.max(0, active - 1); paint(); }
       else if (e.key === "Enter") {
         e.preventDefault();
-        if (!list.hidden && active >= 0) choose(active);
+        if (!list.hidden && items.length && (active >= 0 || items[0].kind === "list")) choose(active >= 0 ? active : 0);   // Enter takes the top match
         else if (input.value.trim()) { const r = resolve(input.value); onChoose(r ? { value: r.sci, free: false, item: r } : { value: input.value.trim(), free: true, item: null }); close(); }
       } else if (e.key === "Escape") { close(); input.blur(); }
     });
@@ -1111,17 +1167,20 @@
     $("movement-banner").hidden = true;
     // form: prefill only from this person's own latest count, of any kind
     const prev = ownCount(u.subsample_id);
+    renderOthers(u); renderGuess();
     $("audit-banner").textContent = prev ? "Your earlier count is loaded. Other people's counts are hidden." : "Count this frame fresh. Earlier counts are hidden on purpose.";
     $("c-fish").value = prev ? prev.total_fish_count : ""; $("c-inv").value = prev ? prev.invertebrate_count : "";
     $("c-unk").value = prev && prev.unknown_count ? prev.unknown_count : "";
     S.ss.rows = prev ? Object.entries(prev.species_counts || {}).map(([name, n]) => ({ name, n, free: !resolve(name) })) : [];
-    const carried = !S.qc ? (prev && !prev.visibility_direction ? prev.visibility_category : !prev ? carriedVisibility(u) : null) : null;
-    S.carriedVis = carried;
+    // A saved Unknown that differs from "total minus species" was typed on purpose, so it isn't recalculated.
+    S.ss.unkTouched = !!prev && (prev.unknown_count || 0) !== Math.max(0, (prev.total_fish_count || 0) + (prev.invertebrate_count || 0) - S.ss.rows.reduce((a, r) => a + r.n, 0));
+    S.carriedVis = !S.qc ? carriedVisibility(u) : null;
     $("c-vis").value = prev && prev.visibility_direction ? prev.visibility_category || "" : "";
     document.querySelector('input[name=vdir][value="' + ((prev && prev.visibility_direction) || "") + '"]').checked = true;
     paintVisDir();
-    $("c-notes").value = prev ? (prev.notes || "").replace(/^Movement, unidentified\. ?/, "") : "";
-    $("c-move").checked = !!(prev && /^Movement, unidentified/.test(prev.notes || ""));
+    document.querySelector("#c-vdir legend").textContent = S.qc ? "Visibility since the last frame you counted" : "Visibility since the last point";
+    $("c-notes").value = prev ? D.noteParts(prev).text : "";
+    $("c-move").checked = !!(prev && D.noteParts(prev).possible);
     for (const cb of $("chars").querySelectorAll("input")) cb.checked = !!(prev && (prev.characteristics || []).includes(cb.value));
     $("ss-species").value = "";
     paintSpeciesRows(); paintCharsWarn();
@@ -1132,10 +1191,33 @@
   function ownCount(id) { let r = null; for (const x of S.saved.subsample_reviews || []) if (x.subsample_id === id && x.counter === reviewer()) r = x; return r; }
   const visChange = () => document.querySelector("input[name=vdir]:checked").value;
   function paintVisDir() { $("c-vis-row").hidden = !visChange(); }
+  // Visibility before this point: the video's rating, then the changes recorded at earlier points. Never a stored copy.
   function carriedVisibility(u) {
-    const earlier = subs().filter((s) => (s.t_s ?? 0) < (u.t_s ?? 0)).sort((a, b) => (b.t_s ?? 0) - (a.t_s ?? 0));
-    for (const s of earlier) { const r = primaryOf(s.subsample_id); if (r && r.visibility_category) return r.visibility_category; }
-    return D.visibilitySummary(S.saved.visibility || []).usual;
+    const earlier = subs().filter((s) => (s.t_s ?? 0) < (u.t_s ?? 0));
+    const vis = D.pointVisibility(earlier, S.saved.latest_primary || {}, S.saved.visibility || []);
+    const last = earlier.filter((s) => vis[s.subsample_id]).sort((a, b) => (b.t_s ?? 0) - (a.t_s ?? 0))[0];
+    return last ? vis[last.subsample_id] : D.visibilitySummary(S.saved.visibility || []).usual;
+  }
+  // Everyone else's count of this point, read only. Hidden from anyone counting blind or about to recount it.
+  function othersVisible() {
+    if (S.qc || locked() || !S.whoSet) return false;
+    const c = check();
+    return !(c.status === "review" && c.recount.includes(S.selId) && !((S.saved.qc[S.selId] || {}).counters || []).includes(reviewer()));
+  }
+  function renderOthers(u) {
+    const latest = {}; for (const r of S.saved.subsample_reviews || []) if (r.subsample_id === u.subsample_id && r.counter !== reviewer()) latest[r.counter + "|" + r.pass] = r;
+    const rows = Object.values(latest), box = $("others-list"); clear(box);
+    $("others-panel").hidden = !rows.length || !othersVisible();
+    const PASS = { primary: "first count", qc_blind: "blind count", recount: "recount" }, CH = { shape: "shape", anatomical_features: "anatomy", colouration_or_flashes: "colour", swimming_behaviour: "movement" };
+    const vis = D.pointVisibility(subs(), S.saved.latest_primary || {}, S.saved.visibility || []);
+    for (const r of rows) {
+      const np = D.noteParts(r), sp = Object.entries(r.species_counts || {}).map(([k, n]) => shownName(k) + " " + n).join(", ");
+      const bits = [r.total_fish_count + " fish, " + r.invertebrate_count + (r.invertebrate_count === 1 ? " invertebrate" : " invertebrates") + (r.unknown_count ? ", " + r.unknown_count + " unknown" : ""), sp,
+        (r.characteristics || []).length ? "Features: " + r.characteristics.map((c) => CH[c] || c).join(", ") : "",
+        r.pass === "primary" ? "Visibility " + (r.visibility_direction ? (r.visibility_direction === "increasing" ? "better, " : "worse, ") : "") + (vis[r.subsample_id] || "not recorded") : "",
+        np.possible ? "Possible animals, not confirmed" : "", np.text].filter(Boolean);
+      box.append(el("div", { class: "others-row" }, el("b", { text: r.counter + ", " + (PASS[r.pass] || r.pass) }), el("span", { text: bits.map((b) => b.replace(/\.+$/, "")).join(". ") + "." })));
+    }
   }
   function paintSpeciesRows() {
     const ul = $("species-rows"); clear(ul);
@@ -1152,6 +1234,7 @@
   function paintSpeciesSum() {
     const sum = S.ss.rows.reduce((a, r) => a + r.n, 0), p = $("species-sum");
     const fish = parseInt($("c-fish").value, 10), inv = parseInt($("c-inv").value, 10) || 0;
+    if (!S.ss.unkTouched) { const unk = Math.max(0, (isNaN(fish) ? 0 : fish) + inv - sum); $("c-unk").value = unk || ""; }   // the animals with no species yet
     p.textContent = S.ss.rows.length ? S.ss.rows.length + " species, " + sum + " counted by species." + (!isNaN(fish) && sum > fish + inv ? " That is more than your fish and invertebrate totals. Check the numbers." : "") : "";
   }
   function paintCharsWarn() {
@@ -1173,27 +1256,63 @@
     if (!reviewer()) { askWho(); return; }
     if (fish == null || inv == null || fish < 0 || inv < 0) { const say = "Enter fish and invertebrate counts. Use 0 if there were none, or press No animals."; message(say, "error"); $("sub-result").textContent = say; (fish == null ? $("c-fish") : $("c-inv")).focus(); return; }
     const move = $("c-move").checked, notes = $("c-notes").value.trim();
+    if (visChange() && !$("c-vis").value) {
+      const say = "You said visibility got " + (visChange() === "increasing" ? "better" : "worse") + ". Choose what it is now, just above.";
+      message(say, "error"); $("sub-result").textContent = say; $("c-vis").scrollIntoView({ block: "center" }); $("c-vis").focus(); return;
+    }
     const sc = {}; for (const r of S.ss.rows) sc[r.name] = (sc[r.name] || 0) + r.n;
     const payload = {
       subsample_id: S.selId, counter: reviewer(), pass: S.qc ? (S.recount ? "recount" : "qc_blind") : "primary",
       total_fish_count: fish, invertebrate_count: inv, species_counts: sc, unknown_count: num("c-unk") || 0,
-      total_species: Object.keys(sc).length, visibility_category: (visChange() && $("c-vis").value) || S.carriedVis || null,
+      total_species: Object.keys(sc).length, visibility_category: visChange() ? $("c-vis").value : (S.carriedVis || null),
       visibility_change: visChange() ? true : null, visibility_direction: visChange() || null,
       characteristics: [...$("chars").querySelectorAll("input:checked")].map((c) => c.value),
       free_text_species: S.ss.rows.filter((r) => r.free).map((r) => r.name),
-      notes: (move ? "Movement, unidentified. " : "") + notes, contrast_settings: settingsPayload(),
+      possible_animals: move, notes, contrast_settings: settingsPayload(),
+      model_guess: S.qc ? null : (S.guess.seen[S.selId] ? "seen" : (S.guess.on ? "after" : null)),
     };
     const id = S.selId, first = primaryOf(id);
-    if (!S.qc && first && first.counter !== reviewer() && !confirm("This point was counted by " + first.counter + ". Saving makes your count the first count, in place of theirs. Save anyway?")) return;
+    if (!S.qc && first && first.counter !== reviewer()) {
+      if (!confirm("This point was counted by " + first.counter + ". Saving makes your count the first count, in place of theirs. Save anyway?")) return;
+      payload.replace = true;
+    }
     try {
       await Data.save(S.runId, "subsample_reviews", payload);
       await refreshSaved();
       message("Saved count for " + id + ".", "ok");
       $("sub-result").textContent = "Saved count for " + id + ".";
+      if (!S.qc && S.guess.on && !S.guess.boxes[id]) { await showGuess(id, fish); return; }   // compare with the model, then move on
+      advanceAfter(id);
+    } catch (e) { message("Not saved: " + e.message, "error"); }
+  }
+  function advanceAfter(id) {
       if (S.qc && queue().every(isDone)) { S.recount = false; setStep("qc"); return; }
+      const ids = queue(), skipped = ids.filter((x) => !isDone(x));
+      if (ids.indexOf(id) === ids.length - 1 && skipped.length) {   // the end, with a point still to do
+        message((skipped.length > 3 ? skipped.length + " points" : skipped.join(", ")) + (skipped.length === 1 ? " isn't" : " aren't") + " counted yet. Opening " + skipped[0] + ".", "warn");
+        select(skipped[0]); return;
+      }
       if (!S.qc && S.saved.n_counted >= subs().length && queue().indexOf(id) === queue().length - 1) { setStep("qc"); return; }
       step(1);
-    } catch (e) { message("Not saved: " + e.message, "error"); }
+  }
+  // The model's guess for a point already counted: boxes on the frame and its number beside yours. Changes nothing.
+  async function showGuess(id, mine) {
+    const box = $("guess-box"); box.hidden = false; box.textContent = "Getting the model's guess...";
+    try {
+      const d = await post("/api/runs/" + enc(S.runId) + "/model_guess", { subsample_id: id });
+      S.guess.boxes[id] = d; S.guess.seen[id] = true; S.guess.mine = Object.assign(S.guess.mine || {}, { [id]: mine });
+    } catch (e) { box.textContent = "No guess: " + e.message; }
+    if (S.selId === id) { renderGuess(); renderLabels(false); }
+    box.append(el("button", { type: "button", class: "primary", text: "Next point", on: { click: () => advanceAfter(id) } }));
+  }
+  function renderGuess() {
+    const row = $("guess-row"), box = $("guess-box"), d = S.guess.boxes[S.selId];
+    row.hidden = !!DEMO || S.qc || !S.guess.ready; $("guess-on").checked = S.guess.on;
+    box.hidden = !d || S.qc; clear(box);
+    if (!d || S.qc) return;
+    const mine = (S.guess.mine || {})[S.selId] ?? (ownCount(S.selId) || {}).total_fish_count;
+    box.append(el("b", { text: "Model guess: " + d.fish + " fish" + (mine != null ? ". You counted " + mine + " fish." : ".") }),
+      el("div", { class: "hint", text: "Pink boxes. A prototype that isn't trained on Coastal footage, and it misses most fish in murky water. Your count stays as saved. If you change it now, the app notes that you'd seen the guess." }));
   }
 
   function noAnimals() {
@@ -1218,12 +1337,14 @@
     select(ids[j]);
   }
   function frameStep(dir) {
-    const v = $("stage-clip");
-    if (!S.motion) setMotion(true);
+    const v = $("stage-clip"), fromStill = !S.motion;
+    if (fromStill) setMotion(true);
     v.pause();
+    if (fromStill && countOffset() != null) { v.currentTime = countOffset(); S.held = true; paintHud(); return; }   // the first step shows the count second itself
     const fps = (S.results.recording && S.results.recording.fps) || 30;
     v.currentTime = Math.max(0, Math.min(v.duration || 1e9, v.currentTime + dir / fps));
     S.held = true;
+    paintHud();
   }
   const currentSpeed = () => { const b = document.querySelector("[data-speed][aria-pressed=true]"); return b ? parseFloat(b.dataset.speed) : 1; };
   function countOffset() { const u = unit(S.selId, "sub"); return u && u.t_s != null && u.context_start_s != null ? Math.max(0, u.t_s - u.context_start_s) : null; }
@@ -1265,7 +1386,7 @@
       e.preventDefault();
       if (!e.repeat && !S.spaceDown) {
         S.spaceDown = true;
-        if (S.held) setMotion(false);   // paused on a scrubbed frame: back to the count frame, and the next press plays
+        if (S.held || (S.motion && !S.spaceStarted)) setMotion(false);   // paused on a scrubbed frame, or started with the button: back to the still
         else if (!S.motion) { S.spaceStarted = true; setMotion(true); }
       }
     }
@@ -1277,7 +1398,8 @@
     S.watch.species = (n.species_observed || []).slice();
     document.querySelector('input[name=juv][value="' + (n.juveniles == null ? "" : n.juveniles) + '"]').checked = true;
     $("rn-none").checked = !!n.none_seen;
-    $("rn-notes").value = n.notes || ""; $("rn-status").textContent = "";
+    $("rn-notes").value = n.notes || ""; $("rn-status").textContent = ""; S.watch.dirty = false;
+    $("rn-who").textContent = n.reviewer ? "Recorded by " + n.reviewer + (n.at ? ", " + new Date(n.at).toLocaleString() : "") + "." + (n.reviewer !== reviewer() ? " Saving replaces it with yours. Theirs stays in the history." : "") : "";
     paintWatchSpecies();
   }
   function paintWatchSpecies() {
@@ -1287,16 +1409,20 @@
     $("rn-none").disabled = S.watch.species.length > 0;
     if (S.watch.species.length) $("rn-none").checked = false;
   }
-  async function saveNotes() {
+  async function saveNotes(auto) {
     const p = S.results.protocol || {}, say = (t) => { $("rn-status").textContent = t; };
     if (!reviewer()) { askWho(); return; }
-    const juv = document.querySelector("input[name=juv]:checked").value;
+    if (!auto && !S.watch.species.length && !$("rn-none").checked) { say("Add the species you saw, or tick that none were seen. Your notes are kept if you leave this step."); return; }
+    const juv = document.querySelector("input[name=juv]:checked").value, was = (S.saved.latest_recording_notes || {}).reviewer;
+    if (was && was !== reviewer() && (auto || !confirm(was + " recorded this step. Save your entries in place of theirs? Theirs stays in the history."))) return;
     const payload = {
       window_start_s: p.window_start_s ?? null, window_end_s: p.window_end_s ?? null, species_observed: S.watch.species,
       none_seen: $("rn-none").checked, juveniles: juv === "" ? null : Number(juv), notes: $("rn-notes").value, reviewer: reviewer(),
     };
     try {
       await Data.save(S.runId, "recording_notes", payload);
+      S.watch.dirty = false;
+      if (auto) { S.saved = await Data.saved(S.runId); paintSteps(); return; }
       S.saved = await Data.saved(S.runId); setStep("count");
     } catch (e) { say("Not saved: " + e.message); }
   }
@@ -1337,20 +1463,36 @@
     out.append(el("p", { class: "hint", text: (rows.length === 1 ? "1 person has" : rows.length + " people have") + " rated this video." + (rows.length < 2 ? " The protocol asks for 2 to 3, so ask someone else to rate it under their own name." : "") }));
     if (!mine) { if (others) out.append(el("p", { class: "hint", text: "Their ratings stay hidden until you've saved yours." })); }
     else {
-      out.append(el("ul", { class: "plain" }, rows.map((r) => el("li", { text: r.observer + ": " + r.category }))));
+      out.append(el("ul", { class: "plain" }, rows.map((r) => el("li", { text: r.observer + ": " + r.category + (r.at_s != null ? ", judged at " + fmtTime(r.at_s) : "") }))));
       if (sum.spread > 1) out.append(el("p", { class: "warn-text", text: "These ratings are more than one category apart. Look at the video together and agree whether conditions changed." }));
       if (sum.low) out.append(el("p", { class: "hint", text: "Rated under 0.5 m. One study left out videos this poor (Baker 2022). Whether to analyse them is Coastal Action's call." }));
     }
     if (rows.length) { const b = el("button", { type: "button", class: "quiet", text: "Next: watch the window", on: { click: () => setStep("watch") } }); out.append(b); }
-    const first = subs().slice().sort((a, b) => (a.t_s ?? 0) - (b.t_s ?? 0))[0], v = $("vis-video");
-    if (first) { const url = Data.mediaUrl(S.runId, "subsamples", first.subsample_id, "context"); if (!v.src.endsWith(url)) { v.src = url; v.load(); } }
+    paintVisVideo();
+  }
+  // Judge visibility at the first count point, or scrub the whole window to the clearest view of the pole.
+  function paintVisVideo() {
+    const first = subs().slice().sort((a, b) => (a.t_s ?? 0) - (b.t_s ?? 0))[0], v = $("vis-video"), win = Data.windowUrl(S.runId);
+    if (!win) S.visWhole = false;
+    setPressed("vis-first", !S.visWhole); setPressed("vis-whole", !!S.visWhole); $("vis-whole").disabled = !win;
+    const url = S.visWhole ? win : first && Data.mediaUrl(S.runId, "subsamples", first.subsample_id, "context");
+    v.loop = !S.visWhole;
+    if (url && !v.src.endsWith(url)) { v.src = url; v.load(); }
+    $("vis-where").textContent = S.visWhole ? "The whole analysis window. Scrub to the clearest view of the pole, then rate. The time is saved with your rating."
+      : "The first count point. Use the pole here if there is one. If this video has its own visibility video, use that instead.";
+  }
+  function visTime() {
+    const v = $("vis-video"), p = S.results.protocol || {}, first = subs().slice().sort((a, b) => (a.t_s ?? 0) - (b.t_s ?? 0))[0];
+    if (S.visWhole) return (p.window_start_s || 0) + v.currentTime;
+    return first && first.context_start_s != null ? first.context_start_s + v.currentTime : null;
   }
   async function saveVisibility() {
     if (!reviewer()) { askWho(); return; }
     const pick = document.querySelector("input[name=vis]:checked");
     if (!pick) { $("vis-status").textContent = "Choose a category first."; return; }
     try {
-      await Data.save(S.runId, "visibility", { observer: reviewer(), category: pick.value });
+      const at = visTime();
+      await Data.save(S.runId, "visibility", Object.assign({ observer: reviewer(), category: pick.value }, at != null && isFinite(at) ? { at_s: Math.round(at * 10) / 10 } : {}));
       S.saved = await Data.saved(S.runId); renderVisibility(); paintSteps();
     } catch (e) { $("vis-status").textContent = "Not saved: " + e.message; }
   }
@@ -1387,13 +1529,14 @@
       el("thead", {}, el("tr", {}, ["Frame", "Time", "People", "Fish", "Average", "Difference", "Invertebrates", "Difference", "Marks in both", "Result", ""].map((t) => el("th", { text: t })))),
       el("tbody", {}, ids.map((id) => {
         const q = S.saved.qc[id], u = unit(id, "sub"), m = marksFor(id, q), all = D.qcCounts(q);
-        return el("tr", {}, [id, fmtTime(u.t_s), all.people, all.fish, q.average_fish, q.fish_diff.toFixed(1) + "%",
-          all.inv, q.inv_diff.toFixed(1) + "%", m.both.length + " of " + (m.both.length + m.onlyA.length + m.onlyB.length), qcWord(q)].map((t) => el("td", { text: String(t) })),
+        return el("tr", {}, [id, fmtTime(u.t_s), all.people, all.fish, q.average_fish, pct(q.fish_diff, q.first_fish, q.second_fish),
+          all.inv, pct(q.inv_diff, q.first_inv, q.second_inv), m.both.length + " of " + (m.both.length + m.onlyA.length + m.onlyB.length), qcWord(q)].map((t) => el("td", { text: String(t) })),
           el("td", {}, el("button", { type: "button", class: "quiet", text: "Compare", on: { click: () => compareMarks(id, q) } })));
       }))));
     for (const id of ids) { const rule = D.qcCounts(S.saved.qc[id]).rule; if (rule) wrap.append(el("p", { class: "hint", text: id + ": " + rule })); }
     wrap.append(el("div", { id: "qc-compare", class: "qc-compare" }));
   }
+  const pct = (d, a, b) => (!a && !b ? "both 0" : d.toFixed(1) + "%");   // 0 against 0 has no percent difference
   const qcWord = (q) => (q.recount_needed ? "Worth a look" : q.small_gap ? "Small gap" : "Close");
   function marksFor(id, q) {
     const of = (who) => (S.saved.point_labels || []).filter((l) => l.subsample_id === id && l.counter === who && l.kind !== "unsure");
@@ -1402,13 +1545,20 @@
   // Both people's marks on one frame: green where they agree, yellow and blue where only one marked.
   function compareMarks(id, q) {
     const box = $("qc-compare"), m = marksFor(id, q), img = new Image(); clear(box);
-    box.append(el("p", { class: "hint", text: id + ": green marked by both, yellow only by " + q.first_counter + ", blue only by " + q.second_counter + "." }));
-    img.onload = () => {
-      const w = 1100, h = Math.round((w * img.naturalHeight) / img.naturalWidth), c = el("canvas", { width: w, height: h }), g = c.getContext("2d"), k = w / dims()[0];
+    let showMarks = true;
+    const toggle = el("button", { type: "button", class: "quiet", text: "Hide marks", on: { click: () => { showMarks = !showMarks; toggle.textContent = showMarks ? "Hide marks" : "Show marks"; draw(); } } });
+    box.append(el("p", { class: "hint", text: id + ": green marked by both, yellow only by " + q.first_counter + ", blue only by " + q.second_counter + ". " }, toggle));
+    let c = null, g = null, k = 1, w = 1100, h = 0;
+    const draw = () => {
+      if (!c) return;
       g.drawImage(img, 0, 0, w, h); g.lineWidth = 2;
+      if (!showMarks) return;
       const dot = (l, col) => { const x = (l.w != null ? l.x + l.w / 2 : l.x) * k, y = (l.w != null ? l.y + l.h / 2 : l.y) * k; g.strokeStyle = col; g.beginPath(); g.arc(x, y, 8, 0, Math.PI * 2); g.stroke(); };
       m.both.forEach((p) => dot(p[0], "#7fd8a0")); m.onlyA.forEach((l) => dot(l, "#ffe94d")); m.onlyB.forEach((l) => dot(l, "#6fd3ff"));
-      box.append(c);
+    };
+    img.onload = () => {
+      h = Math.round((w * img.naturalHeight) / img.naturalWidth); c = el("canvas", { width: w, height: h }); g = c.getContext("2d"); k = w / dims()[0];
+      draw(); box.append(c); box.scrollIntoView({ block: "start", behavior: "smooth" });
     };
     img.src = Data.mediaUrl(S.runId, "subsamples", id, "still");
   }
@@ -1434,7 +1584,7 @@
       } } })), el("p", { class: "hint", text: "This runs the model over the count points and between them. It can take several minutes on a computer without a graphics card." }));
       return;
     }
-    box.append(el("p", { text: st.done + " of " + st.total + " items checked." }));
+    box.append(el("p", { text: st.done + " of " + st.total + " items checked." + (st.requested && st.total < st.requested ? " The model flagged only " + st.total + " on this video, fewer than the " + st.requested + " asked for. It's set to flag few false alarms." : "") }));
     box.append(el("div", { class: "qc-actions" }, el("a", { class: "btn primary", href: "/species_bank.html?run=" + enc(S.runId) + "&set=review", text: st.done >= st.total ? "Look through the items" : st.done ? "Carry on checking" : "Start checking" }),
       el("a", { class: "btn", href: "/api/runs/" + enc(S.runId) + "/review_set.csv", text: "Download results as CSV" })));
     const rows = Object.entries(st.by_source);
@@ -1464,13 +1614,14 @@
     const notes = S.saved.latest_recording_notes || {}, tag = (k, t) => { document.querySelector('[data-state="' + k + '"]').textContent = t; };
     const seen = (S.saved.visibility || []).length, all = subs().length, counted = subs().filter((s) => primaryOf(s.subsample_id)).length, c = check(), rs = S.saved.review_set;
     tag("visibility", seen ? seen + " rated" : "");
-    tag("watch", locked() || !S.whoSet ? "" : (notes.species_observed || []).length ? notes.species_observed.length + " species" : (S.saved.latest_recording_notes ? "done" : ""));
+    tag("watch", locked() || !S.whoSet ? "" : (notes.species_observed || []).length ? notes.species_observed.length + " species" : (S.saved.latest_recording_notes ? (S.saved.latest_recording_notes.none_seen ? "done" : "notes only") : ""));
     tag("count", counted + " of " + all);
     tag("qc", { pass: "done", review: "done, see notes" }[c.status] || (c.n_done + " of " + c.n_sample));
     tag("verify", rs ? rs.done + " of " + rs.total : "");
     paintReportBtn();
   }
   function setStep(step) {
+    if (S.step === "watch" && step !== "watch" && S.watch.dirty) saveNotes(true);   // never lose typed notes by leaving the step
     if (locked() && ["count", "report", "verify"].includes(step)) { message("These stay closed until your blind count is done, so earlier counts can't sway it.", "warn"); step = "qc"; } else if (S.step !== step) message("");
     if (step === "report") { openReport(); return; }
     const was = S.qc, wasRecount = S.recount;
@@ -1539,12 +1690,25 @@
     } catch (e) { if (ask === NV.previewAsk) nvStatus(e.message, "error"); }
   }
   // The real number of points for the chosen window, so "every 15 s" doesn't surprise anyone.
-  function paintPointCount() {
+  // The spacing chosen in setup: the protocol's, a preset, or a custom number of seconds.
+  function chosenSpacing() {
+    const v = $("nv-points").value;
+    if (v === "custom") { const s = Number($("nv-every").value); return s >= 5 && s <= 600 ? s : null; }
+    return v === "" ? null : Number(v);
+  }
+  function nvWindow() {
     const d = NV.duration, num = (id) => { const v = $(id).value; return v === "" ? null : Number(v); };
+    const start = num("nv-start") ?? 60;
+    return { start, end: num("nv-end") ?? Math.min(d - 60, start + 900) };
+  }
+  function paintPointCount() {
+    const d = NV.duration;
+    $("nv-custom").hidden = $("nv-points").value !== "custom";
     if (!d) { $("nv-count").textContent = ""; return; }
-    const start = num("nv-start") ?? 60, end = num("nv-end") ?? Math.min(d - 60, start + 900), every = num("nv-points") ?? 60;
+    if ($("nv-points").value === "custom" && chosenSpacing() == null) { $("nv-count").textContent = "Type the seconds between points (5 to 600), or how many points you want."; return; }
+    const { start, end } = nvWindow(), every = chosenSpacing() ?? 60;
     const n = end > start ? Math.floor((end - start - 1) / every) + 1 : 0;
-    $("nv-count").textContent = n ? "This gives " + n + (n === 1 ? " count point." : " count points.") : "This window is too short for any count points. Check Window start and end under More options.";
+    $("nv-count").textContent = n ? "This gives " + n + (n === 1 ? " count point" : " count points") + ", one every " + every + " s." + (every !== 60 ? " The protocol uses one every 60 s, and the report will say this differs." : "") : "This window is too short for any count points. Check Window start and end under More options.";
   }
   function uploadVideo(file) {
     return new Promise((resolve, reject) => {
@@ -1584,7 +1748,10 @@
   // The setup window, for one chosen video.
   async function setupVideo(pick) {
     closeDialogs(); nvStatus("");
-    NV.duration = null; $("nv-count").textContent = "";
+    NV.duration = null; $("nv-count").textContent = ""; NV.recutOf = pick.recutOf || null;
+    $("nv-points").value = ""; $("nv-every").value = ""; $("nv-howmany").value = ""; $("nv-custom").hidden = true;
+    $("nv-h").textContent = NV.recutOf ? "Change window or spacing" : "Set up this video";
+    $("nv-start-btn").textContent = NV.recutOf ? "Cut new points" : "Start";
     for (const id of ["nv-path", "nv-name", "nv-id", "nv-start", "nv-end", "nv-transect", "nv-stat", "nv-year", "nv-season", "nv-date"]) $(id).value = "";
     $("nv-chosen").textContent = pick.path || pick.id || "Choose a video below"; $("nv-preview-wrap").hidden = true;
     $("nv-folder-wrap").hidden = !!pick.path; $("new-dlg").showModal();
@@ -1596,12 +1763,13 @@
   }
   async function startJob() {
     const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
-    const body = { video: $("nv-video").value || null, path: $("nv-path").value, name: $("nv-name").value.trim(), layer: 0, window_start: num("nv-start"), window_end: num("nv-end"), video_id: $("nv-id").value.trim(), interval: num("nv-points"),
+    const body = { video: $("nv-video").value || null, path: $("nv-path").value, name: $("nv-name").value.trim(), layer: 0, window_start: num("nv-start"), window_end: num("nv-end"), video_id: $("nv-id").value.trim(), interval: chosenSpacing(),
       transect: $("nv-transect").value.trim(), stat: $("nv-stat").value.trim(), year: num("nv-year"), season: $("nv-season").value.trim(), date: $("nv-date").value };
-    if (!body.year && !body.season && !body.date && !confirm("There's no survey date, year or season. These appear on the report. Carry on without them?")) return;
+    if ($("nv-points").value === "custom" && body.interval == null) { nvStatus("Type the seconds between points, from 5 to 600.", "error"); $("nv-every").focus(); return; }
+    if (!NV.recutOf && !body.year && !body.season && !body.date && !confirm("There's no survey date, year or season. These appear on the report. Carry on without them?")) return;
     try {
-      const job = await post("/api/jobs", body);
-      NV.autoOpen = job.name;
+      const job = NV.recutOf ? await post("/api/runs/" + enc(NV.recutOf) + "/recut", body) : await post("/api/jobs", body);
+      NV.autoOpen = job.opens || job.name;
       nvStatus("Getting the count points ready. It will open when it's done.", "ok");
       await pollJobs();
     } catch (e) { nvStatus(e.message, "error"); }
@@ -1612,7 +1780,7 @@
     for (const j of NV.jobs.slice().reverse()) {
       if (j.kind === "review_set") continue;
       const live = j.status === "queued" || j.status === "running";
-      const line = el("li", {}, el("span", { class: "nv-name", text: j.name }), badge(JOB_TEXT[j.status] || j.status, j.status === "failed" ? "flag" : j.status === "done" ? "info" : ""));
+      const line = el("li", {}, el("span", { class: "nv-name", text: j.name.replace(/__recut$/, " (new points)") }), badge(JOB_TEXT[j.status] || j.status, j.status === "failed" ? "flag" : j.status === "done" ? "info" : ""));
       if (j.status === "running") line.append(el("span", { class: "hint", text: j.progress + ", " + fmtSpan(j.elapsed_s) }), el("progress", { max: "100", value: String(j.percent) }));
       if (j.status === "done") line.append(el("span", { class: "hint", text: "Took " + fmtSpan(j.elapsed_s) }), el("button", { type: "button", class: "primary", text: "Open", on: { click: () => openRun(j.name) } }));
       if (live) line.append(el("button", { type: "button", class: "quiet", text: "Cancel", on: { click: async () => { if (!confirm("Stop processing " + j.name + "?")) return; try { await post("/api/jobs/" + enc(j.id) + "/cancel", {}); await pollJobs(); } catch (e) { nvStatus(e.message, "error"); } } } }));
@@ -1622,7 +1790,7 @@
     const videoJobs = NV.jobs.filter((j) => j.kind !== "review_set");   // step 6 shows its own progress
     const run = videoJobs.find((j) => j.status === "running"), waiting = videoJobs.filter((j) => j.status === "queued").length, b = $("job-badge");
     b.hidden = !run && !waiting;
-    b.textContent = run ? "Processing " + run.name + ": " + run.progress + (waiting ? ", " + waiting + " waiting" : "") : waiting + " waiting";
+    b.textContent = run ? "Processing " + run.name.replace(/__recut$/, " (new points)") + ": " + run.progress + (waiting ? ", " + waiting + " waiting" : "") : waiting + " waiting";
   }
   async function pollJobs() {
     clearTimeout(NV.timer);
@@ -1655,27 +1823,32 @@
     const table = (cols, rows) => el("table", { class: "rp-table" }, el("thead", {}, el("tr", {}, cols.map((c) => el("th", { text: c })))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", { text: c == null ? "" : String(c) }))))));
     const stat = (l, v) => el("div", { class: "rp-stat" }, el("b", { text: v == null ? "n/a" : String(v) }), el("span", { text: l }));
     const meta = [rep.transect && "Transect " + rep.transect, rep.stat && statText(rep.stat), rep.year, rep.season].filter(Boolean).join(", ");
+    const qcDone = rep.qcCheck && ["pass", "review"].includes(rep.qcCheck.status);
+    if (!qcDone) box.append(el("p", { class: "rp-draft", text: "DRAFT: the quality check isn't finished, so these counts aren't final." }));
     box.append(el("h1", { text: "ClipSift count report" }), el("p", { class: "rp-meta", text: "Video " + rep.video + (rep.fileName ? " (" + rep.fileName + ")" : "") + (meta ? ". " + meta : "") + "." + (rep.surveyDate ? " Surveyed " + rep.surveyDate + "." : "") + (rep.windowStart != null ? " Analysis window " + fmtTime(rep.windowStart) + " to " + fmtTime(rep.windowEnd) + "." : "") }),
-      el("div", { class: "rp-stats" }, stat("Points counted", rep.counted + " of " + rep.planned), stat(rep.qcPairs ? "MeanCount, using QC averages" : "MeanCount (fish per point)", dec(rep.meanCount, 2)), stat("Standard deviation (sample)", dec(rep.sd, 2)), stat("Standard error", dec(rep.se, 2)), stat("Points with no fish", rep.zeroPoints), stat("Fish", rep.totalFish), stat("Invertebrates", rep.totalInv), stat("Unknown", rep.totalUnknown), stat("Species identified", rep.speciesObserved.filter(D.isSpeciesName).length), stat("Unidentified or broader groups", rep.speciesObserved.filter((n) => !D.isSpeciesName(n)).length)));
-    const vis = rep.visibility.map((v) => v.observer + ": " + v.category).join("; "), vsum = D.visibilitySummary(rep.visibility);
-    box.append(el("p", { class: "rp-meta", text: "One point every " + (rep.interval ?? "?") + " s. Visibility: " + (vis || "not recorded") + ". Juveniles: " + (rep.juveniles == null ? "not recorded" : rep.juveniles ? "present" : "absent") + "." }));
+      el("div", { class: "rp-stats" }, stat("Points counted", rep.counted + " of " + rep.planned), stat(rep.qcPairs ? "MeanCount, using QC averages" : "MeanCount (fish per point)", dec(rep.meanCount, 2)), stat("Standard deviation (sample)", dec(rep.sd, 2)), stat("Standard error", dec(rep.se, 2)), stat("Points with no fish", rep.zeroPoints), stat("Invertebrate MeanCount", rep.counted ? dec(rep.totalInv / rep.counted, 2) : null), stat("Fish", rep.totalFish), stat("Invertebrates", rep.totalInv), stat("Unknown", rep.totalUnknown), stat("Species identified", rep.speciesObserved.filter(D.isSpeciesName).length), stat("Unidentified or broader groups", rep.speciesObserved.filter((n) => !D.isSpeciesName(n)).length)));
+    const vis = rep.visibility.map((v) => v.observer + ": " + v.category + (v.at_s != null ? " (at " + fmtTime(v.at_s) + ")" : "")).join("; "), vsum = D.visibilitySummary(rep.visibility);
+    box.append(el("p", { class: "rp-meta", text: "One point every " + (rep.interval ?? "?") + " s. Visibility: " + (vis || "not recorded") + (vsum.n > 1 ? " (most common: " + vsum.usual + ")" : "") + ". Juveniles: " + (rep.juveniles == null ? "not recorded" : rep.juveniles ? "present" : "absent") + "." }));
+    if (rep.interval && rep.interval !== 60) box.append(el("p", { class: "warn-text", text: "Count points are every " + rep.interval + " s here. The protocol uses every 60 s, so MeanCount isn't directly comparable with videos counted the standard way." }));
     if (rep.visibilityChanges.length) box.append(el("p", { class: "rp-meta", text: "Visibility changed by 0.5 m or more at " + rep.visibilityChanges.map((c) => fmtTime(c.t) + " (" + (c.direction === "increasing" ? "better" : "worse") + (c.category ? ", " + c.category : "") + ")").join("; ") + "." }));
     if (vsum.spread > 1) box.append(el("p", { class: "warn-text", text: "Observers' visibility ratings are more than one category apart." }));
     if (vsum.n) box.append(el("p", { class: "rp-meta", text: "Visibility limits what can be seen, so counts from clearer and poorer water aren't directly comparable." }));
+    if (rep.watchNotes) box.append(el("p", { class: "rp-meta", text: "Watch window notes" + (rep.watchBy ? " (" + rep.watchBy + ")" : "") + ": " + rep.watchNotes }));
     if (rep.counted < rep.planned) box.append(el("p", { class: "warn-text", text: "Not finished: " + (rep.planned - rep.counted) + " of " + rep.planned + " points have no count yet." }));
-    box.append(el("h2", { text: "Species observed in the window" }), el("p", { text: rep.speciesObserved.length ? rep.speciesObserved.map(reportName).join("; ") : (rep.noneSeen ? "None seen." : "Not recorded yet.") }));
+    box.append(el("h2", { text: "Species observed in the window" }), el("p", { text: rep.speciesObserved.length ? rep.speciesObserved.map(reportName).join("; ") : (rep.noneSeen ? "None seen in the watch window." + (rep.totalFish + rep.totalInv ? " Animals were counted at points, listed below." : "") : "Not recorded yet.") }));
     box.append(el("h2", { text: "Species in counted points" }));
     box.append(rep.species.length ? table(["Species", "Count", "Points seen at", "MeanCount"], rep.species.map((s) => [reportName(s.name), s.total, s.points, s.meanCount.toFixed(2)])) : el("p", { text: "No species recorded yet." }));
-    box.append(el("h2", { text: "Points" }), table(["Point", "Time", "Fish", "Used in MeanCount", "Invertebrates", "Unknown", "Species", "Visibility", "Counter", "Notes"],
-      rep.points.map((p) => [p.id, fmtTime(p.t), p.counted ? p.fish : "not counted", p.finalFish, p.inv, p.unknown, Object.entries(p.species).map(([n, c]) => reportName(n) + ": " + c).join("; "), p.visibility, p.counter, p.notes])));
+    box.append(el("h2", { text: "Points" }), table(["Point", "Time", "Fish", "Used in MeanCount", "Invertebrates", "Unknown", "Species", "Features", "Visibility", "Counter", "Notes"],
+      rep.points.map((p) => [p.id, fmtTime(p.t), p.counted ? p.fish : "not counted", p.finalFish, p.inv, p.unknown, Object.entries(p.species).map(([n, c]) => reportName(n) + ": " + c).join("; "), p.features, p.visibility, p.counter, p.notes])));
     if (rep.qcCheck && rep.qcPairs) {
       const [title, detail] = D.qcMessage(rep.qcCheck);
       box.append(el("h2", { text: "Quality check" }), el("p", { text: title + ". " + detail + " Formulas are provisional until Coastal Action confirms them." }),
-        table(["Point", "People", "Fish", "Average", "Difference", "Invertebrates", "Difference", "Result"], Object.entries(rep.qcPoints).map(([id, q]) => { const all = D.qcCounts(q); return [id, all.people, all.fish, q.average_fish, q.fish_diff.toFixed(1) + "%", all.inv, q.inv_diff.toFixed(1) + "%", qcWord(q)]; })));
+        table(["Point", "People", "Fish", "Average", "Difference", "Invertebrates", "Average", "Difference", "Result"], Object.entries(rep.qcPoints).map(([id, q]) => { const all = D.qcCounts(q); return [id, all.people, all.fish, q.average_fish, pct(q.fish_diff, q.first_fish, q.second_fish), all.inv, q.average_inv, pct(q.inv_diff, q.first_inv, q.second_inv), qcWord(q)]; })));
       for (const [id, q] of Object.entries(rep.qcPoints)) { const rule = D.qcCounts(q).rule; if (rule) box.append(el("p", { class: "rp-meta", text: id + ": " + rule })); }
       if (rep.qcNotes.length) box.append(el("h3", { text: "Notes from quality check counts" }), table(["Point", "Counter", "Fish", "Species", "Notes"], rep.qcNotes.map((n) => [n.id, n.counter, n.fish, Object.entries(n.species).map(([k, c]) => reportName(k) + ": " + c).join("; "), n.notes])));
       if (rep.meanFirst != null) box.append(el("p", { class: "rp-meta", text: "MeanCount from first counts only: " + rep.meanFirst.toFixed(2) + "." }));
     }
+    if (rep.guessAfter || rep.guessSeen) box.append(el("p", { class: "rp-meta", text: "The model's guess was shown after counting on " + rep.guessAfter + (rep.guessAfter === 1 ? " point" : " points") + (rep.guessSeen ? ", and seen before a later change to the count on " + rep.guessSeen + (rep.guessSeen === 1 ? " point" : " points") : "") + ". It never fills in a count." }));
     if (rep.reviewSet) box.append(el("p", { class: "rp-meta", text: "Model flags: " + rep.reviewSet.done + " of " + rep.reviewSet.total + " checked by a person. These do not affect any count." }));
     box.append(el("h2", { text: "Sign-off" }), el("p", { class: "rp-meta", text: "First count: " + (rep.counters.join(", ") || "none") + ". Second counts: " + (rep.secondCounters.join(", ") || "none") + ". Report opened by: " + (reviewer() || "not recorded") + "." }),
       el("p", { class: "rp-sign", text: "Reviewed by ______________________    Date ______________" }));
@@ -1834,12 +2007,16 @@
     drop.addEventListener("drop", (e) => addFiles([...e.dataTransfer.files]));
     for (const ev of ["dragover", "drop"]) window.addEventListener(ev, (e) => e.preventDefault());   // a missed drop must not navigate away
     $("vis-save").addEventListener("click", saveVisibility);
+    $("vis-first").addEventListener("click", () => { S.visWhole = false; paintVisVideo(); });
+    $("vis-whole").addEventListener("click", () => { S.visWhole = true; paintVisVideo(); });
     $("watch-whole").addEventListener("click", () => { $("watch-video").loop = false; setWatch(false); });
     $("watch-points").addEventListener("click", () => setWatch(true));
     for (const b of document.querySelectorAll("[data-wspeed]")) b.addEventListener("click", () => {
       document.querySelectorAll("[data-wspeed]").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
       $("watch-video").playbackRate = parseFloat(b.dataset.wspeed);
     });
+    for (const id of ["rn-notes", "rn-none"]) $(id).addEventListener("input", () => { S.watch.dirty = true; });
+    for (const r of document.querySelectorAll("input[name=juv]")) r.addEventListener("change", () => { S.watch.dirty = true; });
     $("watch-reveal").addEventListener("click", () => { S.watch.reveal = true; paintWatchForm(); });
     $("who-dlg").addEventListener("cancel", (e) => { if (!S.whoSet && S.results) e.preventDefault(); });
     $("who-dlg").addEventListener("close", () => { if (!S.whoSet && S.results) $("who-dlg").showModal(); });   // the name can't be skipped
@@ -1854,7 +2031,7 @@
       if (!box.value.includes(text)) box.value = (box.value.trim() + " " + text).trim();
     });
     makeCombo($("rn-sp-input"), $("rn-sp-list"), (sel) => {
-      if (sel.value && !S.watch.species.includes(sel.value)) S.watch.species.push(sel.value);
+      if (sel.value && !S.watch.species.includes(sel.value)) { S.watch.species.push(sel.value); S.watch.dirty = true; }
       $("rn-sp-input").value = ""; paintWatchSpecies();
     });
     $("report-close").addEventListener("click", () => $("report-dlg").close());
@@ -1910,7 +2087,7 @@
     $("motion-btn").addEventListener("click", () => { S.spaceStarted = false; setMotion(!S.motion); });
     setPressed("count-only", S.countOnly);
     S.clip = D.clipControl({ video: $("stage-clip"), track: document.querySelector("#clip-hud .lb-track"), range: clipRange, active: () => S.motion, paint: paintHud,
-      release: () => { S.held = true; } });   // stays paused where it was dropped
+      release: () => { S.held = true; paintHud(); } });   // stays paused where it was dropped
     document.addEventListener("keyup", (e) => { if (e.key === " " && S.spaceDown) { e.preventDefault(); spaceUp(); } });
     window.addEventListener("blur", spaceUp);
     // After a mouse click, hand the keyboard back to the page, so Space plays the clip instead of pressing that control again.
@@ -1922,13 +2099,22 @@
     $("chars").addEventListener("change", paintCharsWarn);
     $("save-sub").addEventListener("click", saveSubsample);
     $("no-animals").addEventListener("click", noAnimals);
+    $("guess-on").addEventListener("change", (e) => { S.guess.on = e.target.checked; });
+    $("c-unk").addEventListener("input", () => { S.ss.unkTouched = true; });
+    $("others-marks").addEventListener("change", (e) => { S.showOthers = e.target.checked; renderLabels(false); });
     $("big-view").addEventListener("click", toggleBig);
     paintBig();
     $("watch-video").addEventListener("timeupdate", () => {
       const p = (S.results && S.results.protocol) || {}, v = $("watch-video");
       $("watch-clock").textContent = S.watch.points || p.window_start_s == null ? "" : "Video time " + fmtTime(Math.floor(p.window_start_s + v.currentTime)) + ". Use this time in notes, because it matches the count points.";
     });
-    for (const id of ["nv-start", "nv-end", "nv-points"]) $(id).addEventListener("input", paintPointCount);
+    for (const id of ["nv-start", "nv-end", "nv-points", "nv-every"]) $(id).addEventListener("input", paintPointCount);
+    $("nv-howmany").addEventListener("input", () => {   // a number of points becomes the spacing that fits them in the window
+      const n = Number($("nv-howmany").value); if (!NV.duration || !(n >= 1)) return;
+      const { start, end } = nvWindow();
+      $("nv-every").value = Math.max(5, Math.min(600, n > 1 ? Math.floor((end - start - 1) / (n - 1)) : 600));
+      paintPointCount();
+    });
     $("nv-points").addEventListener("change", paintPointCount);
     $("rn-save").addEventListener("click", saveNotes);
     wireTools();

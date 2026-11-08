@@ -118,3 +118,38 @@ def test_real_video_runs_and_opens(env, tmp_path):
     pv = c.post("/api/videos/preview", json={"video": "clip one.mp4"}).get_json()
     assert pv["duration_s"] > 19 and pv["frames"] == []                  # too short for minute marks
     assert c.post("/api/jobs", json={"video": "clip one.mp4", "layer": 0}).status_code == 400   # saved counts stay safe
+
+
+def test_recut_replaces_points_before_counting_and_versions_after(env, tmp_path):
+    """Change window or spacing: before counting the new points replace the old ones, keeping visibility and
+    watch notes. After counting it makes a new version, so no count loses the frame it was made on."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    from make_synthetic_clip import make
+    c, runs, videos = env
+    make(videos / "recut.mp4", duration=24, width=320, fps=8)
+    first = c.post("/api/jobs", json={"video": "recut.mp4", "layer": 0, "window_start": 2, "window_end": 22, "interval": 5})
+    done = wait_for(c, first.get_json()["id"])
+    assert done["status"] == "done", done
+    R = "/api/runs/recut"
+    before = len(c.get(R + "/results").get_json()["subsamples"])
+    c.post(R + "/visibility", json={"observer": "Ana", "category": "1.0-1.5 m", "at_s": 7.5})
+    c.post(R + "/recording_notes", json={"species_observed": [], "none_seen": True, "notes": "kept"})
+    r = c.post(R + "/recut", json={"window_start": 2, "window_end": 22, "interval": 10})
+    assert r.status_code == 201 and r.get_json()["opens"] == "recut" and r.get_json()["new_version"] is False
+    j = wait_for(c, r.get_json()["id"])
+    assert j["status"] == "done" and j["name"] == "recut", j
+    res = c.get(R + "/results").get_json()
+    assert res["protocol"]["interval_s"] == 10 and len(res["subsamples"]) < before and res["recording"]["recording_id"] == "recut"
+    saved = c.get(R + "/saved").get_json()
+    assert saved["visibility"][0]["at_s"] == 7.5 and saved["latest_recording_notes"]["notes"] == "kept"
+    assert (runs / ".replaced").is_dir() and not (runs / "recut__recut").exists()
+    assert "recut__recut" not in [x["run_id"] for x in c.get("/api/runs").get_json()["runs"]]
+    # once counted, a re-cut becomes a new version and the original stays as it was
+    sid = res["subsamples"][0]["subsample_id"]
+    c.post(R + "/subsample_reviews", json={"subsample_id": sid, "counter": "Ana", "total_fish_count": 1, "invertebrate_count": 0})
+    r = c.post(R + "/recut", json={"window_start": 2, "window_end": 22, "interval": 5})
+    assert r.get_json()["opens"] == "recut_v2" and r.get_json()["new_version"] is True
+    assert wait_for(c, r.get_json()["id"])["status"] == "done"
+    assert c.get("/api/runs/recut_v2/saved").get_json()["visibility"][0]["observer"] == "Ana"
+    assert c.get(R + "/saved").get_json()["n_counted"] == 1 and c.get("/api/runs/recut_v2/saved").get_json()["n_counted"] == 0
+    assert c.post(R + "/recut", json={"interval": 2}).status_code == 400

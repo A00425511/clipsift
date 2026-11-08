@@ -9,7 +9,7 @@ import csv
 import json
 from pathlib import Path
 
-from .qc import assess_point, compare_rows
+from .summary import summarise
 
 
 def read_jsonl(path) -> list:
@@ -75,15 +75,14 @@ def export_run(run_dir, out_dir=None) -> list:
     seg_reviews = read_jsonl(run_dir / "reviews.jsonl")
     notes = read_jsonl(run_dir / "recording_notes.jsonl")
 
+    info = summarise(res, sreviews)   # the same summary as the app, so the two exports always agree
     rows = []
     for ss in res["subsamples"]:
         sid = ss["subsample_id"]
-        fin = _latest(sreviews, sid, ("primary", "recount"))
-        qcb = _latest(sreviews, sid, ("qc_blind",))
+        fin = info["latest_primary"].get(sid)
+        q = info["qc"].get(sid)
         a = ss["auto"]
-        pct = None
-        if fin and qcb:
-            pct = compare_rows(fin, qcb)["percent_diff"]   # the same rule as the app: fish and invertebrates each checked
+        pct = q["percent_diff"] if q else None
         src = sorted({d.get("source", "") for d in a.get("detections", [])})
         sc = (fin or {}).get("species_counts") or {}
         rows.append({
@@ -97,9 +96,9 @@ def export_run(run_dir, out_dir=None) -> list:
             "Visibility Change (>=0.5 m)": "" if not fin or fin.get("visibility_change") is None else fin["visibility_change"],
             "Notes": (fin or {}).get("notes", ""), "Counter": (fin or {}).get("counter", ""),
             "QC Sample": ss["qc_sample"],
-            "QC Second Count (fish)": qcb["total_fish_count"] if qcb else "",
+            "QC Second Count (fish)": q["second_fish"] if q else "",
             "QC Percent Difference": round(pct, 2) if pct is not None else "",
-            "QC Recount Needed": assess_point([fin, qcb], pc["qc_max_percent_diff"], pc.get("qc_small_gap", 1))["recount_needed"] if pct is not None else "",
+            "QC Recount Needed": q["recount_needed"] if q else "",
             "Auto Fish Count (suggestion)": "" if a["fish_count"] is None else a["fish_count"],
             "Auto Invertebrate Count (suggestion)": "" if a["invertebrate_count"] is None else a["invertebrate_count"],
             "Auto Detector Source": ";".join(src), "Motion Near Point": a["motion_near_point"],
@@ -132,6 +131,9 @@ def export_run(run_dir, out_dir=None) -> list:
         "MeanCount (auto suggestion)": round(sum(auto) / len(auto), 3) if auto else "",
         "Species Observed": "; ".join(sorted(species)), "Juveniles Present": juv,
         "QC Pairs": len(pcts), "QC Mean Percent Difference": round(sum(pcts) / len(pcts), 2) if pcts else "",
+        "MeanCount with QC averages": "" if info["mean_count_final"] is None else info["mean_count_final"],
+        "QC Agreement (%) (provisional)": "" if info["qc_agreement"] is None else info["qc_agreement"],
+        "QC Result": info["qc_check"]["status"],
     }]
     p_sum = out_dir / f"{rid}_video_summary.csv"
     _write_csv(p_sum, list(summ[0]), summ)

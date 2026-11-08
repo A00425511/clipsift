@@ -38,3 +38,6 @@ labels/team/
 # Packaged app builds
 build/
 dist/
+
+# Backup demo recordings are shipped on purpose
+!docs/demo/*.mp4

@@ -22,6 +22,7 @@ Ready to package for Coastal. See docs/SHIP_TRIM.md.
 - Removed: More tools (the picture sliders are now under "Adjust picture", and the grid's Rows and Columns show while the grid is on), the Classic layout, the "Every 15 s" spacing, the duplicate home button, and the retired motion-segment review screen.
 - Feedback and Label fish now show on the team site only.
 - "Bigger picture" is now "Largest picture", matching the Layout menu. On a Mac, the example path on the home screen is a Mac path.
+- Docs: backup demo recordings in docs/demo (demo-backup.mp4, setup-fast.mp4) with a README.
 
 ### 1.3.0 (2026-11-08)
 Screen layouts for different monitors, and the whole-window video on the team site.

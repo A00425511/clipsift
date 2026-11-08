@@ -80,8 +80,8 @@ Five people: Jacob, Ali, Gina and Wang (Master of Business Analytics, MBAN) and 
 - Implication: a local model is clearly on their roadmap. This supports Jacob's reading of the AI limit.
 
 ## Coastal Action draft Video Analysis Protocol (read 5 Nov)
-Full summary in clipsift/docs/SPEC.md, Addendum 1. Source PDF is in the RBC HubHacks folder and is a draft with open comments. Main points: metric is MeanCount from 15 frames at 60 s intervals in a 15 minute window; invertebrates are counted; include only with two of four characteristics, so undercounting is preferred; blind double-count QC with 6% and 95% thresholds; results feed long-term monitoring of a living shoreline offsetting project.
+Full summary in clipsift/docs/background/SPEC.md, Addendum 1. Source PDF is in the RBC HubHacks folder and is a draft with open comments. Main points: metric is MeanCount from 15 frames at 60 s intervals in a 15 minute window; invertebrates are counted; include only with two of four characteristics, so undercounting is preferred; blind double-count QC with 6% and 95% thresholds; results feed long-term monitoring of a living shoreline offsetting project.
 Differences from earlier remarks: the rep said about 1 hour clips, the protocol says ~20 minute videos (a screenshot shows six chapter files spanning about 12:17 to 12:59); the rep described grid tagging, which the protocol doesn't mention. Confirm both with the partner.
 
 ## Subsample photos (read 5 Nov)
-28 marked screenshots in "Sept 10 & 9th sub-samples". Full notes in clipsift/docs/SPEC.md, Addendum 2. Grid plus one dot per fish is how they count schools. Hand-placed dots and ellipses can become training labels. Recordings shown are about 36 minutes long.
+28 marked screenshots in "Sept 10 & 9th sub-samples". Full notes in clipsift/docs/background/SPEC.md, Addendum 2. Grid plus one dot per fish is how they count schools. Hand-placed dots and ellipses can become training labels. Recordings shown are about 36 minutes long.

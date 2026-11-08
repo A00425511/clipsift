@@ -19,7 +19,20 @@ class FFmpegMissing(RuntimeError):
 
 
 def find_ffmpeg() -> str | None:
-    return shutil.which("ffmpeg")
+    """CLIPSIFT_FFMPEG (set by the packaged app's launcher), then the system's ffmpeg, then the copy that
+    ships inside the imageio-ffmpeg package, so a packaged app works on a computer without ffmpeg."""
+    import os
+    env = os.environ.get("CLIPSIFT_FFMPEG")
+    if env and Path(env).is_file():
+        return env
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
 
 
 def probe(path) -> dict:

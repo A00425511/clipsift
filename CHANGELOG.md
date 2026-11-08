@@ -15,6 +15,14 @@ No team-trained model has been added to this repository yet.
 
 ## App versions
 
+### 1.4.0 (2026-11-08)
+Ready to package for Coastal. See docs/SHIP_TRIM.md.
+- Mac package: `tools/package_mac.py` builds a portable zip with its own Python and ffmpeg, and `--with-model` adds the fish detector (CFD nano). Work is saved in Documents/ClipSift. The CFD weights' licence must be settled before the detector zip leaves the team.
+- The app finds a bundled ffmpeg when the computer has none. The packaged app serves quietly through waitress.
+- Removed: More tools (the picture sliders are now under "Adjust picture", and the grid's Rows and Columns show while the grid is on), the Classic layout, the "Every 15 s" spacing, the duplicate home button, and the retired motion-segment review screen.
+- Feedback and Label fish now show on the team site only.
+- "Bigger picture" is now "Largest picture", matching the Layout menu. On a Mac, the example path on the home screen is a Mac path.
+
 ### 1.3.0 (2026-11-08)
 Screen layouts for different monitors, and the whole-window video on the team site.
 - New **Layout** choice in the top bar, remembered on each computer, so a laptop and a big monitor can each keep their own:

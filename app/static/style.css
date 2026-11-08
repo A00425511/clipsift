@@ -139,10 +139,8 @@ video { width: 100%; max-height: 38vh; background: #000; }
 @media (max-width: 1100px) { .workspace { grid-template-columns: 1fr; } .queue { position: static; max-height: 240px; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 
-/* ---- simple view: advanced tools sit behind "More tools" ---- */
-body.simple .adv { display: none !important; }
-.queue-h { display: none; }
-body.simple .queue-h { display: block; }
+.grid-size { display: none; } body.grid-on .grid-size { display: inline-flex; gap: 4px; align-items: center; }
+.adjust { margin-top: 6px; } .adjust > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .workspace[data-mode=seg] .sub-only, .workspace[data-mode=seg] .path, .workspace[data-mode=seg] .step-n, .workspace[data-mode=seg] .queue-h { display: none; }
 .path { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 10px; padding: 8px 10px; background: var(--panel2); border-radius: 6px; font-weight: 600; }
 .step-n { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; margin-right: 4px; border-radius: 50%; background: var(--accent); color: #0b1a22; font-size: 12px; font-weight: 700; }
@@ -151,7 +149,7 @@ body.simple .queue-h { display: block; }
 .workspace[data-mode=sub] .path { order: -5; }
 .workspace[data-mode=sub] #seg-head, .workspace[data-mode=sub] .banner { order: -4; }
 .workspace[data-mode=sub] .clip-wrap { order: -3; margin-top: 0; margin-bottom: 8px; }
-body.simple video { max-height: 32vh; }
+video { max-height: 32vh; }
 #more-tools[aria-pressed=true] { background: #25465a; }
 .help-btn { border-radius: 50%; width: 30px; height: 30px; padding: 0; font-weight: 700; }
 .name-hint { margin: 4px 12px 0; color: var(--warn); font-size: 13px; }
@@ -270,7 +268,7 @@ dialog.report { width: min(1000px, 96vw); max-height: 92vh; padding: 14px 18px; 
 [hidden] { display: none !important; }
 
 /* Protocol workflow: home, profiles, steps 1, 2, 4 and 6 */
-.brand { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.brand { color: inherit; font: inherit; }
 .who-btn { border-color: var(--accent); }
 .home { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 18px 16px; max-width: 1180px; margin: 0 auto; align-items: start; }
 .home h2 { font-size: 16px; margin: 0 0 8px; }

@@ -5,12 +5,6 @@
   const $ = (id) => document.getElementById(id);
   const D = window.ClipSiftDisplay;
   const DEFAULT_PROTOCOL = { count_window_s: 1, count_tolerance_s: 0.5, qc_share: 0.10, qc_min: 6, qc_max: 12 };
-  const STATUS = {
-    known: "Species identified by model", fish_unknown: "Fish, species unknown", unclear: "Unclear",
-    movement_unidentified: "Movement, unidentified", none: "Nothing detected",
-  };
-  const DECISION_TEXT = { confirm: "Confirmed", reject: "Rejected", unknown: "Unknown", needs_second_look: "Needs second look" };
-  const DECISION_KEYS = { "1": "confirm", "2": "reject", "3": "unknown", "4": "needs_second_look" };
   const CHAR_KEYS = { "1": 0, "2": 1, "3": 2, "4": 3 };
 
   const S = {
@@ -18,11 +12,10 @@
     mode: "sub", selId: null, qc: false, recount: false, step: "count", who: "", whoSet: false,
     guess: { on: false, ready: false, seen: {}, boxes: {} },
     diff: false, grid: false, watch: { species: [], points: false }, layout: (() => { try { return localStorage.getItem("clipsift.layout") || (localStorage.getItem("clipsift.big") === "1" ? "big" : "fit"); } catch (e) { return "fit"; } })(), wantStep: null,
-    seg: { species: null }, ss: { rows: [] },
+    ss: { rows: [] },
     filters: { brightness: 100, contrast: 100, saturation: 100 }, enhance: "off",
     markHistory: [], motion: false, restart: true, countOnly: false, spaceDown: false, spaceStarted: false, held: false, hudRaf: 0, names: "common",
     zoom: { k: 1, x: 0, y: 0 }, tool: "pan", drag: null,
-    more: localStorage.getItem("clipsift.moretools") === "1",   // "More tools" toggle, remembered
   };
 
   // ---------- small helpers ----------
@@ -272,8 +265,8 @@
     paintRestart(); paintNames();
     $("new-video").hidden = !!DEMO;
     $("demo-banner").hidden = !DEMO;
-    if (DEMO) $("label-link").classList.remove("adv");   // the team site is where people tag frames
-    applyView();
+    if (/Mac/i.test(navigator.platform || navigator.userAgent)) $("home-path").placeholder = "/Users/you/Movies/GX010221.MP4";   // the default example is a Windows path
+    $("label-link").hidden = !DEMO; $("feedback-btn").hidden = !DEMO;   // team tools: labelling and feedback live on the team site only
     await loadSpecies();
     try {
       const runs = await fillRuns();
@@ -392,9 +385,8 @@
       $(id2).href = Data.exportHref(S.runId, $(id2).dataset.export); $(id2).hidden = false;
     }
     S.mode = "sub"; S.qc = false;
-    S.grid = true;  // totals per cell are part of counting a school
+    S.grid = true; document.body.classList.add("grid-on");  // totals per cell are part of counting a school
     setPressed("toggle-grid", S.grid);
-    applyView();
     if (S.tool === "pan") setTool("dot");  // new people mark straight away; wheel still zooms
     S.selId = null;
     renderAll();
@@ -477,7 +469,7 @@
     set("nv-id", rec.video_id); set("nv-start", p.window_start_s); set("nv-end", p.window_end_s);
     set("nv-transect", rec.transect); set("nv-stat", rec.stat); set("nv-year", rec.year); set("nv-season", rec.season); set("nv-date", rec.date);
     const every = p.interval_s;
-    if (every && every !== 60) { if (every === 15) $("nv-points").value = "15"; else { $("nv-points").value = "custom"; $("nv-every").value = every; } }
+    if (every && every !== 60) { $("nv-points").value = "custom"; $("nv-every").value = every; }
     paintPointCount();
     nvStatus(counted ? "Counting has started on this video, so this makes a new version beside it. The original and its counts stay as they are. Visibility ratings and watch notes carry over."
       : "The new points replace the current ones. Visibility ratings and watch notes carry over.", "");
@@ -519,19 +511,6 @@
       w.style.left = pct(p.window_start_s) + "%"; w.style.width = pct(p.window_end_s - p.window_start_s) + "%";
       tl.append(w);
     }
-    for (const s of []) {
-      if (s.start_s == null || s.end_s == null) continue;
-      const flagged = !!(s.flags && (s.flags.shake || s.flags.low_visibility));
-      const done = !!(S.saved.latest_review || {})[s.segment_id];
-      const cls = ["tl-block", s.kind === "set_aside" ? "set" : "active"];
-      if (s.audit_sample) cls.push("audit"); if (flagged) cls.push("flagged"); if (done) cls.push("done");
-      if (S.mode === "seg" && s.segment_id === S.selId) cls.push("current");
-      const label = s.segment_id + ", " + fmtTime(s.start_s) + " to " + fmtTime(s.end_s) + ", " + (s.kind === "set_aside" ? "set aside" : "active") + (s.audit_sample ? ", random check" : "") + (flagged ? ", flagged" : "") + (done ? ", reviewed" : "");
-      const b = el("button", { type: "button", class: cls.join(" "), title: label, "aria-label": label, on: { click: () => { S.mode = "seg"; modeChanged(); select(s.segment_id); } } },
-        el("span", { class: "tl-mark", text: (s.audit_sample ? "A" : "") + (flagged ? "!" : "") + (done ? "✓" : "") }));
-      b.style.left = pct(s.start_s) + "%"; b.style.width = "max(6px," + (pct(s.end_s) - pct(s.start_s)) + "%)";
-      tl.append(b);
-    }
     for (const s of ss) {
       if (s.t_s == null) continue;
       const done = !!primaryOf(s.subsample_id);
@@ -555,7 +534,7 @@
     }
     const ids = queue();
     if (!ids.length) {
-      list.append(el("li", { class: "empty-li", text: S.mode === "sub" ? "Nothing to count in this recording yet. Try another recording from the Run menu." : "No motion segments to review in this run." }));
+      list.append(el("li", { class: "empty-li", text: "Nothing to count in this recording yet. Try another recording from the Run menu." }));
       return;
     }
     ids.forEach((id) => {
@@ -563,17 +542,7 @@
       const done = isDone(id);
       const b = el("button", { type: "button", class: "q-item" + (id === S.selId ? " current" : ""), "aria-current": id === S.selId ? "true" : null, on: { click: () => select(id) } });
       b.append(el("span", { class: "q-id", text: id }));
-      if (S.mode === "sub") {
-        b.append(el("span", { class: "q-time", text: fmtTime(u.t_s) }));
-      } else {
-        b.append(el("span", { class: "q-time", text: fmtTime(u.start_s) + " to " + fmtTime(u.end_s) }));
-        if (u.audit_sample) b.append(badge("Random check", "audit"));
-        else if (u.kind === "set_aside") b.append(badge("Set aside"));
-        if (u.status === "movement_unidentified") b.append(badge("Movement, unidentified", "move"));
-        else if (u.status) b.append(badge(STATUS[u.status] || u.status));
-        if (u.flags && u.flags.shake) b.append(badge("Shake", "flag"));
-        if (u.flags && u.flags.low_visibility) b.append(badge("Low visibility", "flag"));
-      }
+      b.append(el("span", { class: "q-time", text: fmtTime(u.t_s) }));
       const r = done && S.mode === "sub" && !S.qc ? primaryOf(id) : null;
       b.append(el("span", { class: "q-done", text: !done ? "" : r && S.whoSet && r.counter === reviewer() ? "✓ " + r.total_fish_count + " fish, " + r.invertebrate_count + " inv" : "✓ done" }));
       list.append(el("li", {}, b));
@@ -585,8 +554,8 @@
 
   // ---------- selection and media ----------
   function showNoSelection() {
-    $("seg-head").textContent = "Nothing to review here yet. Pick another recording from the Run menu, or open More tools to look at motion segments.";
-    for (const id of ["audit-banner", "movement-banner", "side-sub", "side-seg"]) $(id).hidden = true;
+    $("seg-head").textContent = "Nothing to count here yet. Pick another recording from the Run menu.";
+    for (const id of ["audit-banner", "movement-banner", "side-sub"]) $(id).hidden = true;
     $("stage").hidden = true;
   }
   function select(id) {
@@ -595,7 +564,7 @@
     S.selId = id;
     $("workspace").dataset.mode = S.mode;
     $("stage").hidden = false;
-    $("side-sub").hidden = S.mode !== "sub"; $("side-seg").hidden = S.mode !== "seg";
+    $("side-sub").hidden = false;
     renderQueue(); renderTimeline();
     const cur = $("queue-list").querySelector(".current"); if (cur) cur.scrollIntoView({ block: "nearest" });
     S.diff = false; setPressed("toggle-diff", false); $("movement-hint").hidden = true;
@@ -604,13 +573,13 @@
     if (markKind() === "unsure") setMarkKind("fish");   // later marks must not silently go uncounted
     $("p-species").value = "";   // a species from the last point mustn't ride along
     const top = $("stage-wrap").getBoundingClientRect().top;   // fitted layouts size the picture to the window, so bring it to the top
-    if (top < 0 || top > (S.layout === "classic" ? window.innerHeight * 0.5 : 8)) $("stage-wrap").scrollIntoView({ block: "start" });
+    if (top < 0 || top > 8) $("stage-wrap").scrollIntoView({ block: "start" });
     loadMedia(u);
     S.zoom = { k: 1, x: 0, y: 0 }; applyZoom(); $("z-level").textContent = "";   // every point starts at the whole picture
     S.ss.fromMarks = false; S.ss.markSpecies = [];
     $("save-point").textContent = id + " at " + fmtTime(u.t_s);
     $("point-tools").hidden = S.mode !== "sub";
-    if (S.mode === "sub") renderSubsample(u); else renderSegment(u);
+    renderSubsample(u);
     renderGrid();
     if (S.mode === "sub") renderLabels(true); else clear($("labels"));
   }
@@ -719,7 +688,7 @@
     S.names = D.cleanNameMode(mode); paintNames();
     try { localStorage.setItem("clipsift.species_names", S.names); } catch (e) { /* storage may be blocked */ }
     for (const id of ["p-species", "species"]) { const r = resolve($(id).value); if (r) $(id).value = D.speciesName(r, S.names); }
-    if (S.results && S.selId) { if (S.mode === "sub") paintSpeciesRows(); else paintSpeciesStatus(); }
+    if (S.results && S.selId) paintSpeciesRows();
   }
   // A species from the other list must not ride along on the next mark.
   function kindChanged() {
@@ -766,8 +735,7 @@
   }
   async function tagCell(r, c, rows, cols) {
     const payload = { grid: [rows, cols], cell: [r, c], count: 1, reviewer: reviewer() || null };
-    if (S.mode === "sub") { payload.subsample_id = S.selId; payload.species = null; }
-    else { payload.segment_id = S.selId; payload.species = S.seg.species ? S.seg.species.value : null; }
+    payload.subsample_id = S.selId; payload.species = null;
     const u = unit(S.selId);
     payload.time_s = S.mode === "sub" ? u.t_s : u.still_time_s;
     try {
@@ -1088,80 +1056,6 @@
     return combo;
   }
 
-  // ---------- segment review (supporting pass) ----------
-  function renderSegment(u) {
-    const head = $("seg-head"); clear(head);
-    head.append(el("h2", { text: u.segment_id }), el("span", { text: fmtTime(u.start_s) + " to " + fmtTime(u.end_s) }));
-    head.append(badge(u.kind === "set_aside" ? "Set aside" : "Active", u.kind === "set_aside" ? "" : "info"));
-    if (u.audit_sample) head.append(badge("Random check", "audit"));
-    head.append(badge(u.status === "movement_unidentified" ? "Movement, unidentified" : (STATUS[u.status] || "Status not set"), u.status === "movement_unidentified" ? "move" : ""));
-    if (u.flags && u.flags.shake) head.append(badge("Camera shake", "flag"));
-    if (u.flags && u.flags.low_visibility) head.append(badge("Low visibility", "flag"));
-    if (u.review_priority != null) head.append(el("span", { class: "hint", text: "Priority " + Number(u.review_priority).toFixed(2) }));
-    const ab = $("audit-banner");
-    ab.hidden = !u.audit_sample;
-    ab.textContent = "Random check. This stretch was set aside because no activity was found. It was picked at random to test that nothing was missed. Look closely before you decide.";
-    const mb = $("movement-banner");
-    mb.hidden = u.status !== "movement_unidentified";
-    mb.textContent = "Movement, unidentified. Something moved here but no fish was found. It is kept for you to look at, not dropped.";
-    renderCountsPanel(u);
-    // previous decision
-    const prev = (S.saved.latest_review || {})[u.segment_id];
-    $("last-decision").textContent = prev ? "Last saved: " + (DECISION_TEXT[prev.decision] || prev.decision) + (prev.reviewer ? " by " + prev.reviewer : "") + " at " + prev.at + ". A new decision adds a new line. Earlier ones are kept." : "Not reviewed yet.";
-    S.seg.species = null; $("species").value = prev && prev.species ? shownName(prev.species) : ""; $("count").value = ""; $("note").value = "";
-    if (prev && prev.species) { const r = resolve(prev.species); S.seg.species = { value: prev.species, free: !r }; }
-    paintSpeciesStatus();
-  }
-  function renderCountsPanel(u) {
-    const c = u.counts || {}, d = $("counts"); clear(d);
-    const row = (k, v) => d.append(el("dt", { text: k }), el("dd", { text: v }));
-    row("MaxN", fmtNum(c.maxn) + (c.maxn != null && c.maxn_time_s != null ? " at " + fmtTime(c.maxn_time_s) : ""));
-    row("MeanCount", fmtNum(c.mean_count, 2));
-    row("Unique tracks", fmtNum(c.unique_tracks));
-    const t = $("tracks"); clear(t);
-    const tracks = Array.isArray(u.tracks) ? u.tracks : [];
-    if (tracks.length) {
-      t.append(el("h3", { text: "Model suggestions" }));
-      tracks.forEach((tr) => {
-        const top = Array.isArray(tr.species_topk) && tr.species_topk[0];
-        const line = el("div", { class: "track" }, el("span", { text: "Track " + tr.track_id + ": " }));
-        if (top) line.append(el("button", { type: "button", class: "linkish", text: top.name + (top.score != null ? " (" + Math.round(top.score * 100) + "%)" : ""), on: { click: () => setSegSpecies(top.name) } }));
-        else line.append("no species suggestion");
-        t.append(line);
-      });
-    }
-  }
-  function setSegSpecies(text) {
-    $("species").value = text;
-    const r = resolve(text);
-    S.seg.species = text.trim() ? { value: r ? r.sci : text.trim(), free: !r } : null;
-    paintSpeciesStatus();
-  }
-  function paintSpeciesStatus() {
-    const sp = S.seg.species, st = $("species-status"); clear(st);
-    $("alias-row").hidden = !(sp && !sp.free);
-    if (!sp) { st.textContent = S.index.length ? "No species chosen." : "No species list found. Free text is fine."; return; }
-    if (sp.free) { st.append(badge("Free text, not in the list: flagged for checking", "warn")); return; }
-    const it = S.index.find((x) => x.sci === sp.value);
-    st.append(el("span", { text: (it ? D.speciesLabel(it, S.names) : sp.value) + " " }), ...(it ? flagBadges(it.rec) : []));
-  }
-  async function saveDecision(decision) {
-    if (S.mode !== "seg" || !S.selId) return;
-    const cnt = $("count").value.trim();
-    const payload = {
-      segment_id: S.selId, decision, species: S.seg.species ? S.seg.species.value : null,
-      species_free_text: !!(S.seg.species && S.seg.species.free),
-      count: cnt === "" ? null : parseInt(cnt, 10), note: $("note").value, reviewer: reviewer(),
-      contrast_settings: settingsPayload(),
-    };
-    try {
-      await Data.save(S.runId, "reviews", payload);
-      await refreshSaved();
-      message("Saved: " + DECISION_TEXT[decision] + " for " + S.selId + ".", "ok");
-      step(1);
-    } catch (e) { message("Not saved: " + e.message, "error"); }
-  }
-
   // ---------- subsample review (main pass) ----------
   function renderSubsample(u) {
     const head = $("seg-head"); clear(head);
@@ -1327,7 +1221,7 @@
     saveSubsample();
   }
   // The layout belongs to the computer and its monitor, not the person, so it's kept when people switch.
-  const LAYOUTS = ["fit", "big", "stack", "classic"];
+  const LAYOUTS = ["fit", "big", "stack"];   // an old "classic" choice falls back to fit
   function paintBig() {
     if (!LAYOUTS.includes(S.layout)) S.layout = "fit";
     for (const l of LAYOUTS) document.body.classList.toggle("layout-" + l, S.layout === l);
@@ -1365,7 +1259,7 @@
   const currentSpeed = () => { const b = document.querySelector("[data-speed][aria-pressed=true]"); return b ? parseFloat(b.dataset.speed) : 1; };
   function countOffset() { const u = unit(S.selId, "sub"); return u && u.t_s != null && u.context_start_s != null ? Math.max(0, u.t_s - u.context_start_s) : null; }
   function toggle(which) {
-    if (which === "grid") { S.grid = !S.grid; renderGrid(); }
+    if (which === "grid") { S.grid = !S.grid; renderGrid(); document.body.classList.toggle("grid-on", S.grid); }
     if (which === "diff") { S.diff = !S.diff; setPressed("toggle-diff", S.diff); $("movement-hint").hidden = !S.diff; showStill(); }
   }
   function onKey(e) {
@@ -1374,7 +1268,7 @@
     if (e.key === "?" && !isTyping(e.target)) { e.preventDefault(); openHelp(); return; }
     if ((e.ctrlKey) && e.key === "Enter") { e.preventDefault(); if (S.mode === "sub") saveSubsample(); return; }
     if (e.ctrlKey) return;
-    if (e.key === "/" && !isTyping(e.target)) { e.preventDefault(); (S.mode === "sub" ? $("ss-species") : $("species")).focus(); return; }
+    if (e.key === "/" && !isTyping(e.target)) { e.preventDefault(); $("ss-species").focus(); return; }
     if (isTyping(e.target) || e.target.tagName === "SELECT" || e.target.tagName === "SUMMARY") return;
     if (!S.results || $("workspace").hidden) return;
     const k = e.key.toLowerCase();
@@ -1391,7 +1285,6 @@
     else if (S.mode === "sub" && k === "f") setMarkKind("fish");
     else if (S.mode === "sub" && k === "i") setMarkKind("invertebrate");
     else if (S.mode === "sub" && k === "u") setMarkKind("unsure");
-    else if (S.mode === "seg" && DECISION_KEYS[k]) saveDecision(DECISION_KEYS[k]);
     else if (S.mode === "sub" && k in CHAR_KEYS) { const cb = $("chars").querySelectorAll("input")[CHAR_KEYS[k]]; cb.checked = !cb.checked; paintCharsWarn(); }
     else if (k === "," ) frameStep(-1);
     else if (k === ".") frameStep(1);
@@ -1611,16 +1504,6 @@
     if (st.model) box.append(el("p", { class: "hint", text: "Model: " + st.model + ". These answers don't change any count." }));
   }
 
-  // ---------- simple view ("More tools") ----------
-  const isSimple = () => !S.more;
-  function applyView() {
-    document.body.classList.toggle("simple", isSimple());
-    setPressed("more-tools", S.more);
-  }
-  function toggleMore() {
-    S.more = !S.more; localStorage.setItem("clipsift.moretools", S.more ? "1" : "0");
-    applyView();
-  }
 
   // ---------- protocol steps: visibility, watch, count, quality check, report ----------
   function paintSteps() {
@@ -1903,7 +1786,7 @@
   function openHelp() { closeDialogs(); $("help-dlg").showModal(); $("help-dlg").querySelector(".drawer-body").scrollTop = 0; }
   function closeDialogs() { document.querySelectorAll("dialog[open]").forEach((d) => d.close()); }
   function feedbackContext() {
-    const ctx = { run: S.runId || null, view: (isSimple() ? "simple" : "more tools") + ", " + "step " + S.step, demo: !!DEMO };
+    const ctx = { run: S.runId || null, view: "step " + S.step, demo: !!DEMO };
     if (S.selId) ctx[S.mode === "sub" ? "subsample_id" : "segment_id"] = S.selId;
     return ctx;
   }
@@ -2004,13 +1887,11 @@
   // ---------- wiring ----------
   function wireStatic() {
     $("run-select").addEventListener("change", (e) => loadRun(e.target.value));
-    $("more-tools").addEventListener("click", toggleMore);
     $("help-btn").addEventListener("click", openHelp);
     $("help-close").addEventListener("click", () => $("help-dlg").close());
     $("help-tour").addEventListener("click", startTour);
     $("feedback-btn").addEventListener("click", openFeedback);
     $("new-video").addEventListener("click", showHome);
-    $("home-btn").addEventListener("click", () => { if (DEMO) return; closeDialogs(); showHome(); });
     $("who-btn").addEventListener("click", askWho);
     $("who-form").addEventListener("submit", addWho);
     $("who-cancel").addEventListener("click", () => $("who-dlg").close());
@@ -2083,16 +1964,6 @@
       $("stage-clip").playbackRate = parseFloat(b.dataset.speed);
     });
     $("step-back").addEventListener("click", () => frameStep(-1)); $("step-fwd").addEventListener("click", () => frameStep(1));
-    for (const b of document.querySelectorAll("[data-decision]")) b.addEventListener("click", () => saveDecision(b.dataset.decision));
-    // segment species combo
-    const segCombo = makeCombo($("species"), $("species-list"), (sel) => { $("species").value = shownName(sel.value); S.seg.species = sel.value ? sel : null; paintSpeciesStatus(); });
-    segCombo.onType = (text) => { const t = text.trim(); S.seg.species = t ? (resolve(t) ? { value: resolve(t).sci, free: false } : { value: t, free: true }) : null; paintSpeciesStatus(); };
-    $("alias-add").addEventListener("click", async () => {
-      const a = $("alias-input").value.trim(), sp = S.seg.species;
-      if (!a || !sp || sp.free) return;
-      try { await Data.addAlias({ alias: a, maps_to: sp.value }); $("alias-input").value = ""; await loadSpecies(); paintSpeciesStatus(); message("Added \"" + a + "\" as a local name for " + sp.value + ". The species list file is unchanged.", "ok"); }
-      catch (e) { message("Not saved: " + e.message, "error"); }
-    });
     makeCombo($("ss-species"), $("ss-species-list"), addSpecies);
     makeCombo($("p-species"), $("p-species-list"), (sel) => { $("p-species").value = shownName(sel.value); }, { kind: markKind, showAll: true });
     for (const r of document.querySelectorAll("input[name=pkind]")) r.addEventListener("change", kindChanged);

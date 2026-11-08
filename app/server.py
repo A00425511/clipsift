@@ -1543,7 +1543,12 @@ def main(argv=None):
     if args.open:
         import webbrowser
         threading.Timer(1.0, webbrowser.open, [f"http://127.0.0.1:{args.port}"]).start()
-    app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
+    try:   # waitress (in the packaged app) serves quietly; Flask's own server prints a scary warning
+        from waitress import serve
+    except ImportError:
+        app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
+    else:
+        serve(app, host="127.0.0.1", port=args.port, threads=8, _quiet=True)
 
 
 if __name__ == "__main__":

@@ -34,3 +34,7 @@ label_sets/
 # Blind labelling: local save file and pulled team labels hold names and marks
 app/local_labels.jsonl
 labels/team/
+
+# Packaged app builds
+build/
+dist/

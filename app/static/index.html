@@ -14,7 +14,7 @@
   <button type="button" id="demo-reset" class="linkish">Clear my demo counts</button>
 </div>
 <header class="topbar">
-  <h1><button type="button" id="home-btn" class="brand" title="Back to the home screen">ClipSift</button></h1>
+  <h1><span id="home-btn" class="brand">ClipSift</span></h1>
   <button type="button" id="new-video" title="Back to the home screen, to open another video" hidden>Open another video</button>
   <label class="run-pick" id="run-pick">Video
     <select id="run-select"><option value="">Loading...</option></select>
@@ -28,8 +28,7 @@
   <span class="spacer"></span>
   <a class="btn adv" id="label-link" href="/label.html" title="Label fish in single frames, on your own. Blind: you never see anyone else's marks.">Label fish</a>
   <label class="run-pick" title="How the screen is laid out. Remembered on this computer, so each monitor can have its own.">Layout
-    <select id="layout"><option value="fit">Fit to screen</option><option value="big">Largest picture</option><option value="stack">Picture above panels</option><option value="classic">Classic</option></select></label>
-  <button type="button" id="more-tools" aria-pressed="false" title="Show or hide the brightness sliders and grid size">More tools</button>
+    <select id="layout"><option value="fit">Fit to screen</option><option value="big">Largest picture</option><option value="stack">Picture above panels</option></select></label>
   <button type="button" id="who-btn" class="who-btn" title="Change who is working on this video"><span id="who-name">Choose your name</span></button>
   <button type="button" id="feedback-btn" title="Tell the team what worked and what did not">Feedback</button>
   <button type="button" id="help-btn" class="help-btn" aria-label="Help" title="Help (press ?)">?</button>
@@ -226,11 +225,11 @@
         <button type="button" id="hold-restart" aria-pressed="true" title="On: the clip starts from the beginning each time you hold Space. Off: it carries on from where it stopped. (R)">Restart each time <kbd>R</kbd></button>
         <span class="lbl">Enhance <kbd>C</kbd></span>
         <span id="enhance-group" class="enhance-group" role="group" aria-label="Enhance preset"></span>
-        <button type="button" id="big-view" aria-pressed="false" title="Make the picture larger by hiding the summary, timeline and tips. (V)">Bigger picture <kbd>V</kbd></button>
+        <button type="button" id="big-view" aria-pressed="false" title="Switch to the Largest picture layout and back. (V)">Largest picture <kbd>V</kbd></button>
         <button type="button" id="toggle-diff" aria-pressed="false" title="Shows what changed between frames. Bright areas moved. It is a hint for where to look, not a count. Works best when the camera is still.">Movement view <kbd>D</kbd></button>
         <button type="button" id="toggle-grid" aria-pressed="false">Grid <kbd>G</kbd></button>
-        <label class="adv">Rows <input id="grid-rows" type="number" min="1" max="20" value="3"></label>
-        <label class="adv">Columns <input id="grid-cols" type="number" min="1" max="20" value="6"></label>
+        <label class="grid-size">Rows <input id="grid-rows" type="number" min="1" max="20" value="3"></label>
+        <label class="grid-size">Columns <input id="grid-cols" type="number" min="1" max="20" value="6"></label>
         <span id="grid-hint" class="hint"></span>
         <span class="hint" id="movement-hint" hidden>Movement view: bright areas changed between frames, so it points at things that moved. Switch back to the still to count.</span>
       </div>
@@ -257,13 +256,13 @@
         <span id="p-totals" class="p-totals" aria-live="polite"></span>
         <span class="hint">Dot = one animal (circle for fish, square for invertebrate, dashed ring for Unsure, which is never counted). Use an ellipse or box for a larger animal. Marks are yours only and save at once. Mouse wheel zooms where the pointer is, and + and − zoom 2x. Click to mark, and drag the picture to move around. To remove a mark, right-click it or press Undo.</span>
       </div>
-      <div class="sliders adv">
+      <details class="adjust"><summary>Adjust picture</summary><div class="sliders">
         <label>Brightness <input type="range" id="f-brightness" min="50" max="300" value="100"><output></output></label>
         <label>Contrast <input type="range" id="f-contrast" min="50" max="300" value="100"><output></output></label>
         <label>Saturation <input type="range" id="f-saturation" min="0" max="300" value="100"><output></output></label>
         <button type="button" id="filter-reset" title="Set brightness, contrast and saturation back to 100% and turn Enhance off">Reset sliders</button>
         <span class="hint">Display only. Files are not changed. Settings are saved with each decision.</span>
-      </div>
+      </div></details>
     </div>
 
   </section>
@@ -328,43 +327,6 @@
     </section>
   </aside>
 
-  <aside class="side" id="side-seg" aria-label="Counts and decision" hidden>
-    <section class="panel" aria-labelledby="counts-h">
-      <h2 id="counts-h">Model counts</h2>
-      <p class="hint">Relative indices, not a measure of how many fish are present.</p>
-      <dl id="counts" class="counts"></dl>
-      <div id="tracks"></div>
-    </section>
-
-    <section class="panel" aria-labelledby="species-h">
-      <h2 id="species-h">Species</h2>
-      <span class="names-toggle" role="group" aria-label="Species names"><button type="button" data-names="common" aria-pressed="true">Common</button><button type="button" data-names="scientific" aria-pressed="false">Scientific</button></span>
-      <div class="combo">
-        <input id="species" type="text" role="combobox" aria-expanded="false" aria-controls="species-list"
-               aria-autocomplete="list" autocomplete="off" placeholder="Type a common or scientific name">
-        <ul id="species-list" role="listbox" hidden></ul>
-      </div>
-      <p id="species-status" class="hint"></p>
-      <div id="alias-row" class="alias-row" hidden>
-        <input id="alias-input" type="text" maxlength="100" placeholder="Another name for this species">
-        <button type="button" id="alias-add">Add local name</button>
-      </div>
-      <label class="count-row">Fish count <input id="count" type="number" min="0" max="100000" placeholder="blank"></label>
-      <label class="note-row">Note <textarea id="note" rows="2" maxlength="2000"></textarea></label>
-    </section>
-
-    <section class="panel" aria-labelledby="decide-h">
-      <h2 id="decide-h">Decision</h2>
-      <div class="decisions">
-        <button type="button" data-decision="confirm" class="d-confirm"><kbd>1</kbd> Confirm</button>
-        <button type="button" data-decision="reject" class="d-reject"><kbd>2</kbd> Reject</button>
-        <button type="button" data-decision="unknown" class="d-unknown"><kbd>3</kbd> Unknown</button>
-        <button type="button" data-decision="needs_second_look" class="d-second"><kbd>4</kbd> Needs second look</button>
-      </div>
-      <p id="last-decision" class="hint"></p>
-      <p class="hint keys">Keys: <kbd>J</kbd>/<kbd>&darr;</kbd>/<kbd>&rarr;</kbd> next, <kbd>K</kbd>/<kbd>&uarr;</kbd>/<kbd>&larr;</kbd> back, <kbd>1</kbd>-<kbd>4</kbd> decide, <kbd>G</kbd> grid, <kbd>D</kbd> movement view, <kbd>/</kbd> species. Keys pause while you type in a box.</p>
-    </section>
-  </aside>
 </main>
 <dialog id="help-dlg" class="drawer" aria-labelledby="help-h">
   <div class="drawer-head">
@@ -425,7 +387,7 @@
         <tr><td><kbd>D</kbd></td><td>Show or hide the movement view</td></tr>
         <tr><td><kbd>G</kbd></td><td>Show or hide the grid</td></tr>
         <tr><td><kbd>N</kbd></td><td>No animals: record 0 and go to the next point</td></tr>
-        <tr><td><kbd>V</kbd></td><td>Bigger picture</td></tr>
+        <tr><td><kbd>V</kbd></td><td>Largest picture, and back</td></tr>
         <tr><td><kbd>/</kbd></td><td>Jump to the species box</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Save and go to the next</td></tr>
         <tr><td><kbd>E</kbd> and <kbd>B</kbd></td><td>Ellipse and box tools</td></tr>
@@ -473,7 +435,7 @@
   <div class="fb-two">
     <label class="fb-row">Video ID, as in the spreadsheet <input id="nv-id" type="text" maxlength="100" autocomplete="off"></label>
     <label class="fb-row">Count points
-      <select id="nv-points"><option value="">Every 60 s (protocol)</option><option value="15">Every 15 s</option><option value="custom">Custom spacing</option></select></label>
+      <select id="nv-points"><option value="">Every 60 s (protocol)</option><option value="custom">Custom spacing</option></select></label>
   </div>
   <div id="nv-custom" class="fb-two" hidden>
     <label class="fb-row">Seconds between points <input id="nv-every" type="number" min="5" max="600" step="1" placeholder="e.g. 45"></label>

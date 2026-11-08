@@ -1,0 +1,22 @@
+# Model weights must not be committed; 121+MB and checkpoint license/data lineage need review.
+*.pth
+*.ckpt
+*.pt
+*.onnx
+models/*
+!models/.gitkeep
+# No private/large video, images, or derived datasets.
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.zip
+results/
+outputs/
+data/
+__pycache__/
+*.py[cod]
+.venv/
+.ipynb_checkpoints/

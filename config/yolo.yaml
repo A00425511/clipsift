@@ -1,0 +1,158 @@
+# ClipSift default configuration. Every number here is a tunable value, not a claim.
+# Protocol numbers come from a DRAFT protocol with unresolved comments; keep them configurable.
+
+layer: 1                 # 0 = manual assist, 1 = local model, 2 = stubs (2a) ; see README
+sample_fps: 2.0          # sampling rate of the full-window motion scan
+detect_fps_segments: 0.2 # sparse model pass over active segments (frames per second). The model is slow, so it
+                         # does NOT run on every sampled frame. Only used by detectors that need full resolution.
+proxy_width: 320         # width used ONLY for the fast motion scan. Faint movement can vanish at low resolution.
+detect_width: 3840        # width of frames given to detectors such as motion_blob and onnx (0 = original). Boxes are scaled back.
+                         # The cfd detector ignores this: it always gets original resolution frames and tiles them.
+
+recording:
+  site: null
+  date: null
+  video_id: null         # set to match the Coastal Action spreadsheet if the filename guess is wrong
+
+# Which backend runs each stage. Names are registered in clipsift/stages.
+stages:
+  proposer: median_background
+  detector: onnx          # Community Fish Detector (fish only). Needs requirements-model.txt and weights in models/.
+                         # Use motion_blob (no model, development stand-in) or onnx instead if you prefer.
+  tracker: iou
+  classifier: placeholder
+  counter: basic
+  counting_model: null   # optional point/density counter for schools (stub only)
+
+# Coastal Action protocol (draft). All values in seconds unless noted.
+protocol:
+  trim_start_s: 60
+  trim_end_s: 60
+  extra_trim_max_s: 240
+  window_length_s: 900
+  window_start_s: null   # optional per-recording override of the analysis window start
+  window_end_s: null     # optional per-recording override of the analysis window end
+  interval_s: 60         # one subsample point every interval_s (an older draft says 12 s)
+  context_s: 5           # context shown either side of each point (a comment suggests 10)
+  count_window_s: 1      # count only within this designated window
+  count_tolerance_s: 0.5 # a fish appearing within this long either side may count
+  context_sample_fps: 4.0
+  qc_share: 0.10
+  qc_min: 6
+  qc_max: 12
+  qc_max_percent_diff: 6
+  qc_agreement: 95
+  qc_seed: 4321
+
+proposer:
+  window_samples: 30     # samples per background window (median)
+  diff_threshold: 9      # grey levels, after blur
+  blur_ksize: 5
+  min_blob_area: 16      # pixels at proxy_width
+  min_consecutive: 2     # consecutive active samples needed
+  merge_gap_s: 4.0       # active runs closer than this are merged
+  pad_s: 1.0
+  max_segment_s: 60
+  max_set_aside_s: 60
+  shake_px: 2.5          # global shift (proxy pixels) above which the shake flag is set
+  contrast_scale: 60.0   # grey-level std that counts as full contrast
+  sharpness_scale: 150.0 # Laplacian variance that counts as fully sharp
+  low_visibility_below: 0.25
+
+audit:
+  share: 0.05            # share of set-aside time marked for audit review
+  seed: 1234
+
+detector:
+  cfd:
+    weights: null        # path to a .pth file; null = newest models/cfd-rf-detr-<variant>-*.pth
+    variant: nano        # nano | small | medium. Names the detections: source is cfd:<variant>
+    tile_size: 512       # pixels, cut from the ORIGINAL frame. Whole-frame use finds almost nothing.
+    overlap: 0.25
+    threshold: 0.05      # confidence is low on turbid water. One-frame test only; not tuned or validated.
+    count_threshold: 0.1 # stricter, for the suggested count only. Tested on two frames: not validated.
+    enhancement: none    # none | clahe (CLAHE on the L channel, before tiling)
+    device: auto         # auto picks cuda, then mps, then cpu. Or force cuda | mps | cpu.
+    batch: 1             # tiles per model call
+    merge_overlap: 0.5   # cross-tile merge: drop a box if this share of the smaller box is covered
+    roi_mask: null       # optional grayscale image, non-zero = analyse. null = whole frame.
+  onnx:
+    model_path: models/clipsift-yolov8n.onnx     # REQUIRED for the onnx backend, for example models/fish.onnx
+    input_size: 640
+    conf: 0.25
+    nms_iou: 0.45
+    class_names: [fish]
+    keep_class_ids: [1, 4] # null keeps all classes
+    has_objectness: false  # true for YOLOv5-style output
+  motion_blob:
+    diff_threshold: 14
+    blur_ksize: 5
+    min_area: 120         # pixels at detect_width
+    max_area_frac: 0.25
+
+# Static-object filter (clipsift/static_filter.py), after detection, cfd only. Boxes it rejects are KEPT in
+# results.json with static: true and a static_reason; they are hidden by default and not counted.
+# Bias is toward keeping. It could remove a truly still animal (resting crab, hovering fish), and the model
+# only finds fish anyway. Defaults were set on two frames, then checked on one recording (STATIC-FILTER.md).
+static_filter:
+  enabled: true
+  persistence:           # boxes at nearly the same place and size in many sampled frames of a recording
+    enabled: true
+    share: 0.30          # share of sampled frames a box must recur in
+    iou: 0.5             # "nearly the same place and size"
+    min_frames: 6        # fewer sampled frames than this: skipped (a note is logged)
+    min_score: 0.05
+  movement:              # 90th percentile of |frame - temporal median background| inside the box
+    enabled: true
+    cutoff: 3.0          # grey levels at width 1920 after blur. 5 and above removed real fish on two frames.
+    percentile: 90.0
+    width: 1920
+    blur_sigma: 1.5
+    span_s: 5.0          # background frames from t-5 to t+5 s, one per step_s, never the frame itself
+    step_s: 1.0
+    exclude_s: 0.75
+    min_background_frames: 3   # fewer than this: not scored, box kept
+    persistent_keep_above: 8.0 # a persistent place is kept if the box itself clearly moves
+  protect_score: 0.5     # boxes this confident are never rejected by persistence or movement (the mask still applies)
+  mask_overlap: 0.5      # a box is masked if its centre, or this share of its area, is inside a polygon
+  masks: []              # hand mask, original pixels, per camera or recording. Example:
+                         #   - match: "T1-STAT2*"            # fnmatch on the recording id / file name, omit for all
+                         #     file: config/masks/t1s2.json  # from tools/make_static_mask.py, or give polygons:
+                         #     polygons: [[[100, 900], [180, 900], [180, 2100], [100, 2100]]]
+
+# Tiled inference: split each frame into overlapping tiles so small midwater fish (about 30 px long)
+# are not lost when the frame is shrunk to the model input. Off by default; slower.
+tiling:
+  enabled: true
+  tile_size: 640
+  overlap: 0.2
+  nms_iou: 0.5
+
+tracker:
+  iou_threshold: 0.2
+  max_gap_samples: 2
+  min_points: 2
+
+classifier:
+  known_threshold: 0.6
+  unclear_threshold: 0.3
+
+counter:
+  mean_count_interval_s: 1.0
+
+# Review order for subsample points and segments (higher first). Applies when a model detector ran.
+review:
+  mid_conf_low: 0.10     # detections scoring between these two are 'mid-confidence' and rank first
+  mid_conf_high: 0.50
+
+loop:
+  max_s: 20
+  crf: 23
+  max_width: 0           # 0 = keep original size
+
+cloud:
+  enable_2b: false       # Layer 2b is never on unless this is true, and it is still a stub
+
+paths:
+  runs_dir: runs
+  models_dir: models

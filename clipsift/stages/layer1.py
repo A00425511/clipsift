@@ -226,6 +226,55 @@ class IouTracker(Tracker):
                                 n_points=len(tr["dets"])))
         return tracks
 
+@register("tracker", "bytetrack")
+class ByteTrackBackend(Tracker):
+    """ByteTrack via the `trackers` package (same tracker Ali's V6 wraps).
+
+    Needs: pip install trackers==2.7.0 (and supervision).
+    A fresh tracker is created per window, so tracks never leak
+    between subsample points or segments.
+    """
+
+    def __init__(self, cfg):
+        tc = cfg.get("tracker", {})
+        self.params = dict(
+            frame_rate=tc.get("frame_rate", 5.0),
+            track_activation_threshold=tc.get("track_activation_threshold", 0.15),
+            high_conf_det_threshold=tc.get("high_conf_det_threshold", 0.10),
+            minimum_consecutive_frames=tc.get("minimum_consecutive_frames", 2),
+            minimum_iou_threshold=tc.get("minimum_iou_threshold", 0.10),
+            lost_track_buffer=tc.get("lost_track_buffer", 10),
+        )
+
+    def track(self, detections_per_frame):
+        import numpy as np
+        import supervision as sv
+        from trackers import ByteTrackTracker
+
+        tracker = ByteTrackTracker(**self.params)
+        by_id = {}
+        for dets in detections_per_frame:
+            if dets:
+                xyxy = np.array(
+                    [[d.box[0], d.box[1], d.box[0] + d.box[2], d.box[1] + d.box[3]] for d in dets],
+                    dtype=np.float32,
+                )
+                conf = np.array([d.score for d in dets], dtype=np.float32)
+                sv_dets = sv.Detections(
+                    xyxy=xyxy, confidence=conf, class_id=np.zeros(len(dets), dtype=int)
+                )
+            else:
+                sv_dets = sv.Detections.empty()
+            tracked = tracker.update(sv_dets)
+            for d, tid in zip(dets, tracked.tracker_id):
+                if tid is None or int(tid) < 0:
+                    continue
+                d.track_id = int(tid)
+                by_id.setdefault(int(tid), []).append(d)
+        return [
+            Track(track_id=tid, start_s=ds[0].t, end_s=ds[-1].t, n_points=len(ds))
+            for tid, ds in sorted(by_id.items())
+        ]
 
 # --------------------------------------------------------------------- classifier
 @register("classifier", "placeholder")

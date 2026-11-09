@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ClipSift | Human Review</title>
+<style>
+:root { font-family: system-ui,Segoe UI,Arial,sans-serif; color:#ecf2f5; background:#101c24; }
+*{box-sizing:border-box} body{margin:0}header{padding:22px 28px;background:#172d36;border-bottom:1px solid #34505c}
+header h1{margin:0;font-size:25px}header p{color:#bad2dc;margin:5px 0 0}
+main{max-width:1260px;margin:auto;padding:24px} .panel{padding:18px;background:#1b2c35;border:1px solid #36515c;border-radius:13px;margin-bottom:18px}
+.toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}label{display:block;font-size:13px;color:#bfdae4;margin-bottom:7px}
+input,select,textarea{background:#12222b;color:white;border:1px solid #56717d;border-radius:7px;padding:10px;max-width:100%}
+input{min-width:185px}button,.action{padding:10px 14px;background:#3c91a5;border:0;border-radius:8px;color:white;cursor:pointer;text-decoration:none;font-weight:600}
+button:disabled{opacity:.5;cursor:wait}.muted{color:#aec6d1}.summary{display:flex;gap:16px;flex-wrap:wrap;margin-top:15px}
+.metric{background:#10252e;border-radius:8px;padding:14px;min-width:145px}.metric strong{display:block;font-size:25px;margin-bottom:4px}
+.grid{display:block}.item{background:#1b2e38;border:1px solid #36515c;border-radius:12px;overflow:hidden}
+.item img{width:100%;height:184px;object-fit:contain;background:#0d181f}
+.evidence-pair{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;background:#0d181f}
+.evidence-pair figure{margin:0;min-width:0}
+.evidence-pair img{height:150px;width:100%;object-fit:contain}
+.evidence-pair figcaption{font-size:11px;color:#bbd1db;text-align:center;margin-top:3px}
+.item section{padding:15px}.item h3{margin:0 0 8px}.tag{font-size:12px;border-radius:5px;background:#385564;padding:3px 7px}
+.item select,.item textarea{width:100%;margin-top:8px}.item textarea{height:65px;resize:vertical}.item button{margin-top:8px}
+.small{font-size:12px}
+.filterbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 18px}
+.filterbar button{background:#223c48;border:1px solid #58727d}
+.filterbar button.active{background:#3c91a5;border-color:#3c91a5}
+.evidence-tier{display:inline-block;padding:4px 7px;border-radius:5px;font-size:12px;font-weight:700;margin-bottom:8px}
+.strong-tier{background:#175342;color:#c8ffe1}.additional-tier{background:#594426;color:#ffdfac}
+.info{color:#aec6d1;font-size:13px;line-height:1.6}
+.notice{padding:12px;border-left:3px solid #ffca74;background:#403729;margin-top:12px}
+
+.focus-controls{position:sticky;top:0;z-index:10;background:#1b313c}
+.focus-controls .toolbar{align-items:center}.focus-controls label{margin:0}.focus-controls select{min-width:160px}
+.focus-card{background:#1b2c35;border:1px solid #446775;border-radius:14px;overflow:hidden}
+.focus-top{padding:14px 18px;border-bottom:1px solid #355360;display:flex;gap:14px;justify-content:space-between;flex-wrap:wrap;align-items:center}
+.focus-top h3{font-size:21px;margin:0}.focus-top .small{line-height:1.65}
+.focus-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px;padding:14px}
+.large-evidence{margin:0;min-width:0;background:#0b1a22;border-radius:9px;padding:12px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.large-evidence img{width:100%;height:340px;object-fit:contain;cursor:zoom-in;background:#07151c;border-radius:8px}
+.large-evidence figcaption{font-size:13px;color:#c1d9df}
+.large-evidence a{color:#a6e4f4;font-size:12px}
+.focus-review{padding:2px 18px 20px;max-width:760px}.focus-review textarea,.focus-review select{width:100%}
+.focus-review textarea{height:88px}.focus-review .save{margin-top:12px}.focus-status{display:inline-block;border-radius:5px;background:#234f42;color:#d2ffe3;padding:4px 8px;font-size:12px}
+.review-warning{background:#3f3427;border-left:3px solid #eabb70;padding:10px;margin:10px 0}
+@media(max-width:850px){.focus-layout{grid-template-columns:1fr}.large-evidence img{height:275px}.focus-controls{position:static}}
+</style><style>.csnav{display:flex;flex-wrap:wrap;gap:10px;background:#10232d;padding:12px max(18px,calc((100% - 1260px)/2));border-bottom:1px solid #45616b}.csnav a,.cssoon{color:#daf1f8;text-decoration:none;border:1px solid #3d6a7b;padding:8px 12px;border-radius:7px;font-size:14px}.csnav a:hover{background:#347f95}.cssoon{opacity:.55}</style></head><body>
+<header><h1>ClipSift <span class="muted">/ Human Review</span></h1><p>Candidate verification and reviewer decisions</p></header><nav class="csnav" aria-label="Main navigation"><a href="/videos">1. Videos</a><a href="/subsamples">2. Subsamples</a><a href="/review">3. Human Review</a><a href="/results">4. Results</a></nav>
+<main>
+<div class="panel"><div class="toolbar"><div><label for="run">Analysis run</label><select id="run"></select></div><button id="load">Load results</button><a id="export" class="action" href="#">Export reviewer CSV</a></div>
+<div class="summary" id="summary"></div><div class="notice">HIGH means review priority, not a confirmed fish. Counts remain unverified until humans review the original footage and resolve duplicates within the protocol window.</div></div>
+<h2>Candidate review</h2><p class="info">Inspect one candidate at a time. Use the candidate list or Previous / Next; review the original footage before deciding.</p>
+<p class="info">Evidence tiers use each track's <strong>maximum observation confidence</strong> (threshold 0.30), not the confidence of the displayed crop and not a verified fish label. All low-confidence candidates remain available. Priority HIGH/REVIEW is the separate V6 trajectory status.</p>
+<div class="panel focus-controls"><div class="toolbar"><label for="candidatePick">Candidate</label><select id="candidatePick" aria-label="Select a candidate"></select><button id="previous" type="button">← Previous</button><button id="next" type="button">Next →</button><label for="filter">Show</label><select id="filter"><option value="all">All candidates</option><option value="count">In count window</option><option value="strong">Strong evidence</option><option value="additional">Additional evidence</option><option value="unreviewed">Not reviewed</option></select><span id="position" class="muted small"></span></div></div>
+<div id="candidates" class="grid" aria-live="polite"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function request(url,options={}){const r=await fetch(url,options);let d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d;}
+const THRESHOLD=.30;
+let runName='',candidates=[],analysisSummary={},visible=[],selectedKey='';
+const key=c=>`${c.subsample_index}:${c.track_id}`;
+const inside=c=>String(c.observed_in_count_window).toLowerCase()==='true';
+const strong=c=>Number(c.max_confidence)>=THRESHOLD;
+function metric(n,l){return `<div class="metric"><strong>${esc(n)}</strong><span class="muted">${esc(l)}</span></div>`;}
+function paintSummary(){
+ const reviewed=candidates.filter(c=>!!c.reviewer_decision).length;
+ $('summary').innerHTML=metric(candidates.length,'Candidate tracks')+metric(reviewed,'Decisions recorded')+metric(candidates.length-reviewed,'Awaiting review')+metric(candidates.filter(inside).length,'Tracks in count windows');
+}
+function filteredCandidates(){const f=$('filter').value;return candidates.filter(c=>f==='all'||(f==='count'?inside(c):f==='strong'?strong(c):f==='additional'?!strong(c):!c.reviewer_decision));}
+function navigate(c){
+ selectedKey=key(c);
+ const qs=new URLSearchParams({run:runName,subsample:c.subsample_index,track:c.track_id});
+ history.replaceState(null,'','?'+qs);
+ $('candidatePick').value=key(c);
+ render();
+}
+function render(){
+ visible=filteredCandidates();
+ $('candidatePick').innerHTML=visible.map(c=>`<option value="${esc(key(c))}">#${esc(c.track_id)} · S${esc(c.subsample_index)} · ${esc(Number(c.max_confidence).toFixed(3))}${c.reviewer_decision?' · '+esc(c.reviewer_decision):''}</option>`).join('');
+ if(!visible.length){$('position').textContent='0 candidates';$('candidates').innerHTML='<p>No candidates in this filter. Select All candidates.</p>';return;}
+ let i=visible.findIndex(c=>key(c)===selectedKey);if(i<0){i=0;selectedKey=key(visible[i]);}
+ const c=visible[i];$('candidatePick').value=key(c);$('position').textContent=`${i+1} / ${visible.length}`;
+ $('previous').disabled=i===0;$('next').disabled=i===visible.length-1;
+ const crop=c.evidence_url?`<a href="${esc(c.evidence_url)}" target="_blank" rel="noopener"><img src="${esc(c.evidence_url)}" alt="Clean cropped view of candidate ${esc(c.track_id)}"></a><a href="${esc(c.evidence_url)}" target="_blank" rel="noopener">Open clean close-up full size</a>`:'<span>Close-up unavailable</span>';
+ const frame=c.full_frame_url?`<a href="${esc(c.full_frame_url)}" target="_blank" rel="noopener"><img src="${esc(c.full_frame_url)}" alt="Original source frame with only selected candidate boxed"></a><a href="${esc(c.full_frame_url)}" target="_blank" rel="noopener">Open full frame full size</a>`:'<span>Original frame unavailable</span>';
+ $('candidates').innerHTML=`<article class="focus-card"><div class="focus-top"><div><h3>Candidate #${esc(c.track_id)} <span class="tag">${esc(c.priority||'REVIEW')}</span></h3><div class="small muted">Subsample ${esc(c.subsample_index)} · Source frame ${esc(c.evidence_frame_index||'N/A')} · Time ${esc(c.evidence_timestamp_seconds||'N/A')} s</div></div><div><span class="focus-status">${strong(c)?'Strong':'Additional'} evidence · ${esc(Number(c.max_confidence).toFixed(3))}</span><div class="small muted">${inside(c)?'Observed in count window':'Context only'}</div></div></div><div class="focus-layout"><figure class="large-evidence">${crop}<figcaption>Clean close-up — no boxes</figcaption></figure><figure class="large-evidence">${frame}<figcaption>Original video frame — only this candidate marked</figcaption></figure></div><div class="focus-review"><div class="review-warning">The same fish may appear in multiple tracks. A FISH decision does not establish a unique fish count.</div><label for="reviewDecision">Reviewer decision</label><select id="reviewDecision">${['','FISH','INVERTEBRATE','EQUIPMENT','BACKGROUND','UNCERTAIN'].map(v=>`<option value="${v}" ${c.reviewer_decision===v?'selected':''}>${v||'Not reviewed'}</option>`).join('')}</select><label for="reviewNotes" style="margin-top:13px">Reviewer notes</label><textarea id="reviewNotes" placeholder="Check the original video and possible duplicate tracks.">${esc(c.reviewer_notes||'')}</textarea><div><button id="save" class="save">Save review</button> <span id="feedback" class="muted small" role="status"></span></div></div></article>`;
+ $('save').onclick=async()=>{
+  const decision=$('reviewDecision').value,notes=$('reviewNotes').value;
+  $('save').disabled=true;$('feedback').textContent='Saving…';
+  try{await request(`/api/runs/${encodeURIComponent(runName)}/review/${encodeURIComponent(c.subsample_index)}/${encodeURIComponent(c.track_id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,notes})});c.reviewer_decision=decision;c.reviewer_notes=notes;$('feedback').textContent='Saved';paintSummary();$('candidatePick').options[$('candidatePick').selectedIndex].textContent=`#${c.track_id} · S${c.subsample_index} · ${Number(c.max_confidence).toFixed(3)}${decision?' · '+decision:''}`;}
+  catch(e){$('feedback').textContent='Save failed: '+e.message;}
+  finally{$('save').disabled=false;}
+ };
+}
+async function load(){
+ runName=$('run').value;if(!runName)return;
+ try{const [d,s]=await Promise.all([request(`/api/runs/${encodeURIComponent(runName)}/candidates`),request(`/api/runs/${encodeURIComponent(runName)}/summary`)]);candidates=d.candidates.sort((a,b)=>(Number(inside(b))-Number(inside(a)))||(Number(b.max_confidence)-Number(a.max_confidence)));analysisSummary=s;
+ const p=new URLSearchParams(location.search),sub=p.get('subsample'),track=p.get('track');
+ const requested=candidates.find(c=>(sub===null||String(c.subsample_index)===sub)&&(track===null||String(c.track_id)===track));selectedKey=requested?key(requested):(candidates[0]?key(candidates[0]):'');
+ $('export').href=`/api/runs/${encodeURIComponent(runName)}/export.csv`;paintSummary();render();
+ }catch(e){$('candidates').textContent='Unable to load review: '+e.message;}
+}
+$('previous').onclick=()=>{const i=visible.findIndex(c=>key(c)===selectedKey);if(i>0)navigate(visible[i-1]);};
+$('next').onclick=()=>{const i=visible.findIndex(c=>key(c)===selectedKey);if(i<visible.length-1)navigate(visible[i+1]);};
+$('candidatePick').onchange=()=>{const c=visible.find(c=>key(c)===$('candidatePick').value);if(c)navigate(c);};
+$('filter').onchange=()=>{selectedKey='';render();};
+$('load').onclick=load;
+$('run').onchange=load;
+request('/api/runs').then(d=>{$('run').innerHTML=d.runs.map(r=>`<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('');const q=new URLSearchParams(location.search).get('run');if(q)$('run').value=q;return load();}).catch(e=>$('candidates').textContent=e.message);
+</script><!-- ClipSift clickable help v1 -->
+<script>
+/* ClipSift shared help v1 — standalone, no external dependencies. */
+(() => {
+'use strict';
+const glossary = [
+ ['Workflow', 'Start in Videos with an existing local video path and timestamp. Open Subsamples to inspect the center frame, protocol window and proposed tracks. Open Human Review to inspect evidence, verify the original footage, assign reviewer decisions and export the review CSV.'],
+ ['Videos / local path', 'The current prototype reads a video already on the server computer. Typing a path does not upload a video from another computer.'],
+ ['Subsample', 'A protocol-selected point in the original video. A sample has its own source timestamp and frames; it is not a single 10-second video frame.'],
+ ['Source frame number', 'Position of the representative center frame in the ORIGINAL source video. Index is zero-based; displayed frame number is one-based.'],
+ ['Center frame', 'Still image from the original video at the sample timestamp. Some detections occur on other frames within the surrounding context and will not appear here.'],
+ ['Context window', 'Typically 5 seconds before and 5 seconds after the sample timestamp. Sampled frames from this region provide tracking and visual evidence.'],
+ ['Count window', 'Provisional 1-second central interval (timestamp ±0.5 s). Only observations in this interval are relevant to the current candidate peak statistics. This is not a validated abundance protocol.'],
+ ['Sampled context frames', 'Number of frames actually evaluated by the model in the context window (approximately 5 frames per second in the current pipeline).'],
+ ['Detection event', 'A model-generated bounding box on one sampled frame, potentially including false positives and repeated observations of the same object.'],
+ ['Raw tracks', 'Initial linked sequences from the tracker; some may be too short or weak to reach the review queue. Track IDs are not fish counts.'],
+ ['Reviewable tracks', 'Candidate trajectories eligible for human inspection. These can include fish, background objects, equipment and duplicates.'],
+ ['Confidence', 'A model score for a detection, not the probability that the object is definitively a fish. The gallery uses each track’s maximum observed confidence for ordering.'],
+ ['Strong evidence', 'Review display tier: maximum track confidence at least 0.30. A strong candidate is NOT a confirmed fish.'],
+ ['Additional evidence', 'Review display tier: maximum track confidence below 0.30. These candidates remain available to avoid prematurely excluding possible fish.'],
+ ['HIGH / REVIEW', 'V6 trajectory priorities based on its observation rules; independent of Strong/Additional display tiers. HIGH does not mean confirmed fish.'],
+ ['In count window', 'At least one observation of the track occurred in the provisional 1-second count window. Context-only tracks are useful evidence but are not count-window candidates.'],
+ ['Peak HIGH', 'Largest number of simultaneous HIGH-priority candidates across sampled frames of the count window, after the current duplicate suppression. NOT confirmed fish abundance.'],
+ ['Peak reviewable', 'Largest simultaneous number of reviewable candidates in the count window; not necessarily unique animals.'],
+ ['Duplicate events removed', 'Potential duplicated observations suppressed by current heuristics. Other duplicates can remain and must be resolved by human review.'],
+ ['Evidence crop / yellow box', 'A selected source-video frame with highlighted proposed bounding boxes. Other candidates may also be drawn. It is not an AI-confirmed fish image.'],
+ ['Reviewer decisions', 'FISH, INVERTEBRATE, EQUIPMENT, BACKGROUND or UNCERTAIN. Check original video and adjacent frames; record rationale in notes. Do not use a decision alone as a unique animal count.'],
+ ['Confirmed fish count', 'Pending until human verification and reconciliation of multiple tracks that may refer to the same fish. No automatic candidate-to-abundance conversion.'],
+ ['Precision / Recall', 'Validation statistics comparing candidate boxes with manually annotated boxes under an explicit IoU criterion. Results on small development clips do not establish general performance.'],
+ ['What to look for', 'Look for body shape and motion across adjacent frames; identify pipes, cables, shadows or fixed background; check overlapping tracks for one animal counted multiple times; confirm whether observations fall in the count window. Mark uncertain objects UNCERTAIN rather than guessing.']
+];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const css = `
+#cs-help-open{margin-left:auto;cursor:pointer;border:1px solid #75b7c8;background:#163944;color:#e8fbff;padding:8px 12px;border-radius:7px;font:600 14px system-ui}
+.help[role="button"],.help{cursor:pointer!important}
+.help:focus-visible,#cs-help-open:focus-visible,.cs-help-close:focus-visible{outline:3px solid #ffc96b;outline-offset:2px}
+#cs-help-dialog{border:1px solid #547d89;border-radius:13px;max-width:min(760px,calc(100vw - 30px));width:100%;max-height:85vh;overflow:auto;background:#172e38;color:#f1f9fa;padding:23px;font:14px/1.6 system-ui,Segoe UI,Arial,sans-serif;box-shadow:0 20px 80px #0009}
+#cs-help-dialog::backdrop{background:rgba(0,0,0,.78)}
+#cs-help-dialog h2{font-size:21px;margin:0 0 8px;color:#fff}#cs-help-dialog h3{margin:14px 0 5px;color:#9fe9f5}
+#cs-help-dialog p{margin:6px 0 13px}#cs-help-dialog details{border-top:1px solid #3d5964;padding:9px 0}#cs-help-dialog summary{cursor:pointer;font-weight:700;color:#b9e9f7}
+#cs-help-dialog .cs-help-head{display:flex;gap:15px;align-items:flex-start;justify-content:space-between}#cs-help-dialog .cs-help-close{border:1px solid #85a6b0;border-radius:7px;padding:6px 12px;background:#305666;color:white;cursor:pointer;font-size:15px}
+#cs-help-dialog .cs-help-note{border-left:3px solid #f1bb66;background:#423728;padding:10px;margin:10px 0}
+#cs-help-dialog .cs-help-steps{padding-left:22px}#cs-help-dialog .cs-help-steps li{margin:8px 0}
+`;
+function init(){
+  if(document.querySelector('#cs-help-dialog'))return;
+  const style=document.createElement('style');style.textContent=css;document.head.appendChild(style);
+  const nav=document.querySelector('.csnav')||document.querySelector('nav');
+  const open=document.createElement('button');open.type='button';open.id='cs-help-open';open.textContent='? User Guide';open.setAttribute('aria-label','Open ClipSift user guide');
+  (nav||document.body).appendChild(open);
+  const dialog=document.createElement('dialog');dialog.id='cs-help-dialog';dialog.setAttribute('aria-label','ClipSift help');
+  document.body.appendChild(dialog);
+  function show(title,body,full=false){
+    dialog.innerHTML=`<div class="cs-help-head"><h2>${esc(title)}</h2><button class="cs-help-close" type="button">Close ×</button></div>${full?body:`<p>${esc(body)}</p><p class="cs-help-note">A candidate is not a confirmed fish. Check the source footage before deciding.</p>`}`;
+    dialog.querySelector('.cs-help-close').onclick=()=>dialog.close();
+    if(!dialog.open)dialog.showModal();
+  }
+  function allGuide(){
+    const steps=`<h3>Quick start</h3><ol class="cs-help-steps"><li><strong>Videos:</strong> enter a video path accessible on this computer, a subsample timestamp (MM:SS), and a unique run name. Click Run local AI.</li><li><strong>Subsamples:</strong> inspect the REAL center frame and the time windows; candidate peaks are proposals, not fish counts.</li><li><strong>Gallery:</strong> filter In count window, Strong or Additional. Open a candidate to inspect evidence.</li><li><strong>Human Review:</strong> compare the proposed box with original footage and nearby frames. Record FISH, INVERTEBRATE, EQUIPMENT, BACKGROUND or UNCERTAIN and save notes.</li><li><strong>Export:</strong> export reviewer CSV for traceability. A final unique-fish count requires duplicate reconciliation.</li></ol><p class="cs-help-note"><strong>What to look for:</strong> Fish body and temporal motion, fixed pipes/cables, background patterns, multiple tracks on one object, and whether the candidate is inside the count window.</p>`;
+    const items=glossary.map(([a,b])=>`<details><summary>${esc(a)}</summary><p>${esc(b)}</p></details>`).join('');
+    show('ClipSift — User Guide',steps+'<h3>Glossary — click a term</h3>'+items,true);
+  }
+  open.addEventListener('click',allGuide);
+  document.addEventListener('click',e=>{
+    const tip=e.target.closest('.help');if(!tip)return;
+    e.preventDefault();e.stopPropagation();
+    const desc=tip.getAttribute('title')||tip.getAttribute('data-help')||'Review the candidate in the original footage.';
+    const parent=tip.parentElement;let title='What does this mean?';
+    if(parent){title=(parent.textContent||'').replace(/\?/g,'').trim().slice(0,110)||title;}
+    show(title,desc);
+  });
+  document.addEventListener('keydown',e=>{
+    const tip=e.target.closest&&e.target.closest('.help');if(tip&&(e.key==='Enter'||e.key===' ')){e.preventDefault();tip.click();}
+  });
+  // The original help marks are dynamically generated spans. Make them keyboard-accessible.
+  const enhance=()=>{document.querySelectorAll('.help:not([role])').forEach(n=>{n.setAttribute('role','button');n.setAttribute('tabindex','0');n.setAttribute('aria-label','Explain: '+(n.getAttribute('title')||'this metric'));});};
+  enhance();new MutationObserver(enhance).observe(document.body,{childList:true,subtree:true});
+  dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close()});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+
+</script>
+</body></html>

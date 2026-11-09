@@ -1,0 +1,157 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>ClipSift / Subsample overview</title>
+<style>
+:root{color-scheme:dark;font:15px system-ui,Segoe UI,sans-serif;background:#101c24;color:#eaf2f4}*{box-sizing:border-box}body{margin:0}header{background:#172d36;border-bottom:1px solid #36515c;padding:20px max(20px,calc((100% - 1260px)/2))}h1{font-size:25px;margin:0 0 5px}h2{font-size:20px;margin:0 0 12px}p{line-height:1.5}.muted{color:#b1c8d0}.small{font-size:12px}main{max-width:1260px;margin:auto;padding:24px 16px}.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.toolbar>*{flex-shrink:0}button,a.action{background:#348da4;border:0;color:white;padding:10px 14px;border-radius:7px;cursor:pointer;text-decoration:none;font-weight:600}select{background:#152932;color:white;border:1px solid #607e88;border-radius:7px;padding:10px}.panel,.sample{background:#1b2c35;border:1px solid #3b5561;border-radius:12px;padding:18px;margin:0 0 20px}.sample{padding:0;overflow:hidden}.sampleTop{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;padding:17px}.sampleMain{display:grid;grid-template-columns:minmax(240px,1fr) minmax(300px,1.45fr);gap:15px;padding:0 17px 18px}.picture{min-height:220px;background:#0a151b;display:grid;place-items:center;border-radius:8px;overflow:hidden}.picture img{width:100%;height:auto;max-height:350px;object-fit:contain}.label{font-size:12px;color:#b1c8d0}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.metric{padding:12px;background:#10252e;border-radius:7px;min-height:75px}.metric b{display:block;font-size:21px}.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.kv div{background:#142932;padding:10px;border-radius:7px}.kv span{display:block;color:#b1c8d0;font-size:12px;margin-bottom:3px}.row{display:flex;gap:12px;align-items:center;justify-content:space-between}.pill{border-radius:6px;padding:5px 8px;background:#59452a;color:#ffe0aa;font-size:12px}.status{color:#f6c77b}.good{color:#80ddb2}.footer{padding:14px 17px;border-top:1px solid #36515c;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.tracks{display:flex;flex-wrap:wrap;gap:7px}.track{font-size:12px;padding:6px 8px;background:#29414d;border-radius:6px}.track strong{color:#bdeed9}.warn{border-left:3px solid #e9b560;background:#41372b;padding:12px;margin:14px 0}.empty{padding:30px}.name{font-family:Consolas,monospace;overflow-wrap:anywhere}details{margin-top:12px}details summary{cursor:pointer;color:#9bd9ed}.dashboardlink{color:#9bd9ed} @media(max-width:770px){.sampleMain{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.help{cursor:help;border:1px solid #7197a1;border-radius:50%;font-size:11px;padding:0 5px;margin-left:4px;color:#b5deeb}
+.guide{background:#122c35;border:1px solid #45616b;border-radius:10px;padding:13px;margin-top:14px}.guide summary{cursor:pointer;font-weight:700;color:#aee8ff}
+.gallery{padding:0 17px 18px}.gallerygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.candidate{background:#112731;border:1px solid #42606d;border-radius:9px;overflow:hidden}.candidate img{width:100%;height:235px;object-fit:contain;background:#07171f}.candidatebody{padding:10px}.candidatebody small{display:block;color:#b1c8d0}.evidenceStrong{color:#87e2ba}.evidenceAdditional{color:#eccc9f}.gallerybar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}.gallerybar button{padding:7px 10px}.gallerybar button.active{outline:2px solid #9dd7e8}.gallerymsg{color:#d6dce0;font-size:13px;margin:8px 0}
+.galleryReviewLink{display:inline-block;margin-top:10px;color:#b1ecfb;font-size:12px;font-weight:700}.candidate img{border-bottom:1px solid #294653}.gallerygrid{align-items:stretch}</style><style>.csnav{display:flex;flex-wrap:wrap;gap:10px;background:#10232d;padding:12px max(18px,calc((100% - 1260px)/2));border-bottom:1px solid #45616b}.csnav a,.cssoon{color:#daf1f8;text-decoration:none;border:1px solid #3d6a7b;padding:8px 12px;border-radius:7px;font-size:14px}.csnav a:hover{background:#347f95}.cssoon{opacity:.55}</style></head><body>
+<header><h1>ClipSift <span class="muted">/ Subsamples</span></h1><p class="muted" style="margin:0">Original video → protocol windows → center frames → AI candidates → human review</p></header>
+<nav class="csnav" aria-label="Main navigation"><a href="/videos">1. Videos</a><a href="/subsamples">2. Subsamples</a><a href="/review">3. Human Review</a><a href="/results">4. Results</a></nav><main><section class="panel"><div class="toolbar"><label for="run">Analysis run</label><select id="run"></select><button id="load">Load subsamples</button><a class="dashboardlink" href="/review">Open candidate review</a></div><p class="small muted" id="source"></p><div class="warn">Candidate peaks are not fish counts. The 1-second count window is provisional; final abundance requires human verification and duplicate resolution.</div></section><details class="guide"><summary>Help — How to read ClipSift results</summary>
+<p>Each subsample has a center image taken from the original video. AI detections are extracted from sampled frames in the surrounding context, not necessarily the center image.</p>
+<p><b>Context window:</b> usually ±5 seconds around the sample. <b>Count window:</b> provisional central 1 second. <b>Candidate track:</b> a linked sequence of possible detections, not a fish count.</p>
+<p><b>Strong evidence:</b> maximum track confidence ≥0.30. <b>Additional evidence:</b> below 0.30. Neither means confirmed fish. <b>HIGH / REVIEW:</b> separate V6 trajectory priorities.</p>
+<p><b>What to look for:</b> visible fish shape and motion over adjacent frames; fixed pipes, cables and background; multiple tracks pointing to the same animal; objects inside the count window. Check the original footage when uncertain.</p>
+<p><b>Review decisions:</b> FISH, INVERTEBRATE, EQUIPMENT, BACKGROUND, or UNCERTAIN. Never convert candidate count directly into fish abundance.</p>
+</details><section id="results"><p class="muted">Loading...</p></section></main>
+<script>
+const $=id=>document.getElementById(id),esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(path){let r=await fetch(path);let d=await r.json();if(!r.ok)throw Error(d.detail||r.statusText);return d}
+function help(text){return `<span class="help" title="${esc(text)}">?</span>`}
+function met(n,l){return `<div class="metric"><b>${esc(n??'—')}</b><div class="label">${esc(l)}</div></div>`}
+function info(label,value){return `<div><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`}
+function render(s,run){
+let image=s.center_image_url?`<img loading="lazy" src="${esc(s.center_image_url)}" alt="Original video center frame" onerror="this.replaceWith(document.createTextNode('Original video image unavailable'))">`:'Original video not found on this computer';
+let tracks=s.tracks.slice().sort((a,b)=>Number(b.max_confidence)-Number(a.max_confidence));
+let html=`<article class="sample"><div class="sampleTop"><div><h2>${esc(s.id)} <span class="pill">${esc(s.status||'PENDING_HUMAN_REVIEW')}</span></h2><div class="label name">${esc(s.source_filename)} · ${esc(s.center_time)} · source frame #${esc(s.source_frame_number_one_based)} (1-based)</div></div><span class="status">${s.confirmed_fish_count==null?'Fish count: pending review':'Stored confirmed fish count: '+esc(s.confirmed_fish_count)}</span></div>
+<div class="sampleMain"><div><div class="picture">${image}</div><p class="small muted">Actual center frame from the original video; bounding boxes belong to their own observation frames.</p><div class="kv">${info('Context window',s.context_start+' → '+s.context_end)}${info('Count window (provisional)',s.count_start+' → '+s.count_end)}${info('Source frame index (0-based)',s.source_frame_index_zero_based)}${info('Video FPS',s.source_fps)}</div></div>
+<div><h3 style="margin:0 0 12px">Analysis overview</h3><div class="metrics">${met(s.reviewable_track_count,'Reviewable tracks')}${met(s.strong_evidence,'Strong evidence tracks')}${met(s.additional_evidence,'Additional tracks')}${met(s.peak_high,'Peak HIGH in count window')}${met(s.peak_reviewable,'Peak reviewable in count window')}${met(s.sampled_context_frames,'Sampled context frames')}</div>
+<details><summary>Technical / protocol statistics</summary><div class="kv">${info('Context frames',s.sampled_context_frames)}${info('Count frames',s.sampled_count_frames)}${info('Raw tracks',s.raw_tracks)}${info('Detection events',s.detection_events)}${info('Unassigned events',s.unassigned_detection_events)}${info('Dedup events removed',s.duplicate_events_removed)}${info('Tracks appearing in count window',s.reviewable_in_count_window)}${info('Subsample',s.index)}</div></details>
+<h3 style="margin:16px 0 6px">Candidate summary (${tracks.length}) ${help('These are candidate tracks; they are not confirmed fish. Review the original footage and duplicates.')}</h3><p class="small muted">Maximum track confidence is a review ordering signal, not proof of fish.</p><details><summary>Show all candidate IDs (${tracks.length})</summary><div class="tracks">${tracks.map(t=>`<span class="track">#${esc(t.track_id)} · ${Number(t.max_confidence).toFixed(3)} · <strong>${Number(t.max_confidence)>=.3?'Strong':'Additional'}</strong>${t.observed_in_count_window?' · count-window':''}</span>`).join('')||'<span class="muted">No reviewable tracks</span>'}</div></details></div></div><div class="gallery" id="gallery-${s.index}"><p class="gallerymsg">Loading evidence gallery…</p></div><div class="footer"><span class="muted small">No confirmed abundance until review and duplicate reconciliation.</span><a class="action" href="/review?run=${encodeURIComponent(run)}&subsample=${s.index}">Review this subsample</a></div></article>`;
+return html;
+}
+const galleryFilters={};
+function gTier(c){return Number(c.max_confidence)>=.30?'strong':'additional'}
+function isInside(c){return String(c.observed_in_count_window).toLowerCase()==='true'}
+function showGallery(run,index,items){
+ const node=$('gallery-'+index);if(!node)return;
+ const filter=galleryFilters[index]||'all';
+ const subset=items.filter(c=>Number(c.subsample_index)===index).sort((a,b)=>(isInside(b)-isInside(a))||(Number(b.max_confidence)-Number(a.max_confidence)));
+ const selected=subset.filter(c=>filter==='all'||(filter==='count'?isInside(c):(filter==='unreviewed'?!c.reviewer_decision:gTier(c)===filter)));
+ node.innerHTML=`<h3>Candidate evidence gallery (${subset.length}) ${help('Images show the selected detection from a sampled context frame. Click a candidate to review its track; boxes are not confirmed animals.')}</h3>
+ <div class="gallerybar">${[['all','All'],['count','In count window'],['strong','Strong'],['additional','Additional'],['unreviewed','Not reviewed']].map(([v,l])=>`<button class="gf ${filter===v?'active':''}" data-filter="${v}">${l}</button>`).join('')}</div>
+ <div class="gallerygrid">${selected.map(c=>`<article class="candidate"><a href="/review?run=${encodeURIComponent(run)}&subsample=${index}&track=${encodeURIComponent(c.track_id)}">${c.evidence_url?`<img loading="lazy" src="${esc(c.evidence_url)}" alt="Evidence for candidate ${esc(c.track_id)}">`:'<div class="gallerymsg">Evidence image missing</div>'}</a><div class="candidatebody"><b>Candidate #${esc(c.track_id)}</b><small class="${gTier(c)==='strong'?'evidenceStrong':'evidenceAdditional'}">${gTier(c)==='strong'?'Strong':'Additional'} · max ${esc(c.max_confidence)}</small><small>V6 ${esc(c.priority)} · ${isInside(c)?'In count window':'Context only'}</small><small>${c.reviewer_decision?'Reviewed: '+esc(c.reviewer_decision):'Needs human review'}</small><a class="galleryReviewLink" href="/review?run=${encodeURIComponent(run)}&subsample=${index}&track=${encodeURIComponent(c.track_id)}">Review this candidate →</a></div></article>`).join('')||'<p class="gallerymsg">No candidates match this filter.</p>'}</div>`;
+ node.querySelectorAll('.gf').forEach(b=>b.onclick=()=>{galleryFilters[index]=b.dataset.filter;showGallery(run,index,items)});
+}
+let galleryPoll=null;
+async function loadGalleries(run, samples){
+ clearTimeout(galleryPoll);
+ const statusURL='/api/runs/'+encodeURIComponent(run)+'/gallery-status';
+ const st=await api(statusURL);
+ if(st.ready){
+   const d=await api('/api/runs/'+encodeURIComponent(run)+'/candidates');
+   for(const s of samples)showGallery(run,s.index,d.candidates);
+   return;
+ }
+ if(st.status==='error'){
+   for(const s of samples){const e=$('gallery-'+s.index);if(e)e.innerHTML='<p class="gallerymsg">Evidence preparation failed: '+esc(st.error)+'</p><button class="retry">Retry evidence generation</button>';}
+   document.querySelectorAll('.retry').forEach(b=>b.onclick=()=>prepare(run,samples));return;
+ }
+ if(st.status!=='running'){
+   await prepare(run,samples);return;
+ }
+ for(const s of samples){const e=$('gallery-'+s.index);if(e)e.innerHTML='<p class="gallerymsg">Generating review evidence images from saved video…</p>';}
+ galleryPoll=setTimeout(()=>loadGalleries(run,samples).catch(e=>{document.querySelectorAll('.gallerymsg').forEach(n=>n.textContent='Gallery error: '+e.message)}),1600);
+}
+async function prepare(run,samples){
+ await fetch('/api/runs/'+encodeURIComponent(run)+'/prepare-gallery',{method:'POST'}).then(async r=>{if(!r.ok){let d=await r.json();throw Error(d.detail||r.statusText)}});
+ await loadGalleries(run,samples);
+}
+async function runs(){let d=await api('/api/runs');let names=d.runs.map(r=>r.name);$('run').innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');let requested=new URLSearchParams(location.search).get('run');if(requested&&names.includes(requested))$('run').value=requested;}
+async function load(){let run=$('run').value;if(!run)return;try{let d=await api('/api/runs/'+encodeURIComponent(run)+'/subsamples');$('source').textContent='Original source: '+d.source_filename+(d.video_available?'':' | Original video unavailable on this machine');$('results').innerHTML=d.subsamples.length?d.subsamples.map(s=>render(s,run)).join(''):'<p class="empty">No subsamples in this run.</p>';history.replaceState(null,'','?run='+encodeURIComponent(run));loadGalleries(run,d.subsamples).catch(e=>{for(const s of d.subsamples){const n=$('gallery-'+s.index);if(n)n.textContent='Gallery error: '+e.message}});}catch(e){$('results').textContent='Unable to load: '+e.message;}}
+$('load').onclick=load;runs().then(load).catch(e=>$('results').textContent=e.message);
+</script><!-- ClipSift clickable help v1 -->
+<script>
+/* ClipSift shared help v1 — standalone, no external dependencies. */
+(() => {
+'use strict';
+const glossary = [
+ ['Workflow', 'Start in Videos with an existing local video path and timestamp. Open Subsamples to inspect the center frame, protocol window and proposed tracks. Open Human Review to inspect evidence, verify the original footage, assign reviewer decisions and export the review CSV.'],
+ ['Videos / local path', 'The current prototype reads a video already on the server computer. Typing a path does not upload a video from another computer.'],
+ ['Subsample', 'A protocol-selected point in the original video. A sample has its own source timestamp and frames; it is not a single 10-second video frame.'],
+ ['Source frame number', 'Position of the representative center frame in the ORIGINAL source video. Index is zero-based; displayed frame number is one-based.'],
+ ['Center frame', 'Still image from the original video at the sample timestamp. Some detections occur on other frames within the surrounding context and will not appear here.'],
+ ['Context window', 'Typically 5 seconds before and 5 seconds after the sample timestamp. Sampled frames from this region provide tracking and visual evidence.'],
+ ['Count window', 'Provisional 1-second central interval (timestamp ±0.5 s). Only observations in this interval are relevant to the current candidate peak statistics. This is not a validated abundance protocol.'],
+ ['Sampled context frames', 'Number of frames actually evaluated by the model in the context window (approximately 5 frames per second in the current pipeline).'],
+ ['Detection event', 'A model-generated bounding box on one sampled frame, potentially including false positives and repeated observations of the same object.'],
+ ['Raw tracks', 'Initial linked sequences from the tracker; some may be too short or weak to reach the review queue. Track IDs are not fish counts.'],
+ ['Reviewable tracks', 'Candidate trajectories eligible for human inspection. These can include fish, background objects, equipment and duplicates.'],
+ ['Confidence', 'A model score for a detection, not the probability that the object is definitively a fish. The gallery uses each track’s maximum observed confidence for ordering.'],
+ ['Strong evidence', 'Review display tier: maximum track confidence at least 0.30. A strong candidate is NOT a confirmed fish.'],
+ ['Additional evidence', 'Review display tier: maximum track confidence below 0.30. These candidates remain available to avoid prematurely excluding possible fish.'],
+ ['HIGH / REVIEW', 'V6 trajectory priorities based on its observation rules; independent of Strong/Additional display tiers. HIGH does not mean confirmed fish.'],
+ ['In count window', 'At least one observation of the track occurred in the provisional 1-second count window. Context-only tracks are useful evidence but are not count-window candidates.'],
+ ['Peak HIGH', 'Largest number of simultaneous HIGH-priority candidates across sampled frames of the count window, after the current duplicate suppression. NOT confirmed fish abundance.'],
+ ['Peak reviewable', 'Largest simultaneous number of reviewable candidates in the count window; not necessarily unique animals.'],
+ ['Duplicate events removed', 'Potential duplicated observations suppressed by current heuristics. Other duplicates can remain and must be resolved by human review.'],
+ ['Evidence crop / yellow box', 'A selected source-video frame with highlighted proposed bounding boxes. Other candidates may also be drawn. It is not an AI-confirmed fish image.'],
+ ['Reviewer decisions', 'FISH, INVERTEBRATE, EQUIPMENT, BACKGROUND or UNCERTAIN. Check original video and adjacent frames; record rationale in notes. Do not use a decision alone as a unique animal count.'],
+ ['Confirmed fish count', 'Pending until human verification and reconciliation of multiple tracks that may refer to the same fish. No automatic candidate-to-abundance conversion.'],
+ ['Precision / Recall', 'Validation statistics comparing candidate boxes with manually annotated boxes under an explicit IoU criterion. Results on small development clips do not establish general performance.'],
+ ['What to look for', 'Look for body shape and motion across adjacent frames; identify pipes, cables, shadows or fixed background; check overlapping tracks for one animal counted multiple times; confirm whether observations fall in the count window. Mark uncertain objects UNCERTAIN rather than guessing.']
+];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const css = `
+#cs-help-open{margin-left:auto;cursor:pointer;border:1px solid #75b7c8;background:#163944;color:#e8fbff;padding:8px 12px;border-radius:7px;font:600 14px system-ui}
+.help[role="button"],.help{cursor:pointer!important}
+.help:focus-visible,#cs-help-open:focus-visible,.cs-help-close:focus-visible{outline:3px solid #ffc96b;outline-offset:2px}
+#cs-help-dialog{border:1px solid #547d89;border-radius:13px;max-width:min(760px,calc(100vw - 30px));width:100%;max-height:85vh;overflow:auto;background:#172e38;color:#f1f9fa;padding:23px;font:14px/1.6 system-ui,Segoe UI,Arial,sans-serif;box-shadow:0 20px 80px #0009}
+#cs-help-dialog::backdrop{background:rgba(0,0,0,.78)}
+#cs-help-dialog h2{font-size:21px;margin:0 0 8px;color:#fff}#cs-help-dialog h3{margin:14px 0 5px;color:#9fe9f5}
+#cs-help-dialog p{margin:6px 0 13px}#cs-help-dialog details{border-top:1px solid #3d5964;padding:9px 0}#cs-help-dialog summary{cursor:pointer;font-weight:700;color:#b9e9f7}
+#cs-help-dialog .cs-help-head{display:flex;gap:15px;align-items:flex-start;justify-content:space-between}#cs-help-dialog .cs-help-close{border:1px solid #85a6b0;border-radius:7px;padding:6px 12px;background:#305666;color:white;cursor:pointer;font-size:15px}
+#cs-help-dialog .cs-help-note{border-left:3px solid #f1bb66;background:#423728;padding:10px;margin:10px 0}
+#cs-help-dialog .cs-help-steps{padding-left:22px}#cs-help-dialog .cs-help-steps li{margin:8px 0}
+`;
+function init(){
+  if(document.querySelector('#cs-help-dialog'))return;
+  const style=document.createElement('style');style.textContent=css;document.head.appendChild(style);
+  const nav=document.querySelector('.csnav')||document.querySelector('nav');
+  const open=document.createElement('button');open.type='button';open.id='cs-help-open';open.textContent='? User Guide';open.setAttribute('aria-label','Open ClipSift user guide');
+  (nav||document.body).appendChild(open);
+  const dialog=document.createElement('dialog');dialog.id='cs-help-dialog';dialog.setAttribute('aria-label','ClipSift help');
+  document.body.appendChild(dialog);
+  function show(title,body,full=false){
+    dialog.innerHTML=`<div class="cs-help-head"><h2>${esc(title)}</h2><button class="cs-help-close" type="button">Close ×</button></div>${full?body:`<p>${esc(body)}</p><p class="cs-help-note">A candidate is not a confirmed fish. Check the source footage before deciding.</p>`}`;
+    dialog.querySelector('.cs-help-close').onclick=()=>dialog.close();
+    if(!dialog.open)dialog.showModal();
+  }
+  function allGuide(){
+    const steps=`<h3>Quick start</h3><ol class="cs-help-steps"><li><strong>Videos:</strong> enter a video path accessible on this computer, a subsample timestamp (MM:SS), and a unique run name. Click Run local AI.</li><li><strong>Subsamples:</strong> inspect the REAL center frame and the time windows; candidate peaks are proposals, not fish counts.</li><li><strong>Gallery:</strong> filter In count window, Strong or Additional. Open a candidate to inspect evidence.</li><li><strong>Human Review:</strong> compare the proposed box with original footage and nearby frames. Record FISH, INVERTEBRATE, EQUIPMENT, BACKGROUND or UNCERTAIN and save notes.</li><li><strong>Export:</strong> export reviewer CSV for traceability. A final unique-fish count requires duplicate reconciliation.</li></ol><p class="cs-help-note"><strong>What to look for:</strong> Fish body and temporal motion, fixed pipes/cables, background patterns, multiple tracks on one object, and whether the candidate is inside the count window.</p>`;
+    const items=glossary.map(([a,b])=>`<details><summary>${esc(a)}</summary><p>${esc(b)}</p></details>`).join('');
+    show('ClipSift — User Guide',steps+'<h3>Glossary — click a term</h3>'+items,true);
+  }
+  open.addEventListener('click',allGuide);
+  document.addEventListener('click',e=>{
+    const tip=e.target.closest('.help');if(!tip)return;
+    e.preventDefault();e.stopPropagation();
+    const desc=tip.getAttribute('title')||tip.getAttribute('data-help')||'Review the candidate in the original footage.';
+    const parent=tip.parentElement;let title='What does this mean?';
+    if(parent){title=(parent.textContent||'').replace(/\?/g,'').trim().slice(0,110)||title;}
+    show(title,desc);
+  });
+  document.addEventListener('keydown',e=>{
+    const tip=e.target.closest&&e.target.closest('.help');if(tip&&(e.key==='Enter'||e.key===' ')){e.preventDefault();tip.click();}
+  });
+  // The original help marks are dynamically generated spans. Make them keyboard-accessible.
+  const enhance=()=>{document.querySelectorAll('.help:not([role])').forEach(n=>{n.setAttribute('role','button');n.setAttribute('tabindex','0');n.setAttribute('aria-label','Explain: '+(n.getAttribute('title')||'this metric'));});};
+  enhance();new MutationObserver(enhance).observe(document.body,{childList:true,subtree:true});
+  dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close()});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();
+
+</script>
+</body></html>

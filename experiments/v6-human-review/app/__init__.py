@@ -1,0 +1,1 @@
+"""ClipSift local web application."""
